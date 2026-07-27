@@ -28,8 +28,7 @@ Smart Warehouse Picking & Market Price Management
 - [Default Credentials](#default-credentials)
 - [Environment Variables](#environment-variables)
 - [Deployment](#deployment)
-  - [AWS ECS (Backend)](#aws-ecs-backend)
-  - [Vercel (Frontend)](#vercel-frontend)
+  - [Vercel (Frontend & Backend)](#vercel-frontend--backend)
   - [GitHub Actions Secrets](#github-actions-secrets)
 - [Contributing](#contributing)
 
@@ -56,8 +55,8 @@ Smart Warehouse Picking & Market Price Management
 │          │  Auth │ Orders │ Products │ Picks │                │
 │          │  Users │ Prices │ Notif.   │      │                │
 │          └──────────────────────────────────┘                │
-│                  Deployed on AWS ECS (Fargate)               │
-└──────────────────────────┬──────────────────────────────────-┘
+│              Deployed on Vercel Serverless Functions         │
+└──────────────────────────┬───────────────────────────────────┘
                            │  asyncpg / SQLAlchemy
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
@@ -96,8 +95,8 @@ Smart Warehouse Picking & Market Price Management
 | **Mobile** | React Native, Expo SDK |
 | **Auth** | JWT (HS256), bcrypt |
 | **Containerisation** | Docker, Docker Compose |
-| **CI/CD** | GitHub Actions |
-| **Backend Hosting** | AWS ECS Fargate + Amazon ECR |
+| **CI/CD** | GitHub Actions / Vercel Auto-Deploy |
+| **Backend Hosting** | Vercel Serverless Functions (Python 3.11) |
 | **Frontend Hosting** | Vercel |
 | **Push Notifications** | Expo Push Notification Service |
 
@@ -263,110 +262,32 @@ These are created automatically when you run `python backend/scripts/init_db.py`
 
 ## Deployment
 
-### AWS ECS (Backend)
+### Vercel (Frontend & Backend)
 
-#### 1. Create an ECR Repository
+NexWare is configured as a multi-service monorepo, allowing both the **Vite React frontend** and the **FastAPI Python backend** to be deployed seamlessly on **Vercel** for **$0.00**!
 
-```bash
-aws ecr create-repository --repository-name nexware-backend --region <your-region>
-```
-
-#### 2. Build & Push the Docker Image Manually (first time)
-
-```bash
-# Authenticate Docker with ECR
-aws ecr get-login-password --region <your-region> | \
-  docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
-
-# Build and push
-docker build -t nexware-backend ./backend
-docker tag nexware-backend:latest <ECR_URI>:latest
-docker push <ECR_URI>:latest
-```
-
-#### 3. Create an ECS Cluster and Service
-
-```bash
-# Create Fargate cluster
-aws ecs create-cluster --cluster-name nexware-cluster
-
-# Register a task definition pointing to your ECR image,
-# then create the service:
-aws ecs create-service \
-  --cluster nexware-cluster \
-  --service-name nexware-backend \
-  --task-definition nexware-backend \
-  --desired-count 1 \
-  --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[<subnet-id>],securityGroups=[<sg-id>],assignPublicIp=ENABLED}"
-```
-
-#### 4. Store Secrets in AWS Parameter Store
-
-Store all backend `.env` values as `SecureString` parameters and reference them in your ECS task definition:
-
-```bash
-aws ssm put-parameter \
-  --name "/nexware/prod/JWT_SECRET_KEY" \
-  --value "your-secret" \
-  --type SecureString
-```
-
-#### 5. Subsequent Deployments
-
-After setup, every push to `main` that touches `backend/**` automatically triggers the GitHub Actions workflow to build, push, and deploy.
-
----
-
-### Vercel (Frontend)
-
-#### 1. Import Project
-
-```bash
-npm install -g vercel
-cd frontend
-vercel
-```
-
-Follow the prompts to link to your Vercel account and project.
+#### 1. Import Project in Vercel
+1. Go to your [Vercel Dashboard](https://vercel.com/dashboard) and click **Add New → Project**.
+2. Import your GitHub repository (`Vaidik26/Nexware`).
+3. Vercel will automatically detect the monorepo structure via `vercel.json` and configure:
+   - `frontend`: Web Service (Vite)
+   - `backend`: Web Service (FastAPI Serverless Function)
 
 #### 2. Set Environment Variables in Vercel Dashboard
+In **Project → Settings → Environment Variables**, add your production database and authentication secrets:
 
-Go to **Project → Settings → Environment Variables** and add:
-
-| Name | Value |
+| Variable Name | Description |
 |---|---|
-| `VITE_API_URL` | Your production backend URL (e.g. `https://api.nexware.io`) |
+| `DATABASE_URL` | Supabase PostgreSQL async connection string |
+| `JWT_SECRET_KEY` | Secret key used for signing JWT access and refresh tokens |
+| `ALGORITHM` | JWT algorithm (default: `HS256`) |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifetime in minutes (default: `30`) |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | Refresh token lifetime in days (default: `7`) |
+| `ALLOWED_ORIGINS` | Comma-separated list of allowed frontend domains |
+| `VITE_API_URL` | Your deployed backend API URL (e.g. `https://nexware.vercel.app`) |
 
-#### 3. Subsequent Deployments
-
-Every push to `main` that touches `frontend/**` automatically triggers the GitHub Actions workflow to build and deploy to Vercel production.
-
----
-
-### GitHub Actions Secrets
-
-Navigate to **GitHub → Repository → Settings → Secrets and variables → Actions** and add the following secrets:
-
-#### Backend Workflow Secrets
-
-| Secret | Description |
-|---|---|
-| `AWS_ACCESS_KEY_ID` | IAM user access key with ECR push + ECS update permissions |
-| `AWS_SECRET_ACCESS_KEY` | Corresponding IAM secret access key |
-| `AWS_REGION` | AWS region (e.g. `ap-south-1`) |
-| `ECR_REPOSITORY_URI` | Full ECR repository URI (e.g. `123456789.dkr.ecr.ap-south-1.amazonaws.com/nexware-backend`) |
-| `ECS_CLUSTER_NAME` | Name of your ECS cluster (e.g. `nexware-cluster`) |
-| `ECS_SERVICE_NAME` | Name of your ECS service (e.g. `nexware-backend`) |
-
-#### Frontend Workflow Secrets
-
-| Secret | Description |
-|---|---|
-| `VERCEL_TOKEN` | Personal access token from Vercel account settings |
-| `VERCEL_ORG_ID` | Your Vercel team/org ID (from `vercel whoami` or dashboard) |
-| `VERCEL_PROJECT_ID` | Your Vercel project ID (from project settings) |
-| `VITE_API_URL` | Production backend API URL injected at build time |
+#### 3. Automatic Deployments
+Every push to the `main` branch on GitHub automatically triggers Vercel to build and deploy both your frontend and backend simultaneously in seconds!
 
 ---
 
