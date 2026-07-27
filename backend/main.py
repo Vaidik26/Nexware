@@ -63,6 +63,18 @@ app.include_router(picklists.router)
 app.include_router(market.router)
 app.include_router(notifications.router)
 
+# Mount all routers under /api prefix as well to guarantee 100% Vercel routing compatibility
+from fastapi import APIRouter
+api_router = APIRouter(prefix="/api")
+api_router.include_router(auth.router)
+api_router.include_router(users.router)
+api_router.include_router(catalogue.router)
+api_router.include_router(orders.router)
+api_router.include_router(picklists.router)
+api_router.include_router(market.router)
+api_router.include_router(notifications.router)
+app.include_router(api_router)
+
 
 @app.get("/")
 def root():
