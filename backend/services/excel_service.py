@@ -1,0 +1,330 @@
+import pandas as pd
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from io import BytesIO
+from typing import Any, List, Dict
+from datetime import datetime
+
+
+def parse_catalogue_excel(file_content: bytes) -> list[dict]:
+    try:
+        df = pd.read_excel(BytesIO(file_content))
+    except Exception as e:
+        raise ValueError(f"Invalid Excel document file structure or formatting: {str(e)}")
+        
+    if df.empty:
+        raise ValueError("Uploaded Excel sheet is completely empty.")
+        
+    # Normalize columns to handle minor header variation
+    col_map = {col.lower().strip(): col for col in df.columns}
+    item_num_col = col_map.get("item number", col_map.get("code", "Item Number"))
+    item_name_col = col_map.get("item name", col_map.get("description", "Item Name"))
+    barcode_col = col_map.get("barcode", "Barcode")
+    unit_col = col_map.get("unit", col_map.get("uom", "Unit"))
+
+    items = []
+    for _, row in df.iterrows():
+        item_no = str(row.get(item_num_col, "")).strip() if item_num_col in row else ""
+        barcode = str(row.get(barcode_col, "")).strip() if barcode_col in row else ""
+        if item_no == "nan": item_no = ""
+        if barcode == "nan": barcode = ""
+        if item_no and barcode:
+            items.append({
+                "item_number": item_no,
+                "item_name": str(row.get(item_name_col, "Unnamed SKU")).strip() if item_name_col in row else "Unnamed SKU",
+                "barcode": barcode,
+                "unit": str(row.get(unit_col, "PCS")).strip() if unit_col in row else "PCS",
+            })
+    if not items:
+        raise ValueError("No valid rows found in Excel. Make sure 'Item Number' and 'Barcode' columns are present and filled.")
+    return items
+
+
+def generate_catalogue_excel(items: list) -> bytes:
+    data = [
+        {
+            "Item Number": i.item_number,
+            "Item Name": i.item_name,
+            "Barcode": i.barcode,
+            "Unit": i.unit,
+        }
+        for i in items
+    ]
+    df = pd.DataFrame(data)
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Sales Items")
+    return buf.getvalue()
+
+
+def generate_branded_picklist_excel(items_list: Any) -> bytes:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Warehouse Pick List"
+    
+    # Enable display grid lines explicitly
+    ws.views.sheetView[0].showGridLines = True
+    
+    # Enterprise Brand Colors
+    brand_green = "154C34"       # Deep emerald brand header banner
+    header_green = "2B4C3A"      # Sage green table header
+    zebra_light = "F4F7F5"       # Alternating row background fill
+    border_gray = "CCCCCC"       # Crisp cell borders
+    white = "FFFFFF"
+    
+    thin_side = Side(border_style="thin", color=border_gray)
+    cell_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+    
+    # Row 1: Executive Brand Header Banner (Merged A1:F1)
+    ws.merge_cells("A1:F1")
+    title_cell = ws["A1"]
+    title_cell.value = "NEXWARE ENTERPRISE OS — WAREHOUSE FLOOR PICK LIST"
+    title_cell.font = Font(name="Arial", size=15, bold=True, color=white)
+    title_cell.fill = PatternFill(start_color=brand_green, end_color=brand_green, fill_type="solid")
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 36
+    
+    # Row 2: Date Generated Tag (Merged A2:F2)
+    ws.merge_cells("A2:F2")
+    date_cell = ws["A2"]
+    date_cell.value = f"Date Generated: {datetime.now().strftime('%B %d, %Y')}"
+    date_cell.font = Font(name="Arial", size=11, bold=True, italic=True, color="333333")
+    date_cell.fill = PatternFill(start_color="E8F2EC", end_color="E8F2EC", fill_type="solid")
+    date_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[2].height = 24
+    
+    # Row 3: Spacer
+    ws.row_dimensions[3].height = 10
+    
+    # Row 4: Operational Table Headers
+    headers = ["SI", "Item Code (Barcode)", "Description / Product Title", "Quantity", "Checked", "Picked"]
+    for col_idx, h_text in enumerate(headers, start=1):
+        cell = ws.cell(row=4, column=col_idx, value=h_text)
+        cell.font = Font(name="Arial", size=11, bold=True, color=white)
+        cell.fill = PatternFill(start_color=header_green, end_color=header_green, fill_type="solid")
+        cell.alignment = Alignment(horizontal="center" if col_idx != 3 else "left", vertical="center", indent=1 if col_idx == 3 else 0)
+        cell.border = cell_border
+    ws.row_dimensions[4].height = 28
+    
+    # Handle input whether it's an ORM object from DB or a memory dictionary from frontend upload
+    if hasattr(items_list, 'items'):
+        raw = items_list.items
+        items_data = [
+            {
+                "barcode": getattr(i, "barcode", ""),
+                "product_name": getattr(i, "product_name", ""),
+                "quantity": getattr(i, "quantity", 1) or 1
+            }
+            for i in raw
+        ]
+    elif isinstance(items_list, list):
+        items_data = [
+            {
+                "barcode": str(i.get("barcode", "") or i.get("item_number", "")).strip(),
+                "product_name": str(i.get("product_name", "") or i.get("itemName", "") or i.get("description", "")).strip(),
+                "quantity": float(i.get("quantity", 1) or 1)
+            }
+            for i in items_list
+        ]
+    else:
+        items_data = []
+        
+    if not items_data:
+        raise ValueError("Cannot generate operational Excel picklist: Order has no items attached.")
+        
+    # Data Rows (Row 5+) with Zebra Striping and strict string barcode formula formatting
+    for idx, item in enumerate(items_data, start=1):
+        row_num = 4 + idx
+        bg_color = white if idx % 2 != 0 else zebra_light
+        row_fill = PatternFill(start_color=bg_color, end_color=bg_color, fill_type="solid")
+        
+        # SI
+        c1 = ws.cell(row=row_num, column=1, value=idx)
+        c1.alignment = Alignment(horizontal="center", vertical="center")
+        
+        # Barcode (Strict text format '@' totally prevents scientific notation 6.29E+12)
+        bc_str = str(item.get("barcode", "")).strip() or "N/A"
+        c2 = ws.cell(row=row_num, column=2)
+        c2.number_format = '@'
+        c2.data_type = 's'
+        c2.value = bc_str
+        c2.font = Font(name="Consolas", size=11, bold=True)
+        c2.alignment = Alignment(horizontal="center", vertical="center")
+        
+        # Description (with text wrapping enabled for long item titles)
+        prod_title = str(item.get("product_name", ""))
+        c3 = ws.cell(row=row_num, column=3, value=prod_title)
+        c3.alignment = Alignment(horizontal="left", vertical="center", indent=1, wrap_text=True)
+        c3.font = Font(name="Arial", size=11, bold=True)
+        
+        # Quantity (Default to 1 if missing or 0)
+        qty_val = float(item.get("quantity", 1)) if item.get("quantity") else 1.0
+        c4 = ws.cell(row=row_num, column=4, value=qty_val if qty_val % 1 != 0 else int(qty_val))
+        c4.alignment = Alignment(horizontal="center", vertical="center")
+        c4.font = Font(name="Arial", size=12, bold=True)
+        
+        # Checked & Picked slots (default to green tick inside brackets)
+        c5 = ws.cell(row=row_num, column=5, value="[ ✔ ]")
+        c5.alignment = Alignment(horizontal="center", vertical="center")
+        c5.font = Font(name="Arial", size=11, bold=True, color="154c34")
+        
+        c6 = ws.cell(row=row_num, column=6, value="[ ✔ ]")
+        c6.alignment = Alignment(horizontal="center", vertical="center")
+        c6.font = Font(name="Arial", size=11, bold=True, color="154c34")
+        
+        for cell in [c1, c2, c3, c4, c5, c6]:
+            cell.fill = row_fill
+            cell.border = cell_border
+            
+        # Dynamically adjust row height if item title is long and wraps onto multiple lines
+        lines_needed = max(1, (len(prod_title) // 50) + 1)
+        ws.row_dimensions[row_num].height = max(26, lines_needed * 20)
+        
+    # Pre-Adjusted Automatic Column Widths (Zero manual dragging or text clipping!)
+    max_desc_len = max([len(str(item.get("product_name", ""))) for item in items_data], default=30)
+    col_c_width = min(95, max(68, int(max_desc_len * 0.95)))
+    
+    ws.column_dimensions["A"].width = 8
+    ws.column_dimensions["B"].width = 25
+    ws.column_dimensions["C"].width = col_c_width
+    ws.column_dimensions["D"].width = 15
+    ws.column_dimensions["E"].width = 16
+    ws.column_dimensions["F"].width = 16
+    
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def generate_picklist_excel(picklist: Any) -> bytes:
+    return generate_branded_picklist_excel(picklist)
+
+
+def generate_branded_price_history_excel(payload: dict) -> bytes:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Market Price Intelligence"
+    ws.views.sheetView[0].showGridLines = True
+
+    # Enterprise Brand Colors
+    brand_green = "154C34"       # Deep emerald brand header banner
+    date_green = "1D5D42"        # Medium emerald for daily table date section titles
+    header_green = "2B4C3A"      # Sage green table column headers
+    zebra_light = "F4F7F5"       # Alternating row background fill
+    border_gray = "CCCCCC"       # Crisp cell borders
+    white = "FFFFFF"
+
+    thin_side = Side(border_style="thin", color=border_gray)
+    cell_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+
+    # Row 1: Executive Brand Header Banner (Merged A1:F1)
+    ws.merge_cells("A1:F1")
+    title_cell = ws["A1"]
+    title_cell.value = "NEXWARE ENTERPRISE OS — COMMODITY PRICE INTELLIGENCE REPORT"
+    title_cell.font = Font(name="Arial", size=15, bold=True, color=white)
+    title_cell.fill = PatternFill(start_color=brand_green, end_color=brand_green, fill_type="solid")
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 36
+
+    # Row 2: Scope & Timestamp Tag (Merged A2:F2)
+    ws.merge_cells("A2:F2")
+    date_cell = ws["A2"]
+    scope_str = str(payload.get("scope", "ALL")).upper()
+    date_cell.value = f"Scope / Time Range: {scope_str} | Generated On: {datetime.now().strftime('%B %d, %Y - %I:%M %p')}"
+    date_cell.font = Font(name="Arial", size=11, bold=True, italic=True, color="333333")
+    date_cell.fill = PatternFill(start_color="E8F2EC", end_color="E8F2EC", fill_type="solid")
+    date_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[2].height = 24
+
+    current_row = 3
+    dates_list = payload.get("dates", [])
+    if not dates_list:
+        ws.cell(row=current_row + 1, column=1, value="No historical pricing records found for this scope.")
+        buf = BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    for date_idx, date_block in enumerate(dates_list):
+        if date_idx > 0:
+            ws.row_dimensions[current_row].height = 12
+            current_row += 1
+
+        # Date Section Title Banner
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=6)
+        d_cell = ws.cell(row=current_row, column=1)
+        d_str = date_block.get("date", "")
+        d_fmt = date_block.get("date_formatted", d_str)
+        d_cell.value = f"📅 MARKET RECORD DATE: {d_fmt} ({d_str})"
+        d_cell.font = Font(name="Arial", size=12, bold=True, color=white)
+        d_cell.fill = PatternFill(start_color=date_green, end_color=date_green, fill_type="solid")
+        d_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+        ws.row_dimensions[current_row].height = 28
+        current_row += 1
+
+        # Column Headers
+        headers = ["S.No", "Commodity Item Name", "Bag/Carton Weight", "Local Dubai Price", "International CIF ($)", "International FOB ($)"]
+        for col_idx, h_text in enumerate(headers, start=1):
+            cell = ws.cell(row=current_row, column=col_idx, value=h_text)
+            cell.font = Font(name="Arial", size=11, bold=True, color=white)
+            cell.fill = PatternFill(start_color=header_green, end_color=header_green, fill_type="solid")
+            cell.alignment = Alignment(
+                horizontal="center" if col_idx in [1, 3] else ("left" if col_idx == 2 else "right"),
+                vertical="center",
+                indent=1 if col_idx == 2 else 0
+            )
+            cell.border = cell_border
+        ws.row_dimensions[current_row].height = 26
+        current_row += 1
+
+        # Data Rows
+        rows_data = date_block.get("rows", [])
+        for idx, row_item in enumerate(rows_data, start=1):
+            bg_color = white if idx % 2 != 0 else zebra_light
+            row_fill = PatternFill(start_color=bg_color, end_color=bg_color, fill_type="solid")
+
+            c1 = ws.cell(row=current_row, column=1, value=row_item.get("sno", idx))
+            c1.alignment = Alignment(horizontal="center", vertical="center")
+            c1.font = Font(name="Arial", size=11)
+
+            c2 = ws.cell(row=current_row, column=2, value=row_item.get("commodity", ""))
+            c2.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+            c2.font = Font(name="Arial", size=11, bold=True)
+
+            c3 = ws.cell(row=current_row, column=3, value=row_item.get("weight", "N/A"))
+            c3.alignment = Alignment(horizontal="center", vertical="center")
+            c3.font = Font(name="Consolas", size=11, bold=True, color="444444")
+
+            c4 = ws.cell(row=current_row, column=4, value=row_item.get("local_price", "—"))
+            c4.alignment = Alignment(horizontal="right", vertical="center", indent=1)
+            c4.font = Font(name="Arial", size=11, bold=True, color="005530" if row_item.get("local_price", "—") != "—" else "888888")
+
+            c5 = ws.cell(row=current_row, column=5, value=row_item.get("cif_price", "—"))
+            c5.alignment = Alignment(horizontal="right", vertical="center", indent=1)
+            c5.font = Font(name="Arial", size=11, bold=True)
+
+            c6 = ws.cell(row=current_row, column=6, value=row_item.get("fob_price", "—"))
+            c6.alignment = Alignment(horizontal="right", vertical="center", indent=1)
+            c6.font = Font(name="Arial", size=11, bold=True)
+
+            for cell in [c1, c2, c3, c4, c5, c6]:
+                cell.fill = row_fill
+                cell.border = cell_border
+
+            ws.row_dimensions[current_row].height = 24
+            current_row += 1
+
+        current_row += 1 # Spacer after daily table
+
+    # Auto-Adjusted Column Widths with generous padding
+    ws.column_dimensions["A"].width = 8
+    ws.column_dimensions["B"].width = 44
+    ws.column_dimensions["C"].width = 22
+    ws.column_dimensions["D"].width = 24
+    ws.column_dimensions["E"].width = 24
+    ws.column_dimensions["F"].width = 24
+
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+

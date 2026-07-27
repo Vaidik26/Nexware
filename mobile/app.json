@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "NexWare",
+    "slug": "nexware-picker",
+    "scheme": "nexware",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#003527"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nexware.picker"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#003527"
+      },
+      "package": "com.nexware.picker",
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "WAKE_LOCK",
+        "NOTIFICATIONS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-secure-store",
+      "expo-notifications"
+    ]
+  }
+}
