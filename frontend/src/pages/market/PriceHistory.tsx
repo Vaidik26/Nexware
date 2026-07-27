@@ -589,6 +589,7 @@ export default function PriceHistory() {
                     stroke="#64748b" 
                     fontSize={12} 
                     dx={-8}
+                    domain={[0, 'auto']}
                     tickFormatter={(val) => `${val}`}
                   />
                   <Tooltip 

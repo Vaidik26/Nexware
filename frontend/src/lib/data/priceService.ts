@@ -176,6 +176,8 @@ export interface LatestPriceSummary {
   dayOverDayLocalChange: number | null;
   dayOverDayIntChange: number | null;
   regionalSpreadPct: number | null;
+  priorLocalPrice: number | null;
+  priorIntCifPrice: number | null;
 }
 
 export async function getLatestPrices(targetDate?: string): Promise<LatestPriceSummary[]> {
@@ -248,6 +250,8 @@ export async function getLatestPrices(targetDate?: string): Promise<LatestPriceS
       dayOverDayLocalChange,
       dayOverDayIntChange,
       regionalSpreadPct,
+      priorLocalPrice: pastLocalRecords.length > 0 ? (pastLocalRecords[0].dubaiLocalPrice ?? null) : null,
+      priorIntCifPrice: pastIntRecords.length > 0 ? (pastIntRecords[0].internationalCIF ?? null) : null,
     };
   });
 

@@ -104,6 +104,8 @@ export default function MarketOverview() {
       name: string;
       pctChange: number;
       priceType: string;
+      todayPrice: number | null;
+      yesterdayPrice: number | null;
     }[] = [];
 
     summaries.forEach(s => {
@@ -113,14 +115,18 @@ export default function MarketOverview() {
           summary: s,
           name: `[${s.item.sku || s.item.id}] ${s.item.particulars} (Local)`,
           pctChange: s.dayOverDayLocalChange,
-          priceType: 'Local (AED)'
+          priceType: 'Local (AED)',
+          todayPrice: s.todayRecord?.dubaiLocalPrice ?? s.lastRecordedLocal.value ?? null,
+          yesterdayPrice: s.priorLocalPrice ?? null,
         });
       } else if (s.dayOverDayIntChange != null && s.item.hasInternational) {
         validMovers.push({
           summary: s,
           name: `[${s.item.sku || s.item.id}] ${s.item.particulars} (CIF)`,
           pctChange: s.dayOverDayIntChange,
-          priceType: 'Intl CIF ($)'
+          priceType: 'Intl CIF ($)',
+          todayPrice: s.todayRecord?.internationalCIF ?? s.lastRecordedInt.cif ?? null,
+          yesterdayPrice: s.priorIntCifPrice ?? null,
         });
       }
     });
@@ -173,10 +179,16 @@ export default function MarketOverview() {
     return analyticsHistory
       .filter(r => r.dubaiLocalPrice != null && r.internationalCIF != null && r.internationalCIF > 0)
       .map(r => {
-        const spreadPct = Number((((r.dubaiLocalPrice! - r.internationalCIF!) / r.internationalCIF!) * 100).toFixed(1));
+        const dubaiPrice = r.dubaiLocalPrice!;
+        const cifPrice = r.internationalCIF!;
+        const diffAmt = Number((dubaiPrice - cifPrice).toFixed(2));
+        const spreadPct = Number(((diffAmt / cifPrice) * 100).toFixed(1));
         return {
           date: r.date.slice(5),
           fullDate: r.date,
+          dubaiPrice,
+          cifPrice,
+          diffAmt,
           spreadPct
         };
       });
@@ -189,6 +201,8 @@ export default function MarketOverview() {
       .map(r => ({
         date: r.date.slice(5),
         fullDate: r.date,
+        cifPrice: r.internationalCIF!,
+        fobPrice: r.internationalFOB!,
         freightCost: Number((r.internationalCIF! - r.internationalFOB!).toFixed(2))
       }));
   }, [analyticsHistory]);
@@ -281,7 +295,12 @@ export default function MarketOverview() {
                   }}
                 >
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                  <XAxis type="number" unit="%" tick={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }} />
+                  <XAxis
+                    type="number"
+                    unit="%"
+                    domain={[(dataMin: number) => Math.min(-10, Math.floor(dataMin)), (dataMax: number) => Math.max(10, Math.ceil(dataMax))]}
+                    tick={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }}
+                  />
                   <YAxis
                     type="category"
                     dataKey="name"
@@ -289,11 +308,35 @@ export default function MarketOverview() {
                     width={170}
                   />
                   <Tooltip
-                    formatter={(value: number, _name: any, props: any) => [
-                      `${value > 0 ? '+' + value : value}% (${props.payload.priceType})`,
-                      'Price Change vs Yesterday'
-                    ]}
-                    contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#0f172a', fontSize: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    content={({ active, payload }: any) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        const diffAmt = (data.todayPrice != null && data.yesterdayPrice != null) 
+                          ? Number((data.todayPrice - data.yesterdayPrice).toFixed(2)) 
+                          : null;
+                        const currSymbol = data.priceType.includes('$') ? '$' : 'AED';
+                        return (
+                          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xl text-xs space-y-1.5 min-w-[220px]">
+                            <p className="font-bold text-slate-900 border-b border-slate-100 pb-1.5">{data.name}</p>
+                            <div className="flex justify-between text-slate-600 gap-4">
+                              <span>Today&apos;s Price:</span>
+                              <span className="font-bold text-slate-900">{data.todayPrice != null ? `${data.todayPrice} ${currSymbol}` : '—'}</span>
+                            </div>
+                            <div className="flex justify-between text-slate-600 gap-4">
+                              <span>Yesterday&apos;s Price:</span>
+                              <span className="font-bold text-slate-600">{data.yesterdayPrice != null ? `${data.yesterdayPrice} ${currSymbol}` : '—'}</span>
+                            </div>
+                            <div className="flex justify-between pt-1.5 border-t border-slate-100 font-bold gap-4">
+                              <span>Day-over-Day Diff:</span>
+                              <span className={data.pctChange > 0 ? 'text-emerald-600 font-extrabold' : 'text-rose-600 font-extrabold'}>
+                                {diffAmt != null ? `${diffAmt > 0 ? '+' : ''}${diffAmt} ${currSymbol}` : ''} ({data.pctChange > 0 ? '+' : ''}{data.pctChange}%)
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
                   />
                   <Bar dataKey="pctChange" radius={[0, 6, 6, 0]} cursor="pointer">
                     {topMoversData.map((entry, index) => (
@@ -497,7 +540,7 @@ export default function MarketOverview() {
                     <BarChart data={chart1Data} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                       <XAxis dataKey="date" stroke="#64748b" fontSize={12} fontWeight={600} />
-                      <YAxis stroke="#64748b" fontSize={12} fontWeight={600} />
+                      <YAxis stroke="#64748b" fontSize={12} fontWeight={600} domain={[0, 'auto']} />
                       <Tooltip
                         contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#0f172a', fontSize: '13px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                       />
@@ -539,10 +582,39 @@ export default function MarketOverview() {
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                         <XAxis dataKey="date" stroke="#64748b" fontSize={11} fontWeight={600} />
-                        <YAxis stroke="#64748b" fontSize={11} fontWeight={600} unit="%" />
+                        <YAxis
+                          stroke="#64748b"
+                          fontSize={11}
+                          fontWeight={600}
+                          unit="%"
+                          domain={[(dataMin: number) => Math.min(0, Math.floor(dataMin - 5)), (dataMax: number) => Math.max(15, Math.ceil(dataMax + 5))]}
+                        />
                         <Tooltip
-                          formatter={(val: number) => [`${val > 0 ? '+' + val : val}%`, 'Price Gap (Dubai vs CIF)']}
-                          contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#0f172a', fontSize: '13px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                          content={({ active, payload }: any) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xl text-xs space-y-1.5 min-w-[230px]">
+                                  <p className="font-bold text-slate-900 border-b border-slate-100 pb-1.5">Date: {data.fullDate || data.date}</p>
+                                  <div className="flex justify-between text-slate-600 gap-4">
+                                    <span>Dubai Spot Price:</span>
+                                    <span className="font-bold text-slate-900">{data.dubaiPrice} AED</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-600 gap-4">
+                                    <span>Intl CIF Landed:</span>
+                                    <span className="font-bold text-slate-900">{data.cifPrice} USD</span>
+                                  </div>
+                                  <div className="flex justify-between pt-1.5 border-t border-slate-100 font-bold gap-4">
+                                    <span>Arbitrage Gap (Diff):</span>
+                                    <span className={data.diffAmt > 0 ? 'text-emerald-600 font-extrabold' : 'text-slate-900 font-extrabold'}>
+                                      {data.diffAmt > 0 ? '+' : ''}{data.diffAmt} ({data.spreadPct > 0 ? '+' : ''}{data.spreadPct}%)
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
                         />
                         <Area
                           type="monotone"
@@ -586,10 +658,31 @@ export default function MarketOverview() {
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                         <XAxis dataKey="date" stroke="#64748b" fontSize={11} fontWeight={600} />
-                        <YAxis stroke="#64748b" fontSize={11} fontWeight={600} unit=" $" />
+                        <YAxis stroke="#64748b" fontSize={11} fontWeight={600} unit=" $" domain={[0, 'auto']} />
                         <Tooltip
-                          formatter={(val: number) => [`$${val} USD`, 'Freight + Insurance']}
-                          contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#0f172a', fontSize: '13px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                          content={({ active, payload }: any) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xl text-xs space-y-1.5 min-w-[230px]">
+                                  <p className="font-bold text-slate-900 border-b border-slate-100 pb-1.5">Date: {data.fullDate || data.date}</p>
+                                  <div className="flex justify-between text-slate-600 gap-4">
+                                    <span>Intl CIF Landed:</span>
+                                    <span className="font-bold text-slate-900">{data.cifPrice} USD</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-600 gap-4">
+                                    <span>Intl FOB Export:</span>
+                                    <span className="font-bold text-slate-900">{data.fobPrice} USD</span>
+                                  </div>
+                                  <div className="flex justify-between pt-1.5 border-t border-slate-100 font-bold gap-4">
+                                    <span>Est. Freight &amp; Ins.:</span>
+                                    <span className="text-blue-600 font-extrabold">${data.freightCost} USD</span>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
                         />
                         <Area
                           type="monotone"
