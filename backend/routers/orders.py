@@ -4,6 +4,7 @@ from sqlalchemy.future import select
 from typing import List
 import os
 import uuid
+import tempfile
 from backend.database import get_db
 from backend.models.order import SalesOrder
 from backend.schemas.order import SalesOrderOut
@@ -12,8 +13,13 @@ from backend.services.pdf_parser import parse_lpo_pdf
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# Use /tmp in serverless environments (Vercel / AWS Lambda) or fall back to local 'uploads'
+try:
+    UPLOAD_DIR = "uploads"
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+except OSError:
+    UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "nexware_uploads")
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @router.get("/", response_model=List[SalesOrderOut])
 async def get_orders(db: AsyncSession = Depends(get_db)):
