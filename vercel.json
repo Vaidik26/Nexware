@@ -20,14 +20,11 @@
       }
     },
     {
-      "handle": "filesystem"
-    },
-    {
       "source": "/(.*)",
       "destination": {
         "type": "service",
         "service": "frontend",
-        "path": "index.html"
+        "path": "/index.html"
       }
     }
   ]
