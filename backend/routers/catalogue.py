@@ -11,11 +11,13 @@ from backend.services.excel_service import parse_catalogue_excel
 
 router = APIRouter(prefix="/catalogue", tags=["catalogue"])
 
+@router.get("", response_model=List[SalesItemOut])
 @router.get("/", response_model=List[SalesItemOut])
 async def get_items(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(SalesItem))
     return result.scalars().all()
 
+@router.post("", response_model=SalesItemOut)
 @router.post("/", response_model=SalesItemOut)
 async def create_item(item: SalesItemCreate, db: AsyncSession = Depends(get_db), current_user = Depends(get_current_admin)):
     existing_item = await db.execute(select(SalesItem).filter(

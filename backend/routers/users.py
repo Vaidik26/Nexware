@@ -11,11 +11,13 @@ from backend.services.auth_service import hash_password
 
 router = APIRouter(prefix="/users", tags=["users"])
 
+@router.get("", response_model=List[UserOut])
 @router.get("/", response_model=List[UserOut])
 async def get_users(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_admin)):
     result = await db.execute(select(User).order_by(User.id))
     return result.scalars().all()
 
+@router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def create_user(user_data: UserCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_admin)):
     # Check duplicate email

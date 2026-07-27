@@ -21,6 +21,7 @@ except OSError:
     UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "nexware_uploads")
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+@router.get("", response_model=List[SalesOrderOut])
 @router.get("/", response_model=List[SalesOrderOut])
 async def get_orders(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(SalesOrder))
