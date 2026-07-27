@@ -65,6 +65,7 @@ def trigger_push(push_token: str, title: str, body: str, background_tasks: Optio
 
 # ---------- List ----------
 
+@router.get("", response_model=List[PickListOut])
 @router.get("/", response_model=List[PickListOut])
 async def list_picklists(
     status: Optional[str] = None,
