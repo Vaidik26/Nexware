@@ -43,8 +43,8 @@ export default function OrderUpload() {
     const fetchPrereqs = async () => {
       try {
         const [catRes, usersRes] = await Promise.all([
-          api.get('/catalogue/').catch(() => ({ data: [] })),
-          api.get('/users/').catch(() => ({ data: [] })),
+          api.get('/catalogue').catch(() => ({ data: [] })),
+          api.get('/users').catch(() => ({ data: [] })),
         ]);
         setCatalogue(catRes.data || []);
         setPickers((usersRes.data || []).filter((u: any) => u.role === 'picker'));
@@ -80,7 +80,7 @@ export default function OrderUpload() {
       const rawItems = extracted.items || data.items || [];
       
       // Re-fetch latest catalogue from API to ensure dependable matching against any recently imported SKUs
-      const catRes = await api.get('/catalogue/').catch(() => ({ data: catalogue }));
+      const catRes = await api.get('/catalogue').catch(() => ({ data: catalogue }));
       const currentCatalogue: any[] = catRes.data || catalogue || [];
       if (catRes.data) setCatalogue(catRes.data);
 

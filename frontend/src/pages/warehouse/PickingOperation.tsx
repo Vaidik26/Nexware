@@ -15,7 +15,7 @@ export default function PickingOperation() {
   const fetchPickLists = async () => {
     try {
       setIsLoading(true);
-      const res = await api.get('/picklists/');
+      const res = await api.get('/picklists');
       // Filter for picklists currently in picking or assigned state
       const all = res.data || [];
       setPickLists(all.filter((p: any) => p.status === 'picking' || p.status === 'assigned' || p.status === 'waiting_verification'));

@@ -28,8 +28,8 @@ export default function PickLists() {
     try {
       if (!quiet) setIsLoading(true);
       const [plRes, usersRes] = await Promise.all([
-        api.get('/picklists/').catch(() => ({ data: [] })),
-        api.get('/users/').catch(() => ({ data: [] })),
+        api.get('/picklists').catch(() => ({ data: [] })),
+        api.get('/users').catch(() => ({ data: [] })),
       ]);
       const plData = plRes.data || [];
       setPickLists(plData);

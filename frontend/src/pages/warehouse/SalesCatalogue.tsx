@@ -39,7 +39,7 @@ export default function SalesCatalogue() {
   const fetchCatalogue = async (quiet = false) => {
     try {
       if (!quiet) setIsLoading(true);
-      const res = await api.get('/catalogue/');
+      const res = await api.get('/catalogue');
       const data = res.data || [];
       setItems(data);
       setCachedData('sales_catalogue', data);
@@ -89,7 +89,7 @@ export default function SalesCatalogue() {
         await api.put(`/catalogue/${editingItem.id}`, payload);
         toast.success('Item Master updated! Changes propagated across active operational tasks.');
       } else {
-        await api.post('/catalogue/', payload);
+        await api.post('/catalogue', payload);
         toast.success('Catalogue item registered successfully');
       }
       

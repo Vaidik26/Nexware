@@ -1,8 +1,16 @@
 import axios from 'axios';
 import { useAuthStore } from '@/store/authStore';
 
+const getBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && envUrl !== 'http://localhost:8000') {
+    return envUrl.replace(/\/+$/, '');
+  }
+  return import.meta.env.PROD ? '/api' : 'http://localhost:8000';
+};
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
+  baseURL: getBaseUrl(),
 });
 
 // In-Memory Global Master Cache & Request Deduplication
@@ -49,11 +57,11 @@ export function handleMutationInvalidation(url?: string) {
 // Background Preloader: Silently loads all module master datasets on app startup
 export async function preloadAllMasterData() {
   const endpoints = [
-    '/catalogue/',
-    '/users/',
-    '/users/?role=picker',
-    '/picklists/',
-    '/market/raw-materials/',
+    '/catalogue',
+    '/users',
+    '/users?role=picker',
+    '/picklists',
+    '/market/materials',
     '/market/prices/trend?range=7d',
   ];
   await Promise.allSettled(

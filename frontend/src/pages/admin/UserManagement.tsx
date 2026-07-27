@@ -27,7 +27,7 @@ export default function UserManagement() {
   const fetchUsers = async () => {
     try {
       setIsLoading(true);
-      const res = await api.get('/users/');
+      const res = await api.get('/users');
       setUsers(res.data || []);
     } catch (error) {
       toast.error('Failed to load user accounts');
@@ -48,7 +48,7 @@ export default function UserManagement() {
     }
     try {
       setIsSubmitting(true);
-      await api.post('/users/', formData);
+      await api.post('/users', formData);
       toast.success('User account created successfully');
       setIsModalOpen(false);
       setFormData({ email: '', full_name: '', password: '', role: 'picker' });

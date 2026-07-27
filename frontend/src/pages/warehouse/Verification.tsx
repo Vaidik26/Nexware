@@ -20,7 +20,7 @@ export default function Verification() {
   const fetchPickLists = async (quiet = false) => {
     try {
       if (!quiet) setIsLoading(true);
-      const res = await api.get('/picklists/').catch(() => ({ data: [] }));
+      const res = await api.get('/picklists').catch(() => ({ data: [] }));
       const all = res.data || [];
       const filterVerified = all.filter(
         (p: any) => p.status === 'waiting_verification' || p.status === 'verified' || p.status === 'picking'
