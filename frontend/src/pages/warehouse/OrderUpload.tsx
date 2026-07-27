@@ -233,8 +233,8 @@ export default function OrderUpload() {
           <td style="text-align: center; padding: 8px; font-family: monospace; font-weight: bold; border: 1px solid #333;">${item.barcode || 'N/A'}</td>
           <td style="padding: 8px; font-weight: bold; border: 1px solid #333;">${item.itemName}</td>
           <td style="text-align: center; padding: 8px; font-weight: bold; border: 1px solid #333; font-size: 16px;">${item.quantity || 1}</td>
-          <td style="text-align: center; padding: 8px; border: 1px solid #333;">[ <span style="color: #154c34; font-weight: bold;">✔</span> ]</td>
-          <td style="text-align: center; padding: 8px; border: 1px solid #333;">[ <span style="color: #154c34; font-weight: bold;">✔</span> ]</td>
+          <td style="text-align: center; padding: 8px; border: 1px solid #333;">[ &nbsp; &nbsp; ]</td>
+          <td style="text-align: center; padding: 8px; border: 1px solid #333;">[ &nbsp; &nbsp; ]</td>
         </tr>`
       )
       .join('');

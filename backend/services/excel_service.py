@@ -106,6 +106,8 @@ def generate_branded_picklist_excel(items_list: Any) -> bytes:
         cell.border = cell_border
     ws.row_dimensions[4].height = 28
     
+    pl_status = getattr(items_list, 'status', '') if not isinstance(items_list, (dict, list)) else (items_list.get('status', '') if isinstance(items_list, dict) else '')
+
     # Handle input whether it's an ORM object from DB or a memory dictionary from frontend upload
     if hasattr(items_list, 'items'):
         raw = items_list.items
@@ -113,7 +115,8 @@ def generate_branded_picklist_excel(items_list: Any) -> bytes:
             {
                 "barcode": getattr(i, "barcode", ""),
                 "product_name": getattr(i, "product_name", ""),
-                "quantity": getattr(i, "quantity", 1) or 1
+                "quantity": getattr(i, "quantity", 1) or 1,
+                "is_picked": getattr(i, "is_picked", False),
             }
             for i in raw
         ]
@@ -122,7 +125,8 @@ def generate_branded_picklist_excel(items_list: Any) -> bytes:
             {
                 "barcode": str(i.get("barcode", "") or i.get("item_number", "")).strip(),
                 "product_name": str(i.get("product_name", "") or i.get("itemName", "") or i.get("description", "")).strip(),
-                "quantity": float(i.get("quantity", 1) or 1)
+                "quantity": float(i.get("quantity", 1) or 1),
+                "is_picked": i.get("is_picked", False),
             }
             for i in items_list
         ]
@@ -163,14 +167,20 @@ def generate_branded_picklist_excel(items_list: Any) -> bytes:
         c4.alignment = Alignment(horizontal="center", vertical="center")
         c4.font = Font(name="Arial", size=12, bold=True)
         
-        # Checked & Picked slots (default to green tick inside brackets)
-        c5 = ws.cell(row=row_num, column=5, value="[ ✔ ]")
+        is_picked_row = pl_status in ("waiting_verification", "picked", "verified", "completed") or item.get("is_picked", False)
+        is_checked_row = pl_status in ("verified", "completed")
+
+        c5_val = "[ ✔ ]" if is_checked_row else "[        ]"
+        c6_val = "[ ✔ ]" if is_picked_row else "[        ]"
+
+        # Checked & Picked slots
+        c5 = ws.cell(row=row_num, column=5, value=c5_val)
         c5.alignment = Alignment(horizontal="center", vertical="center")
-        c5.font = Font(name="Arial", size=11, bold=True, color="154c34")
+        c5.font = Font(name="Arial" if is_checked_row else "Consolas", size=11, bold=is_checked_row, color="154c34" if is_checked_row else "555555")
         
-        c6 = ws.cell(row=row_num, column=6, value="[ ✔ ]")
+        c6 = ws.cell(row=row_num, column=6, value=c6_val)
         c6.alignment = Alignment(horizontal="center", vertical="center")
-        c6.font = Font(name="Arial", size=11, bold=True, color="154c34")
+        c6.font = Font(name="Arial" if is_picked_row else "Consolas", size=11, bold=is_picked_row, color="154c34" if is_picked_row else "555555")
         
         for cell in [c1, c2, c3, c4, c5, c6]:
             cell.fill = row_fill

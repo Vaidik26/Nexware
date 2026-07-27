@@ -1,7 +1,19 @@
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import types
 
+current_dir = os.path.abspath(os.path.dirname(__file__))
+parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+# Create a module alias for Vercel serverless execution
+if 'backend' not in sys.modules:
+    backend_pkg = types.ModuleType('backend')
+    backend_pkg.__path__ = [current_dir]
+    sys.modules['backend'] = backend_pkg
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager

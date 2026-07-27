@@ -16,6 +16,8 @@ def generate_picklist_pdf(picklist_data, items_data=None):
     elements.append(Paragraph("<b>NEXWARE WAREHOUSE FLOOR PICK LIST</b>", styles['Title']))
     elements.append(Spacer(1, 15))
     
+    pl_status = getattr(picklist_data, 'status', '') if not isinstance(picklist_data, dict) else picklist_data.get('status', '')
+
     # Support both ORM models and dictionaries
     if items_data is None and hasattr(picklist_data, 'items'):
         raw_items = picklist_data.items
@@ -25,6 +27,7 @@ def generate_picklist_pdf(picklist_data, items_data=None):
                 "product_name": getattr(i, "product_name", ""),
                 "unit": getattr(i, "unit", "PCS"),
                 "quantity": getattr(i, "quantity", 1),
+                "is_picked": getattr(i, "is_picked", False),
             }
             for i in raw_items
         ]
@@ -52,16 +55,26 @@ def generate_picklist_pdf(picklist_data, items_data=None):
         Paragraph('<b>Picked</b>', header_style)
     ]]
     
+    tick_html = '<b>[</b> <font name="ZapfDingbats" color="#154c34" size="10">4</font> <b>]</b>'
+    empty_html = '[ &nbsp; ]'
+
     for idx, item in enumerate(items_list):
         qty_val = item.get('quantity', 1)
         unit_val = item.get('unit', 'PCS')
+
+        is_picked_row = pl_status in ("waiting_verification", "picked", "verified", "completed") or item.get("is_picked", False)
+        is_checked_row = pl_status in ("verified", "completed")
+
+        picked_cell = tick_html if is_picked_row else empty_html
+        checked_cell = tick_html if is_checked_row else empty_html
+
         data.append([
             Paragraph(str(idx + 1), cell_center),
             Paragraph(str(item.get('barcode', '')), cell_barcode),
             Paragraph(str(item.get('product_name', '')), cell_left_bold),
             Paragraph(f"<b>{qty_val}</b> {unit_val}", cell_center),
-            Paragraph('<b>[</b> <font name="ZapfDingbats" color="#154c34" size="10">4</font> <b>]</b>', cell_center),
-            Paragraph('<b>[</b> <font name="ZapfDingbats" color="#154c34" size="10">4</font> <b>]</b>', cell_center)
+            Paragraph(checked_cell, cell_center),
+            Paragraph(picked_cell, cell_center)
         ])
         
     t = Table(data, colWidths=[28, 97, 280, 45, 45, 45])
