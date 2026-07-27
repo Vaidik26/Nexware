@@ -9,7 +9,7 @@ if (Platform.OS === 'android' && (baseURL.includes('localhost') || baseURL.inclu
 
 export const api = axios.create({
   baseURL,
-  timeout: 8000, // 8-second safety limit to prevent infinite loading spinners
+  timeout: 20000, // 20-second safety limit to accommodate Vercel serverless cold starts
   headers: {
     'Content-Type': 'application/json',
   },

@@ -21,7 +21,7 @@ export default function JobsScreen() {
         res = await api.get('/picklists/my');
       } catch (e: any) {
         if (e.response?.status === 403 || e.response?.status === 401) {
-          res = await api.get('/picklists/');
+          res = await api.get('/picklists');
         } else {
           throw e;
         }

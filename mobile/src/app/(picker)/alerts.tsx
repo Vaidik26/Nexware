@@ -13,7 +13,7 @@ export default function AlertsScreen() {
 
   const fetchNotifications = async () => {
     try {
-      const res = await api.get('/notifications/');
+      const res = await api.get('/notifications');
       if (res.data && Array.isArray(res.data) && res.data.length > 0) {
         const mapped = res.data.map((n: any) => ({
           id: String(n.id),
