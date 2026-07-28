@@ -97,7 +97,7 @@ async function registerForPushNotificationsAsync() {
 
     // Wrap push token acquisition in a fast race timeout to prevent 30s network freeze on emulators without GMS
     const tokenPromise = Notifications.getExpoPushTokenAsync({
-      projectId: 'your-project-id',
+      projectId: '6b1dece6-112e-4592-a5d3-43a57684b613',
     }).then(res => res.data);
     
     const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Push token timeout')), 2500));

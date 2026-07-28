@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Table } from '@/components/ui/Table';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
@@ -23,6 +23,9 @@ export default function PickLists() {
   const [selectedAuditList, setSelectedAuditList] = useState<any | null>(null);
   const [isProcessingAudit, setIsProcessingAudit] = useState(false);
   const [assigningPickerId, setAssigningPickerId] = useState<number | null>(null);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchData = async (quiet = false) => {
     try {
@@ -46,6 +49,11 @@ export default function PickLists() {
 
   useEffect(() => {
     fetchData(!!cached);
+    // Auto-poll every 10 seconds so picker submissions appear without manual refresh
+    pollRef.current = setInterval(() => fetchData(true), 10000);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, []);
 
   // Use verified backend router endpoint POST /picklists/{id}/assign/{picker_id}
@@ -84,35 +92,45 @@ export default function PickLists() {
     }
   };
 
-  const downloadPdf = async (id: number) => {
+  const downloadPdf = async (id: number, e?: React.MouseEvent) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    if (isDownloadingPdf) return;
+    setIsDownloadingPdf(true);
     try {
       const res = await api.get(`/picklists/${id}/download/pdf`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `Picklist_Order_${id}.pdf`);
+      link.setAttribute('download', `Picklist_PL-${id}.pdf`);
       document.body.appendChild(link);
       link.click();
-      link.remove();
-      toast.success('Downloaded Picklist Document PDF');
+      setTimeout(() => { link.remove(); window.URL.revokeObjectURL(url); }, 200);
+      toast.success('PDF downloaded successfully');
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Could not download PDF report'));
+    } finally {
+      setIsDownloadingPdf(false);
     }
   };
 
-  const downloadExcel = async (id: number) => {
+  const downloadExcel = async (id: number, e?: React.MouseEvent) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    if (isDownloadingExcel) return;
+    setIsDownloadingExcel(true);
     try {
       const res = await api.get(`/picklists/${id}/download/excel`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `Picklist_Order_${id}.xlsx`);
+      link.setAttribute('download', `Picklist_PL-${id}.xlsx`);
       document.body.appendChild(link);
       link.click();
-      link.remove();
-      toast.success('Downloaded Picklist Excel Sheet');
+      setTimeout(() => { link.remove(); window.URL.revokeObjectURL(url); }, 200);
+      toast.success('Excel sheet downloaded successfully');
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Could not download Excel report'));
+    } finally {
+      setIsDownloadingExcel(false);
     }
   };
 
@@ -135,7 +153,9 @@ export default function PickLists() {
       );
       const updatedList = { ...selectedAuditList, items: updatedItems };
       setSelectedAuditList(updatedList);
-      setPickLists(pickLists.map((p) => p.id === updatedList.id ? updatedList : p));
+      // Keep main list in sync so stale data doesn't overwrite audit
+      setPickLists(prev => prev.map((p) => p.id === updatedList.id ? updatedList : p));
+      setCachedData('consolidated_picklists', pickLists.map((p) => p.id === updatedList.id ? updatedList : p));
       toast.success(newPickedStatus ? 'Item marked verified' : 'Item unchecked for re-pick');
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Could not update item status'));
@@ -148,8 +168,12 @@ export default function PickLists() {
       setIsProcessingAudit(true);
       await api.patch(`/picklists/${selectedAuditList.id}/verify`);
       toast.success(`Order approved and verified! Ready for export.`);
-      setSelectedAuditList({ ...selectedAuditList, status: 'verified' });
-      fetchData(true);
+      // Refresh from server to get latest items with is_picked=true
+      const freshRes = await api.get(`/picklists/${selectedAuditList.id}`).catch(() => null);
+      const freshList = freshRes?.data ? { ...freshRes.data, status: 'verified' } : { ...selectedAuditList, status: 'verified' };
+      setSelectedAuditList(freshList);
+      setPickLists(prev => prev.map(p => p.id === freshList.id ? freshList : p));
+      setCachedData('consolidated_picklists', pickLists.map(p => p.id === freshList.id ? freshList : p));
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Could not verify order'));
     } finally {
@@ -222,7 +246,16 @@ export default function PickLists() {
             </Button>
           )}
           {row.status === 'waiting_verification' && (
-            <Button size="sm" onClick={() => { setSelectedAuditList(row); setIsAuditModalOpen(true); }} className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs font-bold text-xs py-1 flex items-center gap-1 animate-pulse">
+            <Button size="sm" onClick={async () => {
+              // Always fetch fresh data from server before opening audit modal
+              try {
+                const freshRes = await api.get(`/picklists/${row.id}`);
+                setSelectedAuditList(freshRes.data || row);
+              } catch {
+                setSelectedAuditList(row);
+              }
+              setIsAuditModalOpen(true);
+            }} className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs font-bold text-xs py-1 flex items-center gap-1 animate-pulse">
               <ShieldCheck className="w-3.5 h-3.5" /> Audit & Verify →
             </Button>
           )}
@@ -401,16 +434,20 @@ export default function PickLists() {
               </div>
               <div className="flex flex-col gap-3 max-w-xs mx-auto pt-4">
                 <Button 
-                  onClick={() => downloadPdf(selectedAuditList.id)} 
-                  className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 py-3.5 shadow-md flex items-center justify-center gap-2.5 rounded-xl whitespace-nowrap text-sm"
+                  onClick={(e) => downloadPdf(selectedAuditList.id, e)} 
+                  disabled={isDownloadingPdf}
+                  className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 py-3.5 shadow-md flex items-center justify-center gap-2.5 rounded-xl whitespace-nowrap text-sm disabled:opacity-60"
                 >
-                  <Download className="w-4 h-4 text-rose-400 shrink-0" /> <span>Export PDF Report</span>
+                  <Download className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{isDownloadingPdf ? 'Downloading...' : 'Export PDF Report'}</span>
                 </Button>
                 <Button 
-                  onClick={() => downloadExcel(selectedAuditList.id)} 
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 py-3.5 shadow-md flex items-center justify-center gap-2.5 rounded-xl whitespace-nowrap text-sm"
+                  onClick={(e) => downloadExcel(selectedAuditList.id, e)} 
+                  disabled={isDownloadingExcel}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 py-3.5 shadow-md flex items-center justify-center gap-2.5 rounded-xl whitespace-nowrap text-sm disabled:opacity-60"
                 >
-                  <Download className="w-4 h-4 text-emerald-200 shrink-0" /> <span>Export Excel Sheet</span>
+                  <Download className="w-4 h-4 text-emerald-200 shrink-0" />
+                  <span>{isDownloadingExcel ? 'Downloading...' : 'Export Excel Sheet'}</span>
                 </Button>
                 <Button 
                   variant="outline"

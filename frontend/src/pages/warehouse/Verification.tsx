@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Table } from '@/components/ui/Table';
 import { Button } from '@/components/ui/Button';
 import { CheckCircle2, RotateCcw, AlertOctagon, Trash2, RefreshCw, XCircle } from 'lucide-react';
@@ -16,6 +16,7 @@ export default function Verification() {
   const [selectedList, setSelectedList] = useState<any | null>(null);
   const [returnReason, setReturnReason] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchPickLists = async (quiet = false) => {
     try {
@@ -36,6 +37,8 @@ export default function Verification() {
 
   useEffect(() => {
     fetchPickLists(!!cached);
+    pollRef.current = setInterval(() => fetchPickLists(true), 10000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
   const handleVerify = async (id: number) => {

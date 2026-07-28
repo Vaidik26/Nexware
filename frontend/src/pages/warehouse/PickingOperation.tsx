@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Table } from '@/components/ui/Table';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
@@ -11,6 +11,7 @@ export default function PickingOperation() {
   const [pickLists, setPickLists] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchPickLists = async () => {
     try {
@@ -28,6 +29,8 @@ export default function PickingOperation() {
 
   useEffect(() => {
     fetchPickLists();
+    pollRef.current = setInterval(() => fetchPickLists(), 10000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
   const columns = [

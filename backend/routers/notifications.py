@@ -2,11 +2,15 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List
+from pydantic import BaseModel
 from backend.database import get_db
 from backend.models.user import Notification, User
 from backend.dependencies import get_current_user
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
+
+class PushTokenBody(BaseModel):
+    token: str
 
 @router.get("")
 @router.get("/")
@@ -15,7 +19,7 @@ async def get_notifications(db: AsyncSession = Depends(get_db), current_user: Us
     return result.scalars().all()
 
 @router.post("/push-token")
-async def update_push_token(token: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    current_user.push_token = token
+async def update_push_token(body: PushTokenBody, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    current_user.push_token = body.token
     await db.commit()
     return {"message": "Push token updated"}
