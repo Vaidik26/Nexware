@@ -1,19 +1,12 @@
 import { useNavigate } from 'react-router-dom';
-import { Package2, TrendingUp, ShieldAlert, ArrowRight } from 'lucide-react';
+import { Package2, TrendingUp, ArrowRight } from 'lucide-react';
 
 export default function MarketDashboard() {
   const navigate = useNavigate();
 
   return (
     <div className="max-w-5xl mx-auto py-12 px-4 text-center space-y-8">
-      <div className="w-20 h-20 bg-primary-container/20 text-primary rounded-3xl flex items-center justify-center mx-auto shadow-sm border border-primary-container">
-        <ShieldAlert className="w-10 h-10 text-primary" />
-      </div>
-
       <div className="space-y-3 max-w-2xl mx-auto">
-        <span className="text-xs font-bold uppercase tracking-wider text-primary bg-primary/10 px-3 py-1 rounded-full border border-primary/20">
-          Under Development
-        </span>
         <h1 className="text-3xl font-bold text-on-surface">
           Executive Operations & Market Intelligence Summary
         </h1>

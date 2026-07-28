@@ -2,7 +2,7 @@ import axios from 'axios';
 import { Platform } from 'react-native';
 import { getToken, clearSession } from './session';
 
-let baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+let baseURL = process.env.EXPO_PUBLIC_API_URL || 'https://nexware.vercel.app/api';
 if (Platform.OS === 'android' && (baseURL.includes('localhost') || baseURL.includes('127.0.0.1'))) {
   baseURL = baseURL.replace('localhost', '10.0.2.2').replace('127.0.0.1', '10.0.2.2');
 }

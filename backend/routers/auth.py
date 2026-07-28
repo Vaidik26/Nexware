@@ -11,8 +11,16 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/login", response_model=Token)
 async def login(login_data: LoginRequest, db: AsyncSession = Depends(get_db)):
-    # Look up user by email or username
-    result = await db.execute(select(User).filter(User.email.ilike(login_data.email.strip())))
+    from sqlalchemy import or_
+    # Look up user by email or full_name (used as username)
+    result = await db.execute(
+        select(User).filter(
+            or_(
+                User.email.ilike(login_data.email.strip()),
+                User.full_name.ilike(login_data.email.strip())
+            )
+        )
+    )
     user = result.scalars().first()
     
     if not user or not verify_password(login_data.password, user.hashed_password):
