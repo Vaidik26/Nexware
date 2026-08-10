@@ -207,7 +207,8 @@ export default function Verification() {
             </Button>
           )}
         </div>
-      ),
+        );
+      },
     },
   ];
 

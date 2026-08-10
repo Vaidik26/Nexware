@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import os
+import uuid
 
 # Add root directory to sys path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -12,13 +13,27 @@ from sqlalchemy.future import select
 from backend.models.catalogue import SalesItem, CartonType
 from backend.models.picklist import PickList, PickListItem, PickAssignment
 from backend.models.user import User
+from backend.database import Base
 from backend.config import settings
 
 async def seed_dummy_data():
     print("Seeding dummy data for NexWare...")
     
     db_url = settings.get_async_database_url()
-    engine = create_async_engine(db_url, echo=False)
+    engine = create_async_engine(
+        db_url, 
+        echo=False,
+        connect_args={
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+            "prepared_statement_name_func": lambda *_: f"__asyncpg_{uuid.uuid4().hex}__",
+        }
+    )
+    
+    # Create tables if not exist
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as db:

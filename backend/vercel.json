@@ -1,3 +1,16 @@
 {
-  "framework": "fastapi"
+  "framework": "fastapi",
+  "buildCommand": "echo 'Skipping frontend build in backend'",
+  "builds": [
+    {
+      "src": "main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "main.py"
+    }
+  ]
 }
