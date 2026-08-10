@@ -202,6 +202,12 @@ export default function SalesCatalogue() {
     { header: 'Barcode', accessor: 'barcode' as const, className: 'font-mono text-xs font-semibold bg-slate-100 px-2 py-1 rounded w-fit' },
     { header: 'Bin Location', accessor: (r: any) => r.bin_location || '-' },
     { header: 'SKU Size', accessor: (r: any) => r.sku_size_category || '-' },
+    { header: 'Available Qty', accessor: (r: any) => (
+        <span className={r.available_quantity > 0 ? "text-emerald-600 font-bold" : "text-slate-400 font-bold"}>
+          {r.available_quantity || 0} PCS
+        </span>
+      )
+    },
     { 
       header: 'Actions', 
       accessor: (row: any) => (
