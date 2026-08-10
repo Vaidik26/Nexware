@@ -7,6 +7,7 @@ import PickItemRow from '../../../components/PickItemRow';
 import { playTickSound } from '../../../lib/alertSound';
 import api from '../../../lib/api';
 import QRCode from 'react-native-qrcode-svg';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 
 export default function JobDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -17,10 +18,12 @@ export default function JobDetailScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [submitError, setSubmitError] = useState('');
-  
   const [scanModalVisible, setScanModalVisible] = useState(false);
+  const [scanMode, setScanMode] = useState<'choice' | 'manual' | 'camera'>('choice');
   const [scanTargetItem, setScanTargetItem] = useState<any>(null);
   const [scanInput, setScanInput] = useState('');
+  const [cameraScanned, setCameraScanned] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
   
   const [showBoxModal, setShowBoxModal] = useState(false);
   const [cartonTypes, setCartonTypes] = useState<any[]>([]);
@@ -86,18 +89,22 @@ export default function JobDetailScreen() {
     }
   };
 
-  const handleItemScanSubmit = () => {
-    if (!scanInput.trim() || !scanTargetItem) return;
-    const barcode = scanInput.trim();
+  const handleItemScanSubmit = (scannedBarcode?: string) => {
+    const rawBarcode = typeof scannedBarcode === 'string' ? scannedBarcode : scanInput;
+    if (!rawBarcode.trim() || !scanTargetItem) return;
+    const barcode = rawBarcode.trim();
     
     if (barcode === scanTargetItem.barcode) {
       toggleItem(scanTargetItem.id);
       setScanModalVisible(false);
       setScanTargetItem(null);
       setScanInput('');
+      setCameraScanned(false);
       playTickSound();
     } else {
-      Alert.alert('Scan Failed', 'The scanned barcode does not match this item.');
+      Alert.alert('Scan Failed', 'The scanned barcode does not match this item.', [
+        { text: 'OK', onPress: () => setCameraScanned(false) }
+      ]);
       setScanInput('');
     }
   };
@@ -224,6 +231,8 @@ export default function JobDetailScreen() {
               onScanStart={() => {
                 setScanTargetItem(item);
                 setScanInput('');
+                setCameraScanned(false);
+                setScanMode('choice');
                 setScanModalVisible(true);
               }} 
               onMissing={() => handleMissing(item.id)}
@@ -406,40 +415,103 @@ export default function JobDetailScreen() {
       <Modal visible={scanModalVisible} transparent animationType="slide">
         <View className="flex-1 bg-black/50 justify-end">
           <View className="bg-white rounded-t-3xl p-6 w-full shadow-xl">
-            <Text className="text-xl font-bold text-onSurface mb-2">Scan Barcode</Text>
-            <Text className="text-sm text-gray-500 mb-4">
-              Please scan the barcode for: <Text className="font-bold text-gray-800">{scanTargetItem?.name}</Text>
+            <Text className="text-xl font-bold text-onSurface mb-2">Verify Item</Text>
+            <Text className="text-sm text-gray-500 mb-6">
+              Item: <Text className="font-bold text-gray-800">{scanTargetItem?.name}</Text>
             </Text>
-            
-            <View className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-6 flex-row items-center">
-              <Scan size={18} color="#6b7280" className="mr-2" />
-              <TextInput
-                className="flex-1 font-inter text-base text-gray-800"
-                placeholder="Scan or enter barcode..."
-                value={scanInput}
-                onChangeText={setScanInput}
-                onSubmitEditing={handleItemScanSubmit}
-                returnKeyType="done"
-                autoFocus
-              />
-            </View>
 
-            <TouchableOpacity
-              className="bg-[#003527] py-4 rounded-xl items-center mb-3"
-              onPress={handleItemScanSubmit}
-            >
-              <Text className="text-white font-bold text-base">Verify Item</Text>
-            </TouchableOpacity>
+            {scanMode === 'choice' && (
+              <View className="gap-3 mb-6">
+                <TouchableOpacity
+                  className="bg-emerald-50 border border-emerald-200 py-4 rounded-xl flex-row justify-center items-center"
+                  onPress={() => setScanMode('camera')}
+                >
+                  <Scan size={20} color="#059669" className="mr-2" />
+                  <Text className="text-emerald-700 font-bold text-base">Scan QR / Barcode</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  className="bg-gray-50 border border-gray-200 py-4 rounded-xl flex-row justify-center items-center"
+                  onPress={() => setScanMode('manual')}
+                >
+                  <Text className="text-gray-700 font-bold text-base">Type Manually</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {scanMode === 'manual' && (
+              <>
+                <View className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-6 flex-row items-center">
+                  <Scan size={18} color="#6b7280" className="mr-2" />
+                  <TextInput
+                    className="flex-1 font-inter text-base text-gray-800"
+                    placeholder="Enter barcode..."
+                    value={scanInput}
+                    onChangeText={setScanInput}
+                    onSubmitEditing={() => handleItemScanSubmit()}
+                    returnKeyType="done"
+                    autoFocus
+                  />
+                </View>
+
+                <TouchableOpacity
+                  className="bg-[#003527] py-4 rounded-xl items-center mb-3"
+                  onPress={() => handleItemScanSubmit()}
+                >
+                  <Text className="text-white font-bold text-base">Verify</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {scanMode === 'camera' && (
+              <View className="mb-6">
+                {!permission ? (
+                  <View className="w-full h-64 bg-gray-900 rounded-2xl items-center justify-center mb-4">
+                    <ActivityIndicator color="white" />
+                  </View>
+                ) : !permission.granted ? (
+                  <View className="w-full h-64 bg-gray-900 rounded-2xl items-center justify-center mb-4 p-4">
+                    <AlertCircle size={32} color="#fca5a5" className="mb-2" />
+                    <Text className="text-white text-center font-bold mb-4">Camera access is required</Text>
+                    <TouchableOpacity className="bg-white px-4 py-2 rounded-xl" onPress={requestPermission}>
+                      <Text className="font-bold text-gray-900">Grant Permission</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View className="w-full h-64 bg-black rounded-2xl overflow-hidden mb-4 relative">
+                    <CameraView
+                      style={{ flex: 1 }}
+                      facing="back"
+                      barcodeScannerSettings={{
+                        barcodeTypes: ["qr", "ean13", "ean8", "pdf417", "aztec", "datamatrix", "code39", "code128", "upc_a", "upc_e"],
+                      }}
+                      onBarcodeScanned={cameraScanned ? undefined : (result) => {
+                        setCameraScanned(true);
+                        setScanInput(result.data);
+                        handleItemScanSubmit(result.data);
+                      }}
+                    />
+                    <View className="absolute inset-0 items-center justify-center pointer-events-none">
+                      <View className="w-48 h-48 border-2 border-[#10b981]/80 rounded-xl" style={{ borderStyle: 'dashed' }} />
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
 
             <TouchableOpacity
               className="py-3 rounded-xl items-center"
               onPress={() => {
-                setScanModalVisible(false);
-                setScanTargetItem(null);
-                setScanInput('');
+                if (scanMode !== 'choice') {
+                  setScanMode('choice');
+                } else {
+                  setScanModalVisible(false);
+                  setScanTargetItem(null);
+                  setScanInput('');
+                }
               }}
             >
-              <Text className="text-gray-500 font-semibold">Cancel</Text>
+              <Text className="text-gray-500 font-semibold">{scanMode === 'choice' ? 'Cancel' : 'Go Back'}</Text>
             </TouchableOpacity>
           </View>
         </View>

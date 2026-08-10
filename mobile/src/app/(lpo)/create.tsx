@@ -67,11 +67,8 @@ export default function LpoCreateScreen() {
     }
     const existing = cart.find(c => c.barcode === item.barcode);
     if (existing) {
-      if (existing.quantity >= item.available_quantity) {
-        Alert.alert('Stock Limit Reached', 'Cannot add more than available quantity.');
-      } else {
-        setCart(cart.map(c => c.barcode === item.barcode ? { ...c, quantity: c.quantity + 1 } : c));
-      }
+      Alert.alert('Already Added', 'This item is already in the LPO. You can adjust its quantity from the list.');
+      return;
     } else {
       setCart([...cart, { barcode: item.barcode, product_name: item.item_name, quantity: 1, available_quantity: item.available_quantity, unit: 'PCS' }]);
     }
@@ -237,8 +234,9 @@ Generated via NexWare Terminal`;
   };
 
   const filteredCatalogue = catalogue.filter(c => 
-    c.item_name.toLowerCase().includes(search.toLowerCase()) || 
-    c.barcode.toLowerCase().includes(search.toLowerCase())
+    !cart.some(cartItem => cartItem.barcode === c.barcode) &&
+    (c.item_name.toLowerCase().includes(search.toLowerCase()) || 
+    c.barcode.toLowerCase().includes(search.toLowerCase()))
   );
 
   return (

@@ -21,9 +21,16 @@ async def get_users(db: AsyncSession = Depends(get_db), current_user: User = Dep
 @router.post("/", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def create_user(user_data: UserCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_admin)):
     # Check duplicate email
-    result = await db.execute(select(User).filter(User.email.ilike(user_data.email.strip())))
-    if result.scalars().first():
-        raise HTTPException(status_code=400, detail="User with this email already exists")
+    if user_data.email:
+        result = await db.execute(select(User).filter(User.email.ilike(user_data.email.strip())))
+        if result.scalars().first():
+            raise HTTPException(status_code=400, detail="User with this email already exists")
+
+    # Check duplicate full_name (used as username in login)
+    if user_data.full_name:
+        result_name = await db.execute(select(User).filter(User.full_name.ilike(user_data.full_name.strip())))
+        if result_name.scalars().first():
+            raise HTTPException(status_code=400, detail="User with this Full Name (Username) already exists")
 
     new_user = User(
         email=user_data.email.strip(),
@@ -52,8 +59,14 @@ async def update_user(user_id: int, user_data: UserUpdate, db: AsyncSession = De
             raise HTTPException(status_code=400, detail="User with this email already exists")
         user.email = user_data.email.strip()
         
-    if user_data.full_name is not None:
-        user.full_name = user_data.full_name
+    if user_data.full_name and user_data.full_name.strip() != user.full_name:
+        # Check duplicate full_name
+        dup_name_check = await db.execute(select(User).filter(User.full_name.ilike(user_data.full_name.strip())))
+        if dup_name_check.scalars().first():
+            raise HTTPException(status_code=400, detail="User with this Full Name (Username) already exists")
+        user.full_name = user_data.full_name.strip()
+        
+
         
     if user_data.role is not None:
         user.role = user_data.role

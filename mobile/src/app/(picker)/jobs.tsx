@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { View, Text, FlatList, RefreshControl, TouchableOpacity, TextInput } from 'react-native';
 import api from '../../lib/api';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -53,12 +54,14 @@ export default function JobsScreen() {
     }
   };
 
-  useEffect(() => {
-    fetchAssignedJobs();
-    // Poll every 30 seconds for real-time job updates
-    const interval = setInterval(fetchAssignedJobs, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchAssignedJobs();
+      // Poll every 30 seconds for real-time job updates
+      const interval = setInterval(fetchAssignedJobs, 30000);
+      return () => clearInterval(interval);
+    }, [])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

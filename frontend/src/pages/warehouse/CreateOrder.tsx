@@ -235,7 +235,7 @@ export default function CreateOrder() {
                       <tr className="hover:bg-slate-50 transition-colors">
                         <td className="py-4 px-6 relative">
                           <ItemSelect 
-                            catalogue={catalogue} 
+                            catalogue={catalogue.filter(c => !orderRows.some(r => r.id !== row.id && r.catItem?.barcode === c.barcode))} 
                             selectedItem={row.catItem}
                             onSelect={(item) => selectRowItem(row.id, item)}
                           />
