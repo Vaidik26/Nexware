@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Modal, ActivityIndicator, TextInput, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, CheckCircle, CheckCircle2, Box, Scan } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle, CheckCircle2, Box, Scan, AlertCircle } from 'lucide-react-native';
 import PickItemRow from '../../../components/PickItemRow';
 import api from '../../../lib/api';
+import QRCode from 'react-native-qrcode-svg';
 
 export default function JobDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -22,6 +23,9 @@ export default function JobDetailScreen() {
   const [selectedCartonType, setSelectedCartonType] = useState<number | null>(null);
   const [boxWeight, setBoxWeight] = useState('');
   const [isBoxing, setIsBoxing] = useState(false);
+  
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [generatedQRData, setGeneratedQRData] = useState<any>(null);
 
   useEffect(() => {
     const fetchPicklistDetails = async () => {
@@ -137,20 +141,30 @@ export default function JobDetailScreen() {
 
     setIsBoxing(true);
     try {
-      await api.post(`/picklists/${id}/boxes`, {
+      const res = await api.post(`/picklists/${id}/boxes`, {
         carton_type_id: selectedCartonType,
         item_ids: looseItemIds,
-        measured_weight: parseFloat(boxWeight)
+        entered_weight: parseFloat(boxWeight)
       });
       
       // Update local state to mark them as boxed
-      setItems(prev => prev.map(i => looseItemIds.includes(parseInt(i.id)) ? { ...i, box_id: 1 } : i));
+      setItems(prev => prev.map(i => looseItemIds.includes(parseInt(i.id)) ? { ...i, box_id: res.data.id } : i));
       setShowBoxModal(false);
       setSelectedCartonType(null);
       setBoxWeight('');
-      Alert.alert('Success', 'Box created successfully');
+      
+      // Generate dummy QR details for demo
+      const qrPayload = JSON.stringify({
+        box_id: `BOX-${res.data.id}`,
+        job: jobLabel,
+        items: looseItemIds.length,
+        weight: `${parseFloat(boxWeight).toFixed(2)}kg`
+      });
+      setGeneratedQRData(qrPayload);
+      setShowQRModal(true);
+      
     } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.detail || 'Failed to create box');
+      Alert.alert('Weight Validation Error', err.response?.data?.detail || 'Failed to create box');
     } finally {
       setIsBoxing(false);
     }
@@ -348,6 +362,48 @@ export default function JobDetailScreen() {
               onPress={() => setShowBoxModal(false)}
             >
               <Text className="text-gray-500 font-semibold">Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* QR Code Demo Modal */}
+      <Modal visible={showQRModal} transparent animationType="fade">
+        <View className="flex-1 bg-black/60 items-center justify-center px-6">
+          <View className="bg-white rounded-3xl p-8 w-full shadow-2xl items-center border border-gray-100">
+            <View className="w-16 h-16 rounded-full bg-emerald-50 mb-4 items-center justify-center">
+              <CheckCircle2 size={32} color="#10b981" />
+            </View>
+            <Text className="text-xl font-extrabold text-onSurface mb-2 font-inter text-center">
+              Carton Label Generated
+            </Text>
+            <Text className="text-sm text-gray-500 font-inter text-center mb-6">
+              Weight successfully verified. Print this label and apply it to the carton.
+            </Text>
+            
+            <View className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6">
+              {generatedQRData && (
+                <QRCode
+                  value={generatedQRData}
+                  size={180}
+                  color="black"
+                  backgroundColor="white"
+                />
+              )}
+            </View>
+
+            <View className="w-full bg-gray-50 p-4 rounded-xl mb-6">
+              <Text className="text-xs text-gray-500 font-inter text-center mb-1">DATA PAYLOAD</Text>
+              <Text className="text-xs font-mono text-gray-700 text-center">
+                {generatedQRData}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              className="bg-[#003527] w-full py-4 rounded-2xl items-center"
+              onPress={() => setShowQRModal(false)}
+            >
+              <Text className="text-white font-bold text-base font-inter">Done</Text>
             </TouchableOpacity>
           </View>
         </View>

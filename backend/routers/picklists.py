@@ -27,7 +27,7 @@ class DirectAssignRequest(BaseModel):
     items: List[DirectAssignItem]
 
 from backend.models.user import User, Notification
-from backend.models.catalogue import SalesItem
+from backend.models.catalogue import SalesItem, CartonType
 from backend.schemas.picklist import PickListOut, PickListBoxCreate, PickListBoxOut
 from backend.dependencies import get_current_user, get_current_admin, get_current_picker
 from backend.config import settings
@@ -458,6 +458,40 @@ async def create_box(
     if not pl:
         raise HTTPException(status_code=404, detail="Pick list not found")
         
+    # Weight tolerance validation
+    carton_res = await db.execute(select(CartonType).filter(CartonType.id == payload.carton_type_id))
+    carton = carton_res.scalars().first()
+    if not carton:
+        raise HTTPException(status_code=400, detail="Carton type not found")
+        
+    items_res = await db.execute(
+        select(PickListItem).filter(
+            PickListItem.id.in_(payload.item_ids),
+            PickListItem.pick_list_id == picklist_id
+        )
+    )
+    items = items_res.scalars().all()
+    if not items:
+        raise HTTPException(status_code=400, detail="No valid items to box")
+        
+    barcodes = [item.barcode for item in items]
+    cat_items_res = await db.execute(select(SalesItem).filter(SalesItem.barcode.in_(barcodes)))
+    cat_items = cat_items_res.scalars().all()
+    cat_map = {ci.barcode: ci for ci in cat_items}
+    
+    expected_weight = carton.tare_weight
+    for item in items:
+        ci = cat_map.get(item.barcode)
+        if ci:
+            expected_weight += (ci.packaging_weight * item.quantity)
+            
+    # Allow a 5% tolerance
+    lower_bound = expected_weight * 0.95
+    upper_bound = expected_weight * 1.05
+    
+    if payload.entered_weight < lower_bound or payload.entered_weight > upper_bound:
+        raise HTTPException(status_code=400, detail=f"Weight validation failed. Expected ~{expected_weight:.2f}kg, but got {payload.entered_weight:.2f}kg. Please reweigh and check missing items.")
+        
     box = PickListBox(
         pick_list_id=picklist_id,
         carton_type_id=payload.carton_type_id,
@@ -466,14 +500,6 @@ async def create_box(
     db.add(box)
     await db.flush()
     
-    # assign items to box
-    items_res = await db.execute(
-        select(PickListItem).filter(
-            PickListItem.id.in_(payload.item_ids),
-            PickListItem.pick_list_id == picklist_id
-        )
-    )
-    items = items_res.scalars().all()
     for item in items:
         item.box_id = box.id
         item.is_full_carton = False # boxed items are loose items
@@ -591,6 +617,10 @@ async def verify_picklist(
         raise HTTPException(status_code=404, detail="Pick list not found")
     if pl.status not in ("waiting_verification", "picking", "assigned"):
         raise HTTPException(status_code=400, detail="Pick list is not in an active operational state")
+        
+    unresolved_missing = [item for item in pl.items if item.missing_reported and item.missing_approved is None]
+    if unresolved_missing:
+        raise HTTPException(status_code=400, detail="Please approve or reject all missing items before verifying this order.")
 
     pl.status = "verified"
 

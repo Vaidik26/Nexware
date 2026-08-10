@@ -162,6 +162,20 @@ export default function PickLists() {
     }
   };
 
+  const handleResolveMissing = async (itemId: number, approve: boolean) => {
+    if (!selectedAuditList) return;
+    try {
+      await api.patch(`/picklists/${selectedAuditList.id}/items/${itemId}/approve-missing?approved=${approve}`);
+      toast.success(approve ? 'Missing item loss approved' : 'Missing item rejected (Returned to active)');
+      
+      const freshRes = await api.get(`/picklists/${selectedAuditList.id}`);
+      setSelectedAuditList(freshRes.data || selectedAuditList);
+      setPickLists(prev => prev.map((p) => p.id === freshRes.data?.id ? freshRes.data : p));
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'Failed to resolve missing item'));
+    }
+  };
+
   const handleApproveAudit = async () => {
     if (!selectedAuditList) return;
     try {
@@ -470,33 +484,59 @@ export default function PickLists() {
                 </div>
 
                 <div className="border border-outline-variant rounded-2xl overflow-hidden divide-y divide-outline-variant bg-white shadow-xs">
-                  {(selectedAuditList?.items || []).map((item: any) => (
-                    <div 
-                      key={item.id} 
-                      onClick={() => handleToggleItemPick(item.id)}
-                      className={`p-3.5 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
-                        item.is_picked ? 'bg-white hover:bg-emerald-50/40' : 'bg-rose-50/60 hover:bg-rose-100/60'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${
-                          item.is_picked ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-300 text-transparent'
-                        }`}>
-                          <Check className="w-4 h-4 stroke-[3]" />
+                  {(selectedAuditList?.items || []).map((item: any) => {
+                    const isMissingReported = item.missing_reported && item.missing_approved === null;
+                    const isMissingApproved = item.missing_approved === true;
+
+                    return (
+                      <div 
+                        key={item.id} 
+                        onClick={() => {
+                          if (!isMissingReported && !isMissingApproved) handleToggleItemPick(item.id)
+                        }}
+                        className={`p-3.5 flex items-center justify-between gap-3 transition-colors ${
+                          isMissingReported ? 'bg-amber-50 hover:bg-amber-100/60' :
+                          isMissingApproved ? 'bg-slate-50' :
+                          item.is_picked ? 'bg-white hover:bg-emerald-50/40 cursor-pointer' : 'bg-rose-50/60 hover:bg-rose-100/60 cursor-pointer'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${
+                            isMissingReported ? 'bg-amber-500 border-amber-500 text-white' :
+                            isMissingApproved ? 'bg-slate-300 border-slate-300 text-white' :
+                            item.is_picked ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-300 text-transparent'
+                          }`}>
+                            {isMissingReported ? <AlertCircle className="w-4 h-4 stroke-[3]" /> : <Check className="w-4 h-4 stroke-[3]" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className={`font-bold text-sm truncate ${isMissingApproved ? 'text-slate-400 line-through' : 'text-on-surface'}`}>{item.product_name || `Item SKU #${item.id}`}</div>
+                            <div className="text-xs text-on-surface-variant font-mono mt-0.5">Barcode: {item.barcode || 'N/A'}</div>
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-bold text-sm text-on-surface truncate">{item.product_name || `Item SKU #${item.id}`}</div>
-                          <div className="text-xs text-on-surface-variant font-mono mt-0.5">Barcode: {item.barcode || 'N/A'}</div>
-                        </div>
+                        
+                        {isMissingReported ? (
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" onClick={(e) => { e.stopPropagation(); handleResolveMissing(item.id, false); }} className="bg-rose-100 text-rose-700 hover:bg-rose-200 text-xs py-1 px-2 h-7">
+                              Reject
+                            </Button>
+                            <Button size="sm" onClick={(e) => { e.stopPropagation(); handleResolveMissing(item.id, true); }} className="bg-emerald-600 text-white hover:bg-emerald-700 text-xs py-1 px-2 h-7">
+                              Approve Loss
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="text-right">
+                            <div className={`font-extrabold text-sm ${isMissingApproved ? 'text-slate-400' : 'text-on-surface'}`}>{item.quantity || 1} {item.unit || 'Units'}</div>
+                            <div className={`text-[10px] font-bold uppercase mt-0.5 ${
+                              isMissingApproved ? 'text-slate-500' :
+                              item.is_picked ? 'text-emerald-700' : 'text-rose-600'
+                            }`}>
+                              {isMissingApproved ? 'Lost (Approved)' : item.is_picked ? 'Verified Picked' : 'Unchecked / Missing'}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div className="text-right">
-                        <div className="font-extrabold text-sm text-on-surface">{item.quantity_requested || 1} {item.unit || 'Units'}</div>
-                        <div className={`text-[10px] font-bold uppercase mt-0.5 ${item.is_picked ? 'text-emerald-700' : 'text-rose-600'}`}>
-                          {item.is_picked ? 'Verified Picked' : 'Unchecked / Missing'}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {(selectedAuditList?.items || []).length === 0 && (
                     <div className="p-6 text-center text-slate-400 text-sm italic">
                       No line items found in this order record.
