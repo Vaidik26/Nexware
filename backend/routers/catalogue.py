@@ -76,6 +76,11 @@ async def update_item(item_id: int, item: SalesItemCreate, db: AsyncSession = De
     db_item.item_name = item.item_name
     db_item.barcode = item.barcode
     db_item.unit = item.unit
+    db_item.bin_location = item.bin_location
+    db_item.standard_carton_quantity = item.standard_carton_quantity
+    db_item.packaging_weight = item.packaging_weight
+    db_item.sku_size_category = item.sku_size_category
+    db_item.available_quantity = item.available_quantity
     
     # Real-time reflection: propagate changes to active pick list records on the floor
     linked_records = await db.execute(select(PickListItem).filter(PickListItem.barcode == old_barcode))

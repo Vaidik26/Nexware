@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FileUpload } from '@/components/ui/FileUpload';
 import { Button } from '@/components/ui/Button';
@@ -36,6 +36,7 @@ export default function OrderUpload() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [assigningId, setAssigningId] = useState<number | null>(null);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<{barcode: string, error: string}[]>([]);
   const navigate = useNavigate();
 
   // Load Sales Catalogue & Active Pickers on mount
@@ -298,6 +299,7 @@ export default function OrderUpload() {
   const handleProcessAnother = () => {
     setResults(null);
     setProgress(0);
+    setValidationErrors([]);
   };
 
   // Assign ONLY verified catalogue items to selected picker staff directly from memory!
@@ -332,7 +334,13 @@ export default function OrderUpload() {
       setIsAssignModalOpen(false);
       navigate('/warehouse/picklists');
     } catch (err: any) {
-      toast.error(getErrorMessage(err, 'Could not assign picklist to selected operational staff'));
+      if (err.response?.status === 400 && err.response?.data?.detail?.errors) {
+        setValidationErrors(err.response.data.detail.errors);
+        toast.error(err.response.data.detail.message || 'Inventory validation failed. Please review errors on the items.');
+        setIsAssignModalOpen(false);
+      } else {
+        toast.error(getErrorMessage(err, 'Could not assign picklist to selected operational staff'));
+      }
     } finally {
       setIsProcessing(false);
       setAssigningId(null);
@@ -441,20 +449,32 @@ export default function OrderUpload() {
                   </thead>
                   <tbody className="divide-y divide-outline-variant/60">
                     {results.items.filter(i => i.inCatalogue).map((item, idx) => (
-                      <tr key={item.si} className="hover:bg-emerald-50/40 transition-colors">
-                        <td className="py-4 px-4 font-black text-slate-500 text-center">{idx + 1}</td>
-                        <td className="py-4 px-4 font-mono font-black text-emerald-800 text-base">{item.barcode}</td>
-                        <td className="py-4 px-4 font-bold text-on-surface">
-                          <div>{item.itemName}</div>
-                          <div className="text-xs text-emerald-600/80 font-bold">{item.itemNumber}</div>
-                        </td>
-                        <td className="py-4 px-4 text-center">
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 text-xs font-black border border-emerald-500/30">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Verified SKU
-                          </span>
-                        </td>
-                        <td className="py-4 px-4 text-right font-black text-slate-900 text-lg">{item.quantity || 1}</td>
-                      </tr>
+                      <React.Fragment key={item.si}>
+                        <tr className="hover:bg-emerald-50/40 transition-colors">
+                          <td className="py-4 px-4 font-black text-slate-500 text-center">{idx + 1}</td>
+                          <td className="py-4 px-4 font-mono font-black text-emerald-800 text-base">{item.barcode}</td>
+                          <td className="py-4 px-4 font-bold text-on-surface">
+                            <div>{item.itemName}</div>
+                            <div className="text-xs text-emerald-600/80 font-bold">{item.itemNumber}</div>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 text-xs font-black border border-emerald-500/30">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Verified SKU
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-right font-black text-slate-900 text-lg">{item.quantity || 1}</td>
+                        </tr>
+                        {validationErrors.find(e => e.barcode === item.barcode) && (
+                          <tr className="bg-rose-50/50">
+                            <td colSpan={5} className="py-3 px-4 border-l-4 border-rose-500">
+                              <div className="flex items-center gap-2 text-rose-700 text-sm font-bold">
+                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                {validationErrors.find(e => e.barcode === item.barcode)?.error}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     ))}
                     {results.items.filter(i => i.inCatalogue).length === 0 && (
                       <tr>

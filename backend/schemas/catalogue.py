@@ -10,6 +10,7 @@ class SalesItemBase(BaseModel):
     standard_carton_quantity: int = 1
     packaging_weight: float = 0.0
     sku_size_category: str = ">100g"
+    available_quantity: int = 0
 
 class CartonTypeBase(BaseModel):
     name: str

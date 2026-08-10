@@ -164,12 +164,28 @@ async def generate_picklist(
             "product_name": cat_item.item_name if cat_item else item.get("product_name", "Item"),
             "quantity": item.get("quantity", 1),
             "unit": item.get("uom", "EA"),
+            "available_quantity": cat_item.available_quantity if cat_item else 0
         })
 
     if not matched_items:
         raise HTTPException(
             status_code=400,
-            detail="Order contains no items to pick.",
+            detail={"message": "Order contains no items to pick.", "errors": []}
+        )
+        
+    validation_errors = []
+    for mi in matched_items:
+        req_qty = mi["quantity"]
+        avail_qty = mi["available_quantity"]
+        if avail_qty == 0:
+            validation_errors.append({"barcode": mi["barcode"], "error": "Item is out of stock. Please restock in the Sales Catalogue or remove it from the order."})
+        elif req_qty > avail_qty:
+            validation_errors.append({"barcode": mi["barcode"], "error": f"Only {avail_qty} units available in stock. Please adjust the requested quantity."})
+            
+    if validation_errors:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Inventory validation failed", "errors": validation_errors}
         )
 
     db_picklist = PickList(
@@ -297,6 +313,24 @@ async def direct_assign_picklist(
     cat_res = await db.execute(select(SalesItem).filter(SalesItem.barcode.in_(all_barcodes)))
     cat_map = {ci.barcode: ci for ci in cat_res.scalars().all()}
 
+    validation_errors = []
+    for item in payload.items:
+        bc = item.barcode or "N/A"
+        req_qty = item.quantity or 1
+        cat_item = cat_map.get(bc)
+        avail_qty = cat_item.available_quantity if cat_item else 0
+        
+        if avail_qty == 0:
+            validation_errors.append({"barcode": bc, "error": "Item is out of stock. Please restock in the Sales Catalogue or remove it from the order."})
+        elif req_qty > avail_qty:
+            validation_errors.append({"barcode": bc, "error": f"Only {avail_qty} units available in stock. Please adjust the requested quantity."})
+
+    if validation_errors:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Inventory validation failed", "errors": validation_errors}
+        )
+
     verified_count = 0
     for item in payload.items:
         bc = item.barcode or "N/A"
@@ -315,7 +349,7 @@ async def direct_assign_picklist(
         await db.rollback()
         raise HTTPException(
             status_code=400,
-            detail="Cannot assign pick list: No items attached to order."
+            detail={"message": "Cannot assign pick list: No items attached to order.", "errors": []}
         )
 
     assignment = PickAssignment(pick_list_id=db_picklist.id, picker_id=picker_id)
@@ -575,6 +609,15 @@ async def verify_picklist(
                     (Notification.message.ilike(f"%{pl.order_number}%"))
                 )
             )
+
+    # Deduct verified quantities from inventory
+    # Sum up the verified picked items (where is_picked is true, and it wasn't a rejected missing item)
+    for item in pl.items:
+        if item.is_picked and not item.missing_approved:
+            cat_res = await db.execute(select(SalesItem).filter(SalesItem.barcode == item.barcode))
+            cat_item = cat_res.scalars().first()
+            if cat_item:
+                cat_item.available_quantity = max(0, cat_item.available_quantity - item.quantity)
 
     if pl.sales_order_id:
         order_res = await db.execute(select(SalesOrder).filter(SalesOrder.id == pl.sales_order_id))
