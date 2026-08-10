@@ -44,7 +44,7 @@ export default function LoginScreen() {
       await setPickerInfo(JSON.stringify(user));
       setPicker(user);
       setAuthenticated(true);
-      router.replace('/(picker)');
+      // Navigation is handled by _layout.tsx based on authentication and role
     } catch (err: any) {
       if (err.message && err.message.includes('Network Error')) {
         setError('Cannot connect to NexWare server. Please check network connection.');

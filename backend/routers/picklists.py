@@ -376,6 +376,118 @@ async def direct_assign_picklist(
 
     return {"message": "Pick list generated and assigned to staff directly", "picklist_id": db_picklist.id, "job_label": job_label}
 
+@router.post("/direct-assign-auto")
+async def direct_assign_auto(
+    payload: DirectAssignRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Creates picklist directly and auto-assigns to the first available picker (round-robin style)."""
+    from sqlalchemy import func as sqlfunc
+    
+    # Find all available pickers
+    users_res = await db.execute(
+        select(User).filter(User.role == "picker", User.is_active == True, User.is_available == True)
+    )
+    pickers = users_res.scalars().all()
+    if not pickers:
+        raise HTTPException(status_code=400, detail="No available pickers right now. Please try again later.")
+        
+    # Simple round robin: pick the one with the fewest active jobs (or just first for now)
+    # Since they only get one job at a time usually, we just take the first available.
+    picker = pickers[0]
+
+    # Compute picker-specific job sequence
+    active_statuses = ["assigned", "picking", "waiting_verification"]
+    max_res = await db.execute(
+        select(sqlfunc.max(PickList.picker_job_number))
+        .join(PickAssignment, PickAssignment.pick_list_id == PickList.id)
+        .filter(
+            PickAssignment.picker_id == picker.id,
+            PickList.status.in_(active_statuses)
+        )
+    )
+    current_max = max_res.scalar() or 0
+    next_job_number = current_max + 1
+
+    db_picklist = PickList(
+        order_number=payload.order_number,
+        customer_name=payload.customer_name,
+        sales_order_id=None,
+        status="assigned",
+        picker_job_number=next_job_number,
+    )
+    db.add(db_picklist)
+    await db.flush()
+
+    # Bulk fetch all matching catalogue items
+    all_barcodes = [item.barcode or "N/A" for item in payload.items]
+    cat_res = await db.execute(select(SalesItem).filter(SalesItem.barcode.in_(all_barcodes)))
+    cat_map = {ci.barcode: ci for ci in cat_res.scalars().all()}
+
+    validation_errors = []
+    for item in payload.items:
+        bc = item.barcode or "N/A"
+        req_qty = item.quantity or 1
+        cat_item = cat_map.get(bc)
+        avail_qty = cat_item.available_quantity if cat_item else 0
+        
+        if avail_qty == 0:
+            validation_errors.append({"barcode": bc, "error": "Item is out of stock."})
+        elif req_qty > avail_qty:
+            validation_errors.append({"barcode": bc, "error": f"Only {avail_qty} units available."})
+
+    if validation_errors:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Inventory validation failed", "errors": validation_errors}
+        )
+
+    verified_count = 0
+    for item in payload.items:
+        bc = item.barcode or "N/A"
+        cat_item = cat_map.get(bc)
+
+        db.add(PickListItem(
+            pick_list_id=db_picklist.id,
+            barcode=bc,
+            product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
+            quantity=item.quantity or 1,
+            unit=item.unit or "EA",
+        ))
+        verified_count += 1
+
+    if verified_count == 0:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Cannot assign pick list: No items attached.", "errors": []}
+        )
+
+    assignment = PickAssignment(pick_list_id=db_picklist.id, picker_id=picker.id)
+    db.add(assignment)
+    picker.is_available = False
+
+    job_label = f"P-{str(next_job_number).zfill(3)}"
+    db.add(Notification(
+        user_id=picker.id,
+        type="pick_assignment",
+        title=f"New Job Assigned: {job_label}",
+        message=f"Job {job_label} (Order #{db_picklist.order_number}) has been routed to your terminal.",
+    ))
+
+    await db.commit()
+    await db.refresh(db_picklist)
+
+    trigger_push(
+        picker.push_token,
+        f"New Job Assigned: {job_label}",
+        f"Job {job_label} — Order #{db_picklist.order_number} assigned to your terminal.",
+        background_tasks=background_tasks,
+    )
+
+    return {"message": "Auto-assigned to picker successfully", "picklist_id": db_picklist.id, "job_label": job_label, "picker_name": picker.full_name}
 
 # ---------- Picking (Mobile) ----------
 

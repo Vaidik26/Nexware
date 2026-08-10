@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LogOut, Plus, Trash2, QrCode, Share, CheckCircle2, Search } from 'lucide-react-native';
+import { LogOut, Plus, Trash2, QrCode, Share, Search } from 'lucide-react-native';
 import { useAuthStore } from '../../store/authStore';
 import api from '../../lib/api';
-import QRCode from 'react-native-qrcode-svg';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
@@ -32,11 +31,7 @@ export default function LpoCreateScreen() {
   const [cart, setCart] = useState<CartItem[]>([]);
   
   const [showItemModal, setShowItemModal] = useState(false);
-  const [showQRModal, setShowQRModal] = useState(false);
-  const [lpoPayload, setLpoPayload] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  
-  const qrRef = useRef<any>(null);
 
   const generateAutoLpoNumber = () => {
     const d = new Date();
@@ -119,7 +114,7 @@ export default function LpoCreateScreen() {
     setCart(cart.filter(c => c.barcode !== barcode));
   };
 
-  const generateLPO = () => {
+  const generateLPO = async () => {
     if (!customerName.trim() || !orderNumber.trim()) {
       Alert.alert('Validation Error', 'Please enter a customer name and LPO number.');
       return;
@@ -129,136 +124,115 @@ export default function LpoCreateScreen() {
       return;
     }
     
-    const payloadObj = {
-      type: "LPO",
-      order: orderNumber.trim(),
-      customer: customerName.trim(),
-      items: cart.map(c => ({ b: c.barcode, q: c.quantity, u: c.unit }))
-    };
-    
-    setLpoPayload(JSON.stringify(payloadObj));
-    setShowQRModal(true);
-  };
-
-  const handleDone = () => {
-    setShowQRModal(false);
-    setCart([]);
-    setCustomerName('');
-    setOrderNumber(generateAutoLpoNumber());
-  };
-
-  const handleShare = async () => {
-    if (!qrRef.current) return;
-    
     try {
       setIsGenerating(true);
-      
-      qrRef.current.toDataURL(async (dataURL: string) => {
-        const qrImageSrc = `data:image/png;base64,${dataURL}`;
-        
-        const d = new Date();
-        const dateStr = `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
-        
-        let tableRows = cart.map((item, index) => `
-          <tr>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: center;">${index + 1}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd; font-family: monospace;">${item.barcode}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd;">${item.product_name}</td>
-            <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: center;">${item.quantity} ${item.unit}</td>
-          </tr>
-        `).join('');
-
-        const htmlContent = `
-          <html>
-            <head>
-              <style>
-                body { font-family: 'Helvetica', 'Arial', sans-serif; padding: 40px; color: #333; }
-                .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #003527; padding-bottom: 20px; margin-bottom: 30px; }
-                .logo-area { display: flex; align-items: center; }
-                .logo-box { width: 60px; height: 60px; background-color: #003527; color: white; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; margin-right: 15px; border-radius: 8px; }
-                .brand-title { color: #003527; margin: 0; font-size: 28px; text-transform: uppercase; letter-spacing: 2px; }
-                .brand-sub { color: #666; margin: 5px 0 0 0; font-size: 14px; }
-                .qr-area { text-align: right; }
-                .qr-img { width: 120px; height: 120px; border: 1px solid #eee; padding: 5px; border-radius: 8px; }
-                .doc-title { text-align: center; font-size: 24px; margin: 20px 0; text-transform: uppercase; letter-spacing: 4px; color: #333; }
-                .info-section { display: flex; justify-content: space-between; margin-bottom: 30px; background: #f9f9f9; padding: 20px; border-radius: 8px; }
-                .info-block h4 { margin: 0 0 5px 0; color: #666; font-size: 12px; text-transform: uppercase; }
-                .info-block p { margin: 0; font-size: 16px; font-weight: bold; color: #111; }
-                table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-                th { background-color: #003527; color: white; padding: 12px 10px; text-align: left; font-size: 14px; text-transform: uppercase; }
-                th.center { text-align: center; }
-                .footer { text-align: center; margin-top: 50px; font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 20px; }
-              </style>
-            </head>
-            <body>
-              <div class="header">
-                <div class="logo-area">
-                  <div class="logo-box">NG</div>
-                  <div>
-                    <h1 class="brand-title">Noor Ghazal</h1>
-                    <p class="brand-sub">General Trading LLC</p>
-                  </div>
-                </div>
-                <div class="qr-area">
-                  <img src="${qrImageSrc}" class="qr-img" />
-                  <div style="font-size: 10px; color: #666; margin-top: 5px;">Scan to Import Order</div>
-                </div>
-              </div>
-              
-              <div class="doc-title">Local Purchase Order</div>
-              
-              <div class="info-section">
-                <div class="info-block">
-                  <h4>Customer Name</h4>
-                  <p>${customerName}</p>
-                </div>
-                <div class="info-block" style="text-align: right;">
-                  <h4>LPO Reference</h4>
-                  <p>${orderNumber}</p>
-                  <h4 style="margin-top: 10px;">Date</h4>
-                  <p>${dateStr}</p>
-                </div>
-              </div>
-              
-              <table>
-                <thead>
-                  <tr>
-                    <th class="center" style="width: 50px;">#</th>
-                    <th style="width: 150px;">SKU / Barcode</th>
-                    <th>Description</th>
-                    <th class="center" style="width: 100px;">Quantity</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${tableRows}
-                </tbody>
-              </table>
-              
-              <div class="footer">
-                <p>This is a system-generated document. For internal processing via NexWare WMS.</p>
-                <p>Generated by: ${picker?.full_name || 'Authorized Personnel'}</p>
-              </div>
-            </body>
-          </html>
-        `;
-
-        const { uri } = await Print.printToFileAsync({ html: htmlContent });
-        
-        const isAvailable = await Sharing.isAvailableAsync();
-        if (isAvailable) {
-          await Sharing.shareAsync(uri, {
-            dialogTitle: `Share LPO ${orderNumber}`,
-            mimeType: 'application/pdf',
-          });
-        } else {
-          Alert.alert('Error', 'Sharing is not available on this device');
-        }
+      const res = await api.post('/picklists/direct-assign-auto', {
+        order_number: orderNumber.trim(),
+        customer_name: customerName.trim(),
+        items: cart.map(c => ({
+          barcode: c.barcode,
+          quantity: c.quantity,
+          unit: c.unit,
+          product_name: c.product_name
+        }))
       });
       
-    } catch (err) {
-      Alert.alert('Error', 'Failed to generate or share the LPO document.');
+      const lpoData = res.data;
+      
+      await generateAndSharePDF(lpoData);
+      
+      setCart([]);
+      setCustomerName('');
+      setOrderNumber(generateAutoLpoNumber());
+      
+      Alert.alert('Success', `LPO ${orderNumber} assigned to ${lpoData.picker_name || 'a picker'}.`);
+      
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.detail?.message || err.response?.data?.detail || 'Failed to generate and assign LPO.');
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const generateAndSharePDF = async (lpoData: any) => {
+    try {
+      const d = new Date();
+      const dateStr = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      
+      const padR = (str: string, len: number) => (str.length > len ? str.substring(0, len) : str + ' '.repeat(len - str.length));
+      const padL = (str: string, len: number) => (str.length > len ? str.substring(0, len) : ' '.repeat(len - str.length) + str);
+
+      const W = 48;
+      const divider = '-'.repeat(W);
+      const thickDivider = '='.repeat(W);
+
+      let itemsText = '';
+      cart.forEach((item, index) => {
+          const nameLine = `${index + 1}. ${item.product_name}`;
+          itemsText += padR(nameLine, W) + '\n';
+          
+          const bcStr = `   BC: ${item.barcode}`;
+          const qtyStr = `${item.quantity} ${item.unit}`;
+          itemsText += padR(bcStr, W - qtyStr.length - 1) + ' ' + padL(qtyStr, qtyStr.length) + '\n\n';
+      });
+
+      const receiptContent = `NOOR GHAZAL GENERAL TRADING LLC
+Dubai, UAE
+
+${thickDivider}
+LOCAL PURCHASE ORDER
+${divider}
+LPO Ref   : ${orderNumber}
+Date/Time : ${dateStr}
+Customer  : ${customerName}
+Assigned  : ${lpoData.picker_name || 'Auto'} (${lpoData.job_label || '-'})
+${thickDivider}
+ITEMS
+${divider}
+${itemsText}${thickDivider}
+Total Lines: ${cart.length}
+Total Qty  : ${cart.reduce((sum, item) => sum + item.quantity, 0)}
+${divider}
+
+* INTERNAL DOCUMENT *
+Generated via NexWare Terminal`;
+
+      const htmlContent = `
+        <html>
+          <head>
+            <style>
+              @page { margin: 10mm 5mm; }
+              body { 
+                font-family: 'Courier New', Courier, monospace; 
+                font-size: 14px; 
+                white-space: pre-wrap; 
+                word-wrap: break-word;
+                margin: 0;
+                padding: 10px;
+                line-height: 1.2;
+                max-width: 400px;
+                background-color: #fff;
+                color: #000;
+              }
+            </style>
+          </head>
+          <body>${receiptContent.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</body>
+        </html>
+      `;
+
+      const { uri } = await Print.printToFileAsync({ html: htmlContent });
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (isAvailable) {
+        await Sharing.shareAsync(uri, {
+          dialogTitle: `Share LPO ${orderNumber}`,
+          mimeType: 'application/pdf',
+        });
+      } else {
+        Alert.alert('Error', 'Sharing is not available on this device');
+      }
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Error', 'Failed to generate PDF.');
     }
   };
 
@@ -362,9 +336,16 @@ export default function LpoCreateScreen() {
         <TouchableOpacity
           className="bg-[#003527] py-4 rounded-2xl flex-row items-center justify-center shadow-md"
           onPress={generateLPO}
+          disabled={isGenerating}
         >
-          <QrCode size={20} color="white" />
-          <Text className="text-white font-black ml-2 text-base font-inter uppercase tracking-widest">Generate LPO</Text>
+          {isGenerating ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <>
+              <QrCode size={20} color="white" />
+              <Text className="text-white font-black ml-2 text-base font-inter uppercase tracking-widest">Generate LPO & Print</Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -412,72 +393,7 @@ export default function LpoCreateScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* QR Code & Share Modal */}
-      <Modal visible={showQRModal} transparent animationType="fade">
-        <View className="flex-1 bg-black/80 items-center justify-center px-4">
-          <View className="bg-white rounded-3xl overflow-hidden w-full max-w-sm">
-            <View className="bg-white p-6 items-center">
-              <View className="w-16 h-16 rounded-full bg-emerald-100 mb-4 items-center justify-center border-4 border-white shadow-sm">
-                <CheckCircle2 size={32} color="#059669" />
-              </View>
-              <Text className="text-xl font-black text-gray-800 text-center uppercase tracking-wider">
-                LPO Generated
-              </Text>
-              <Text className="text-sm font-bold text-primary text-center mb-6 mt-1">{orderNumber}</Text>
 
-              <View className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mb-6">
-                {lpoPayload ? (
-                  <QRCode
-                    value={lpoPayload}
-                    size={220}
-                    color="#003527"
-                    backgroundColor="white"
-                    getRef={(c) => (qrRef.current = c)}
-                  />
-                ) : null}
-              </View>
-
-              <View className="w-full bg-gray-50 rounded-xl p-4 border border-gray-100">
-                <View className="flex-row justify-between mb-3">
-                  <Text className="text-xs text-gray-500 font-bold uppercase tracking-wider">Customer</Text>
-                  <Text className="text-xs text-gray-800 font-black">{customerName}</Text>
-                </View>
-                <View className="flex-row justify-between">
-                  <Text className="text-xs text-gray-500 font-bold uppercase tracking-wider">Total Lines</Text>
-                  <Text className="text-xs text-gray-800 font-black">{cart.length} items</Text>
-                </View>
-              </View>
-              
-              <Text className="text-[10px] text-gray-400 text-center mt-6 font-semibold uppercase tracking-widest">
-                Internal Document — WMS Scanner Ready
-              </Text>
-            </View>
-
-            <View className="p-4 bg-gray-50 border-t border-gray-200 flex-row gap-3">
-              <TouchableOpacity
-                className="flex-1 bg-white border border-gray-300 py-3.5 rounded-xl items-center shadow-sm"
-                onPress={handleDone}
-              >
-                <Text className="text-gray-700 font-black tracking-wide">Done (Clear)</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="flex-1 bg-primary py-3.5 rounded-xl flex-row items-center justify-center shadow-sm"
-                onPress={handleShare}
-                disabled={isGenerating}
-              >
-                {isGenerating ? (
-                  <ActivityIndicator color="white" size="small" />
-                ) : (
-                  <>
-                    <Share size={18} color="white" />
-                    <Text className="text-white font-black ml-2 tracking-wide">Export PDF</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }

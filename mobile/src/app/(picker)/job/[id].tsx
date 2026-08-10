@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, CheckCircle, CheckCircle2, Box, Scan, AlertCircle } from 'lucide-react-native';
 import PickItemRow from '../../../components/PickItemRow';
+import { playTickSound } from '../../../lib/alertSound';
 import api from '../../../lib/api';
 import QRCode from 'react-native-qrcode-svg';
 
@@ -17,7 +18,10 @@ export default function JobDetailScreen() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [submitError, setSubmitError] = useState('');
   
+  const [scanModalVisible, setScanModalVisible] = useState(false);
+  const [scanTargetItem, setScanTargetItem] = useState<any>(null);
   const [scanInput, setScanInput] = useState('');
+  
   const [showBoxModal, setShowBoxModal] = useState(false);
   const [cartonTypes, setCartonTypes] = useState<any[]>([]);
   const [selectedCartonType, setSelectedCartonType] = useState<number | null>(null);
@@ -82,19 +86,23 @@ export default function JobDetailScreen() {
     }
   };
 
-  const handleScan = () => {
-    if (!scanInput.trim()) return;
+  const handleItemScanSubmit = () => {
+    if (!scanInput.trim() || !scanTargetItem) return;
     const barcode = scanInput.trim();
-    setScanInput('');
     
-    // Find item with this barcode that is not picked yet
-    const item = items.find(i => i.barcode === barcode && !i.picked && !i.missing_reported);
-    if (item) {
-      toggleItem(item.id);
+    if (barcode === scanTargetItem.barcode) {
+      toggleItem(scanTargetItem.id);
+      setScanModalVisible(false);
+      setScanTargetItem(null);
+      setScanInput('');
+      playTickSound();
     } else {
-      Alert.alert('Scan Failed', 'Item not found in this picklist or already picked.');
+      Alert.alert('Scan Failed', 'The scanned barcode does not match this item.');
+      setScanInput('');
     }
   };
+
+
 
   const handleMissing = async (itemId: string) => {
     if (isSubmitted) return;
@@ -197,25 +205,7 @@ export default function JobDetailScreen() {
         )}
       </View>
 
-      {/* Barcode Scanner Input */}
-      {!isSubmitted && (
-        <View className="p-4 bg-white border-b border-gray-100 flex-row items-center">
-          <View className="flex-1 bg-gray-100 rounded-xl px-4 py-3 flex-row items-center">
-            <Scan size={18} color="#6b7280" className="mr-2" />
-            <TextInput
-              className="flex-1 font-inter text-base text-gray-800"
-              placeholder="Scan or enter barcode..."
-              value={scanInput}
-              onChangeText={setScanInput}
-              onSubmitEditing={handleScan}
-              returnKeyType="search"
-            />
-          </View>
-          <TouchableOpacity onPress={handleScan} className="ml-3 bg-primary p-3 rounded-xl">
-            <Text className="text-white font-bold text-sm">Scan</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+
 
       {/* Items List */}
       {isLoading ? (
@@ -231,7 +221,11 @@ export default function JobDetailScreen() {
           renderItem={({ item }) => (
             <PickItemRow 
               item={item} 
-              onToggle={() => toggleItem(item.id)} 
+              onScanStart={() => {
+                setScanTargetItem(item);
+                setScanInput('');
+                setScanModalVisible(true);
+              }} 
               onMissing={() => handleMissing(item.id)}
               disabled={isSubmitted} 
             />
@@ -403,6 +397,49 @@ export default function JobDetailScreen() {
               onPress={() => setShowQRModal(false)}
             >
               <Text className="text-white font-bold text-base font-inter">Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Item Scan Modal */}
+      <Modal visible={scanModalVisible} transparent animationType="slide">
+        <View className="flex-1 bg-black/50 justify-end">
+          <View className="bg-white rounded-t-3xl p-6 w-full shadow-xl">
+            <Text className="text-xl font-bold text-onSurface mb-2">Scan Barcode</Text>
+            <Text className="text-sm text-gray-500 mb-4">
+              Please scan the barcode for: <Text className="font-bold text-gray-800">{scanTargetItem?.name}</Text>
+            </Text>
+            
+            <View className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-6 flex-row items-center">
+              <Scan size={18} color="#6b7280" className="mr-2" />
+              <TextInput
+                className="flex-1 font-inter text-base text-gray-800"
+                placeholder="Scan or enter barcode..."
+                value={scanInput}
+                onChangeText={setScanInput}
+                onSubmitEditing={handleItemScanSubmit}
+                returnKeyType="done"
+                autoFocus
+              />
+            </View>
+
+            <TouchableOpacity
+              className="bg-[#003527] py-4 rounded-xl items-center mb-3"
+              onPress={handleItemScanSubmit}
+            >
+              <Text className="text-white font-bold text-base">Verify Item</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className="py-3 rounded-xl items-center"
+              onPress={() => {
+                setScanModalVisible(false);
+                setScanTargetItem(null);
+                setScanInput('');
+              }}
+            >
+              <Text className="text-gray-500 font-semibold">Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
