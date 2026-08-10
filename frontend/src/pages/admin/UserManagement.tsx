@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Shield, User } from 'lucide-react';
+import { Plus, Trash2, Shield, User, Pencil } from 'lucide-react';
 import { Table } from '@/components/ui/Table';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -16,6 +16,8 @@ export default function UserManagement() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [restrictedMsg, setRestrictedMsg] = useState<string | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<number | null>(null);
 
   const [formData, setFormData] = useState({
     email: '',
@@ -40,24 +42,61 @@ export default function UserManagement() {
     fetchUsers();
   }, []);
 
-  const handleAddUser = async (e: React.FormEvent) => {
+  const handleSubmitUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.email || !formData.full_name || !formData.password) {
-      toast.error('All fields are required');
+    if (!formData.email || !formData.full_name || (!isEditMode && !formData.password)) {
+      toast.error('Required fields missing');
       return;
     }
+    
+    // For edit mode, don't send empty password
+    const payload = { ...formData };
+    if (isEditMode && !payload.password) {
+      delete (payload as any).password;
+    }
+
     try {
       setIsSubmitting(true);
-      await api.post('/users', formData);
-      toast.success('User account created successfully');
-      setIsModalOpen(false);
-      setFormData({ email: '', full_name: '', password: '', role: 'picker' });
+      if (isEditMode && editingUserId) {
+        await api.patch(`/users/${editingUserId}`, payload);
+        toast.success('User account updated successfully');
+      } else {
+        await api.post('/users', payload);
+        toast.success('User account created successfully');
+      }
+      closeModal();
       fetchUsers();
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to create account');
+      toast.error(error.response?.data?.detail || 'Failed to save account');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const openEditModal = (user: any) => {
+    setIsEditMode(true);
+    setEditingUserId(user.id);
+    setFormData({
+      email: user.email || '',
+      full_name: user.full_name || '',
+      password: '',
+      role: user.role || 'picker',
+    });
+    setIsModalOpen(true);
+  };
+
+  const openCreateModal = () => {
+    setIsEditMode(false);
+    setEditingUserId(null);
+    setFormData({ email: '', full_name: '', password: '', role: 'picker' });
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setIsEditMode(false);
+    setEditingUserId(null);
+    setFormData({ email: '', full_name: '', password: '', role: 'picker' });
   };
 
   const handleDelete = async (id: number) => {
@@ -123,14 +162,24 @@ export default function UserManagement() {
     {
       header: 'Actions',
       accessor: (r: any) => (
-        <Button
-          variant="secondary"
-          size="sm"
-          className="text-error border-error/20 hover:bg-error/5"
-          onClick={() => handleDelete(r.id)}
-        >
-          <Trash2 className="w-4 h-4" />
-        </Button>
+        <div className="flex space-x-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="text-primary border-primary/20 hover:bg-primary/5 px-2"
+            onClick={() => openEditModal(r)}
+          >
+            <Pencil className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="text-error border-error/20 hover:bg-error/5 px-2"
+            onClick={() => handleDelete(r.id)}
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
       ),
     },
   ];
@@ -142,7 +191,7 @@ export default function UserManagement() {
           <h1 className="text-2xl font-bold text-on-surface">User & Picker Management</h1>
           <p className="text-on-surface-variant mt-1">Manage accounts and login credentials</p>
         </div>
-        <Button onClick={() => setIsModalOpen(true)}>
+        <Button onClick={openCreateModal}>
           <Plus className="w-4 h-4 mr-2" /> Add Picker / Account
         </Button>
       </div>
@@ -151,8 +200,8 @@ export default function UserManagement() {
         <Table data={users} columns={columns} keyExtractor={(r) => r.id} isLoading={isLoading} />
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create New Account">
-        <form onSubmit={handleAddUser} className="space-y-4">
+      <Modal isOpen={isModalOpen} onClose={closeModal} title={isEditMode ? "Edit Account" : "Create New Account"}>
+        <form onSubmit={handleSubmitUser} className="space-y-4">
           <Input
             label="Full Name"
             placeholder="John Doe"
@@ -169,12 +218,12 @@ export default function UserManagement() {
             required
           />
           <Input
-            label="Password"
+            label={isEditMode ? "New Password (leave blank to keep current)" : "Password"}
             type="password"
             placeholder="••••••••"
             value={formData.password}
             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-            required
+            required={!isEditMode}
           />
           <div>
             <label className="block text-sm font-medium text-on-surface mb-1">Role</label>
@@ -189,11 +238,11 @@ export default function UserManagement() {
             </select>
           </div>
           <div className="flex justify-end space-x-3 pt-4">
-            <Button type="button" variant="secondary" onClick={() => setIsModalOpen(false)}>
+            <Button type="button" variant="secondary" onClick={closeModal}>
               Cancel
             </Button>
             <Button type="submit" isLoading={isSubmitting}>
-              Create Account
+              {isEditMode ? "Save Changes" : "Create Account"}
             </Button>
           </div>
         </form>

@@ -5,7 +5,7 @@ import { api } from '../../lib/api';
 import { setToken, setPickerInfo } from '../../lib/session';
 import { useAuthStore } from '../../store/authStore';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Lock, User, ArrowRight, ShieldCheck, Box, Bell } from 'lucide-react-native';
+import { Lock, User, ArrowRight, ShieldCheck, Box, Bell, Eye, EyeOff } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 
 export default function LoginScreen() {
@@ -13,6 +13,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   
   const router = useRouter();
   const { setAuthenticated, setPicker } = useAuthStore();
@@ -34,7 +35,7 @@ export default function LoginScreen() {
       
       const { token, user } = res.data;
       
-      if (user.role !== 'picker' && user.role !== 'admin') {
+      if (user.role !== 'picker' && user.role !== 'admin' && user.role !== 'lpo') {
         setError('Unauthorized role access');
         return;
       }
@@ -78,7 +79,7 @@ export default function LoginScreen() {
                 </Text>
                 <View className="bg-emerald-500/20 border border-emerald-400/30 px-2.5 py-0.5 rounded-full self-start mt-1">
                   <Text className="text-[11px] font-bold text-emerald-300 uppercase tracking-widest font-inter">
-                    Picker Terminal
+                    Mobile Terminal
                   </Text>
                 </View>
               </View>
@@ -156,10 +157,13 @@ export default function LoginScreen() {
                     className="flex-1 ml-3.5 font-inter text-sm font-semibold text-white"
                     placeholder="••••••••"
                     placeholderTextColor="#475569"
-                    secureTextEntry
+                    secureTextEntry={!showPassword}
                     value={password}
                     onChangeText={setPassword}
                   />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} className="p-2">
+                    {showPassword ? <EyeOff color="#94a3b8" size={19} /> : <Eye color="#94a3b8" size={19} />}
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>

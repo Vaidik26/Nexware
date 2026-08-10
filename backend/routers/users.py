@@ -5,7 +5,7 @@ from typing import List
 from backend.database import get_db
 from backend.models.user import User
 from backend.models.picklist import PickAssignment, PickList
-from backend.schemas.auth import UserCreate, UserOut
+from backend.schemas.auth import UserCreate, UserOut, UserUpdate
 from backend.dependencies import get_current_admin, get_current_user
 from backend.services.auth_service import hash_password
 
@@ -37,6 +37,33 @@ async def create_user(user_data: UserCreate, db: AsyncSession = Depends(get_db),
     await db.commit()
     await db.refresh(new_user)
     return new_user
+
+@router.patch("/{user_id}", response_model=UserOut)
+async def update_user(user_id: int, user_data: UserUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_admin)):
+    result = await db.execute(select(User).filter(User.id == user_id))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    if user_data.email and user_data.email.strip() != user.email:
+        # Check duplicate email
+        dup_check = await db.execute(select(User).filter(User.email.ilike(user_data.email.strip())))
+        if dup_check.scalars().first():
+            raise HTTPException(status_code=400, detail="User with this email already exists")
+        user.email = user_data.email.strip()
+        
+    if user_data.full_name is not None:
+        user.full_name = user_data.full_name
+        
+    if user_data.role is not None:
+        user.role = user_data.role
+        
+    if user_data.password:
+        user.hashed_password = hash_password(user_data.password)
+        
+    await db.commit()
+    await db.refresh(user)
+    return user
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(user_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_admin)):
