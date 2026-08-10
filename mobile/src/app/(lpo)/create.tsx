@@ -21,30 +21,33 @@ interface CartItem {
   unit: string;
 }
 
+const generateAutoLpoNumber = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const rnd = Math.floor(1000 + Math.random() * 9000);
+  return `LPO-${yyyy}${mm}${dd}-${rnd}`;
+};
+
 export default function LpoCreateScreen() {
   const { logout, picker } = useAuthStore();
   const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
-  const [search, setSearch] = useState('');
-  
-  const [customerName, setCustomerName] = useState('');
-  const [orderNumber, setOrderNumber] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [customerName, setCustomerName] = useState('');
+  const [orderNumber, setOrderNumber] = useState(generateAutoLpoNumber());
   
   const [showItemModal, setShowItemModal] = useState(false);
+  const [search, setSearch] = useState('');
+  
+  // SUCCESS MODAL STATE
+  const [successModalVisible, setSuccessModalVisible] = useState(false);
+  const [successLpoData, setSuccessLpoData] = useState<any>(null);
+  const [isAssigning, setIsAssigning] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-
-  const generateAutoLpoNumber = () => {
-    const d = new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    const rnd = Math.floor(1000 + Math.random() * 9000);
-    return `LPO-${yyyy}${mm}${dd}-${rnd}`;
-  };
 
   useEffect(() => {
     fetchCatalogue();
-    setOrderNumber(generateAutoLpoNumber());
   }, []);
 
   const fetchCatalogue = async () => {
@@ -131,27 +134,46 @@ export default function LpoCreateScreen() {
           quantity: c.quantity,
           unit: c.unit,
           product_name: c.product_name
-        }))
+        })),
+        auto_assign: false // Do not assign automatically
       });
       
       const lpoData = res.data;
-      
-      await generateAndSharePDF(lpoData);
-      
-      setCart([]);
-      setCustomerName('');
-      setOrderNumber(generateAutoLpoNumber());
-      
-      Alert.alert('Success', `LPO ${orderNumber} assigned to ${lpoData.picker_name || 'a picker'}.`);
+      setSuccessLpoData(lpoData);
+      setSuccessModalVisible(true);
       
     } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.detail?.message || err.response?.data?.detail || 'Failed to generate and assign LPO.');
+      Alert.alert('Error', err.response?.data?.detail?.message || err.response?.data?.detail || 'Failed to generate LPO.');
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const generateAndSharePDF = async (lpoData: any) => {
+  const handleCloseSuccess = () => {
+    setSuccessModalVisible(false);
+    setSuccessLpoData(null);
+    setCart([]);
+    setCustomerName('');
+    setOrderNumber(generateAutoLpoNumber());
+  };
+
+  const handleSendToWarehouse = async () => {
+    if (!successLpoData?.picklist_id) return;
+    try {
+      setIsAssigning(true);
+      const res = await api.post(`/picklists/${successLpoData.picklist_id}/auto-assign`);
+      
+      const updatedData = { ...successLpoData, picker_name: res.data.picker_name };
+      setSuccessLpoData(updatedData);
+      Alert.alert('Success', `LPO assigned to ${res.data.picker_name}.`);
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.detail || 'Failed to assign to warehouse.');
+    } finally {
+      setIsAssigning(false);
+    }
+  };
+
+  const handleDownloadPDF = async (share: boolean = false) => {
     try {
       const d = new Date();
       const dateStr = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -182,7 +204,7 @@ ${divider}
 LPO Ref   : ${orderNumber}
 Date/Time : ${dateStr}
 Customer  : ${customerName}
-Assigned  : ${lpoData.picker_name || 'Auto'} (${lpoData.job_label || '-'})
+Assigned  : ${successLpoData?.picker_name || 'Pending Warehouse Assignment'} (${successLpoData?.job_label || '-'})
 ${thickDivider}
 ITEMS
 ${divider}
@@ -218,14 +240,10 @@ Generated via NexWare Terminal`;
       `;
 
       const { uri } = await Print.printToFileAsync({ html: htmlContent });
-      const isAvailable = await Sharing.isAvailableAsync();
-      if (isAvailable) {
-        await Sharing.shareAsync(uri, {
-          dialogTitle: `Share LPO ${orderNumber}`,
-          mimeType: 'application/pdf',
-        });
-      } else {
-        Alert.alert('Error', 'Sharing is not available on this device');
+      if (share && await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+      } else if (!share) {
+        Alert.alert('Downloaded', `Receipt saved to: ${uri}`);
       }
     } catch (err) {
       console.error(err);
@@ -391,6 +409,49 @@ Generated via NexWare Terminal`;
         </SafeAreaView>
       </Modal>
 
+      {/* Success Modal */}
+      <Modal visible={successModalVisible} transparent animationType="slide">
+        <View className="flex-1 bg-black/60 justify-center items-center p-6">
+          <View className="bg-white rounded-3xl p-6 w-full max-w-sm">
+            <View className="items-center mb-6">
+              <View className="w-16 h-16 bg-emerald-100 rounded-full items-center justify-center mb-4">
+                <Text className="text-emerald-600 text-2xl">✓</Text>
+              </View>
+              <Text className="text-2xl font-black text-slate-800 text-center">Order Drafted!</Text>
+              <Text className="text-slate-500 text-center mt-2">LPO <Text className="font-bold text-slate-700">{orderNumber}</Text> has been created successfully.</Text>
+            </View>
+
+            <View className="space-y-3">
+              <TouchableOpacity 
+                disabled={isAssigning || !!successLpoData?.picker_name}
+                onPress={handleSendToWarehouse}
+                className={`p-4 rounded-xl flex-row justify-center items-center ${successLpoData?.picker_name ? 'bg-slate-200' : 'bg-[#003527]'}`}
+              >
+                {isAssigning ? <ActivityIndicator color="#fff" /> : (
+                  <>
+                    <Text className={`font-bold text-lg ${successLpoData?.picker_name ? "text-slate-500" : "text-white"}`}>
+                      {successLpoData?.picker_name ? 'Sent to Warehouse' : 'Send to Warehouse'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <View className="flex-row gap-3 mt-3">
+                <TouchableOpacity onPress={() => handleDownloadPDF(false)} className="flex-1 p-4 rounded-xl bg-slate-100 items-center justify-center flex-row">
+                  <Text className="font-bold text-slate-700">Download PDF</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleDownloadPDF(true)} className="flex-1 p-4 rounded-xl bg-slate-100 items-center justify-center flex-row">
+                  <Text className="font-bold text-slate-700">Share</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity onPress={handleCloseSuccess} className="p-4 rounded-xl items-center mt-2 border border-slate-200">
+                <Text className="font-bold text-slate-600">Close & Start New</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
     </SafeAreaView>
   );

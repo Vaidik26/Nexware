@@ -126,6 +126,17 @@ export default function UserManagement() {
     }
   };
 
+  const handleToggleActive = async (user: any) => {
+    try {
+      const newStatus = !user.is_active;
+      await api.patch(`/users/${user.id}`, { is_active: newStatus });
+      toast.success(`${user.full_name || user.email} account ${newStatus ? 'enabled' : 'disabled'}`);
+      setUsers(users.map((u) => u.id === user.id ? { ...u, is_active: newStatus } : u));
+    } catch (error: any) {
+      toast.error(getErrorMessage(error, 'Failed to update account status'));
+    }
+  };
+
   const columns = [
     { header: 'ID', accessor: (r: any) => `#${r.id}` },
     { header: 'Full Name', accessor: 'full_name' as const },
@@ -157,7 +168,19 @@ export default function UserManagement() {
     },
     {
       header: 'Account Status',
-      accessor: (r: any) => <StatusBadge status={r.is_active ? 'success' : 'error'} label={r.is_active ? 'Active' : 'Inactive'} />,
+      accessor: (r: any) => (
+        <button
+          onClick={() => handleToggleActive(r)}
+          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold transition-all shadow-xs ${
+            r.is_active
+              ? 'bg-blue-100 text-blue-800 border border-blue-300 hover:bg-blue-200'
+              : 'bg-red-100 text-red-800 border border-red-300 hover:bg-red-200'
+          }`}
+        >
+          <span className={`w-2 h-2 rounded-full mr-1.5 ${r.is_active ? 'bg-blue-500' : 'bg-red-500'}`} />
+          {r.is_active ? 'Active (Enabled)' : 'Disabled'}
+        </button>
+      ),
     },
     {
       header: 'Actions',

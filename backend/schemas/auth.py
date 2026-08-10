@@ -16,6 +16,7 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None
     password: Optional[str] = None
+    is_active: Optional[bool] = None
 
 class UserOut(UserBase):
     id: int

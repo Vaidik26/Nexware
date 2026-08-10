@@ -41,6 +41,7 @@ class PickListItem(Base):
     unit = Column(String, nullable=False)
     is_picked = Column(Boolean, default=False)
     picked_at = Column(DateTime(timezone=True), nullable=True)
+    is_audited = Column(Boolean, default=False)
     is_full_carton = Column(Boolean, default=True)
     box_id = Column(Integer, ForeignKey("pick_list_boxes.id"), nullable=True)
     missing_reported = Column(Boolean, default=False)

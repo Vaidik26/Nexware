@@ -25,6 +25,7 @@ class DirectAssignRequest(BaseModel):
     order_number: str
     customer_name: str
     items: List[DirectAssignItem]
+    auto_assign: bool = True
 
 from backend.models.user import User, Notification
 from backend.models.catalogue import SalesItem, CartonType
@@ -267,6 +268,69 @@ async def assign_picklist(
 
     return {"message": "Pick list assigned", "picklist_id": picklist_id}
 
+@router.post("/{picklist_id}/auto-assign")
+async def auto_assign_existing(
+    picklist_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_admin),
+):
+    from sqlalchemy import func as sqlfunc
+    
+    # 1. Fetch Picklist
+    picklist_res = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    db_picklist = picklist_res.scalars().first()
+    if not db_picklist:
+        raise HTTPException(status_code=404, detail="Pick list not found")
+    if db_picklist.status != "draft":
+        raise HTTPException(status_code=400, detail="Only draft pick lists can be assigned")
+
+    # 2. Find available picker
+    users_res = await db.execute(
+        select(User).filter(User.role == "picker", User.is_active == True, User.is_available == True)
+    )
+    pickers = users_res.scalars().all()
+    if not pickers:
+        raise HTTPException(status_code=400, detail="No available pickers right now")
+    picker = pickers[0]
+
+    # 3. Calculate sequence number
+    active_statuses = ["assigned", "picking", "waiting_verification"]
+    max_res = await db.execute(
+        select(sqlfunc.max(PickList.picker_job_number))
+        .join(PickAssignment, PickAssignment.pick_list_id == PickList.id)
+        .filter(
+            PickAssignment.picker_id == picker.id,
+            PickList.status.in_(active_statuses)
+        )
+    )
+    db_picklist.picker_job_number = (max_res.scalar() or 0) + 1
+    db_picklist.status = "assigned"
+
+    # 4. Assign
+    assignment = PickAssignment(
+        pick_list_id=db_picklist.id,
+        picker_id=picker.id,
+        status="assigned"
+    )
+    db.add(assignment)
+    picker.is_available = False
+    
+    await db.commit()
+
+    # 5. Push Notification
+    job_label = f"P-{str(db_picklist.picker_job_number).zfill(3)}"
+    if picker.push_token:
+        from backend.routers.notifications import trigger_push
+        trigger_push(
+            picker.push_token,
+            f"New Job Assigned: {job_label}",
+            f"Job {job_label} — Order #{db_picklist.order_number} assigned to your terminal.",
+            background_tasks=background_tasks,
+        )
+
+    return {"message": "Auto-assigned successfully", "picker_name": picker.full_name}
+
 
 @router.post("/direct-assign/{picker_id}")
 async def direct_assign_picklist(
@@ -386,36 +450,37 @@ async def direct_assign_auto(
     """Creates picklist directly and auto-assigns to the first available picker (round-robin style)."""
     from sqlalchemy import func as sqlfunc
     
-    # Find all available pickers
-    users_res = await db.execute(
-        select(User).filter(User.role == "picker", User.is_active == True, User.is_available == True)
-    )
-    pickers = users_res.scalars().all()
-    if not pickers:
-        raise HTTPException(status_code=400, detail="No available pickers right now. Please try again later.")
-        
-    # Simple round robin: pick the one with the fewest active jobs (or just first for now)
-    # Since they only get one job at a time usually, we just take the first available.
-    picker = pickers[0]
+    picker = None
+    next_job_number = None
 
-    # Compute picker-specific job sequence
-    active_statuses = ["assigned", "picking", "waiting_verification"]
-    max_res = await db.execute(
-        select(sqlfunc.max(PickList.picker_job_number))
-        .join(PickAssignment, PickAssignment.pick_list_id == PickList.id)
-        .filter(
-            PickAssignment.picker_id == picker.id,
-            PickList.status.in_(active_statuses)
+    if payload.auto_assign:
+        # Find all available pickers
+        users_res = await db.execute(
+            select(User).filter(User.role == "picker", User.is_active == True, User.is_available == True)
         )
-    )
-    current_max = max_res.scalar() or 0
-    next_job_number = current_max + 1
+        pickers = users_res.scalars().all()
+        if not pickers:
+            raise HTTPException(status_code=400, detail="No available pickers right now. Please try again later.")
+            
+        picker = pickers[0]
+
+        active_statuses = ["assigned", "picking", "waiting_verification"]
+        max_res = await db.execute(
+            select(sqlfunc.max(PickList.picker_job_number))
+            .join(PickAssignment, PickAssignment.pick_list_id == PickList.id)
+            .filter(
+                PickAssignment.picker_id == picker.id,
+                PickList.status.in_(active_statuses)
+            )
+        )
+        current_max = max_res.scalar() or 0
+        next_job_number = current_max + 1
 
     db_picklist = PickList(
         order_number=payload.order_number,
         customer_name=payload.customer_name,
         sales_order_id=None,
-        status="assigned",
+        status="assigned" if payload.auto_assign else "draft",
         picker_job_number=next_job_number,
     )
     db.add(db_picklist)
@@ -464,6 +529,10 @@ async def direct_assign_auto(
             status_code=400,
             detail={"message": "Cannot assign pick list: No items attached.", "errors": []}
         )
+
+    if not payload.auto_assign:
+        await db.commit()
+        return {"message": "Pick list created as draft", "picklist_id": db_picklist.id, "job_label": f"PL-{db_picklist.id}"}
 
     assignment = PickAssignment(pick_list_id=db_picklist.id, picker_id=picker.id)
     db.add(assignment)
@@ -518,6 +587,28 @@ async def mark_item_picked(
 
     await db.commit()
     return {"is_picked": item.is_picked, "item_id": item_id}
+
+
+@router.patch("/{picklist_id}/items/{item_id}/audit")
+async def audit_item(
+    picklist_id: int,
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_admin),
+):
+    result = await db.execute(
+        select(PickListItem).filter(
+            PickListItem.id == item_id,
+            PickListItem.pick_list_id == picklist_id,
+        )
+    )
+    item = result.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    item.is_audited = not item.is_audited
+    await db.commit()
+    return {"is_audited": item.is_audited, "item_id": item_id}
 
 
 @router.post("/{picklist_id}/complete-picking")

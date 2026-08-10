@@ -74,6 +74,9 @@ async def update_user(user_id: int, user_data: UserUpdate, db: AsyncSession = De
     if user_data.password:
         user.hashed_password = hash_password(user_data.password)
         
+    if user_data.is_active is not None:
+        user.is_active = user_data.is_active
+        
     await db.commit()
     await db.refresh(user)
     return user

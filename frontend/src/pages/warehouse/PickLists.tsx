@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Table } from '@/components/ui/Table';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
-import { Download, Users, RefreshCw, Layers, CheckCircle2, AlertCircle, XCircle, CheckSquare, Check, ShieldCheck, ArrowLeftRight } from 'lucide-react';
+import { Download, Users, RefreshCw, Layers, CheckCircle2, AlertCircle, XCircle, CheckSquare, Check, ShieldCheck, ArrowLeftRight, Package } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { PageLoader } from '@/components/ui/PageLoader';
@@ -22,6 +22,22 @@ export default function PickLists() {
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [selectedAuditList, setSelectedAuditList] = useState<any | null>(null);
   const [isProcessingAudit, setIsProcessingAudit] = useState(false);
+
+  // Poll for fresh data while audit modal is open
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isAuditModalOpen && selectedAuditList) {
+      interval = setInterval(async () => {
+        try {
+          const freshRes = await api.get(`/picklists/${selectedAuditList.id}`);
+          if (freshRes.data) setSelectedAuditList(freshRes.data);
+        } catch (e) {
+          // ignore
+        }
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [isAuditModalOpen, selectedAuditList?.id]);
   const [assigningPickerId, setAssigningPickerId] = useState<number | null>(null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
@@ -145,20 +161,34 @@ export default function PickLists() {
 
   const handleToggleItemPick = async (itemId: number) => {
     if (!selectedAuditList) return;
+    
+    // Optimistic Update
+    const currentStatus = selectedAuditList.items?.find((i: any) => i.id === itemId)?.is_audited || false;
+    const optimisticStatus = !currentStatus;
+    
+    const optimisticList = {
+      ...selectedAuditList,
+      items: (selectedAuditList.items || []).map((it: any) =>
+        it.id === itemId ? { ...it, is_audited: optimisticStatus } : it
+      )
+    };
+    setSelectedAuditList(optimisticList);
+    setPickLists(prev => prev.map((p) => p.id === optimisticList.id ? optimisticList : p));
+
     try {
-      const res = await api.patch(`/picklists/${selectedAuditList.id}/items/${itemId}/pick`);
-      const newPickedStatus = res.data.is_picked;
-      const updatedItems = (selectedAuditList.items || []).map((it: any) =>
-        it.id === itemId ? { ...it, is_picked: newPickedStatus } : it
-      );
-      const updatedList = { ...selectedAuditList, items: updatedItems };
-      setSelectedAuditList(updatedList);
-      // Keep main list in sync so stale data doesn't overwrite audit
-      setPickLists(prev => prev.map((p) => p.id === updatedList.id ? updatedList : p));
-      setCachedData('consolidated_picklists', pickLists.map((p) => p.id === updatedList.id ? updatedList : p));
-      toast.success(newPickedStatus ? 'Item marked verified' : 'Item unchecked for re-pick');
+      await api.patch(`/picklists/${selectedAuditList.id}/items/${itemId}/audit`);
+      // We assume optimistic was correct
     } catch (err: any) {
-      toast.error(getErrorMessage(err, 'Could not update item status'));
+      // Revert on error
+      const revertedList = {
+        ...selectedAuditList,
+        items: (selectedAuditList.items || []).map((it: any) =>
+          it.id === itemId ? { ...it, is_audited: currentStatus } : it
+        )
+      };
+      setSelectedAuditList(revertedList);
+      setPickLists(prev => prev.map((p) => p.id === revertedList.id ? revertedList : p));
+      toast.error(getErrorMessage(err, 'Could not update audit status'));
     }
   };
 
@@ -497,14 +527,17 @@ export default function PickLists() {
                         className={`p-3.5 flex items-center justify-between gap-3 transition-colors ${
                           isMissingReported ? 'bg-amber-50 hover:bg-amber-100/60' :
                           isMissingApproved ? 'bg-slate-50' :
-                          item.is_picked ? 'bg-white hover:bg-emerald-50/40 cursor-pointer' : 'bg-rose-50/60 hover:bg-rose-100/60 cursor-pointer'
+                          item.is_audited ? 'bg-white hover:bg-emerald-50/40 cursor-pointer' : 
+                          item.is_picked ? 'bg-blue-50/40 hover:bg-blue-100/40 cursor-pointer' :
+                          'bg-rose-50/60 hover:bg-rose-100/60 cursor-pointer'
                         }`}
                       >
                         <div className="flex items-center gap-3 flex-1 min-w-0">
                           <div className={`w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${
                             isMissingReported ? 'bg-amber-500 border-amber-500 text-white' :
                             isMissingApproved ? 'bg-slate-300 border-slate-300 text-white' :
-                            item.is_picked ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-300 text-transparent'
+                            item.is_audited ? 'bg-emerald-600 border-emerald-600 text-white' : 
+                            'bg-white border-slate-300 text-transparent'
                           }`}>
                             {isMissingReported ? <AlertCircle className="w-4 h-4 stroke-[3]" /> : <Check className="w-4 h-4 stroke-[3]" />}
                           </div>
@@ -528,9 +561,11 @@ export default function PickLists() {
                             <div className={`font-extrabold text-sm ${isMissingApproved ? 'text-slate-400' : 'text-on-surface'}`}>{item.quantity || 1} {item.unit || 'Units'}</div>
                             <div className={`text-[10px] font-bold uppercase mt-0.5 ${
                               isMissingApproved ? 'text-slate-500' :
-                              item.is_picked ? 'text-emerald-700' : 'text-rose-600'
+                              item.is_audited ? 'text-emerald-700' : 
+                              item.is_picked ? 'text-blue-600' :
+                              'text-rose-600'
                             }`}>
-                              {isMissingApproved ? 'Lost (Approved)' : item.is_picked ? 'Verified Picked' : 'Unchecked / Missing'}
+                              {isMissingApproved ? 'Lost (Approved)' : item.is_audited ? 'Verified & Audited' : item.is_picked ? 'Picked, Awaiting Audit' : 'Unchecked / Missing'}
                             </div>
                           </div>
                         )}
@@ -538,11 +573,48 @@ export default function PickLists() {
                     );
                   })}
                   {(selectedAuditList?.items || []).length === 0 && (
-                    <div className="p-6 text-center text-slate-400 text-sm italic">
-                      No line items found in this order record.
-                    </div>
+                    <div className="p-4 text-center text-slate-500 text-sm">No items in this order.</div>
                   )}
                 </div>
+
+                {/* Packed Cartons Section */}
+                {(selectedAuditList?.boxes || []).length > 0 && (
+                  <div className="mt-6 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                    <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-slate-800 font-bold text-sm">
+                        <Package className="w-4 h-4 text-slate-600" />
+                        <span>Packed Cartons ({(selectedAuditList?.boxes || []).length})</span>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {(selectedAuditList?.boxes || []).map((box: any, idx: number) => {
+                        const boxItems = (selectedAuditList?.items || []).filter((i: any) => i.box_id === box.id);
+                        return (
+                          <div key={box.id} className="p-3.5 flex flex-col gap-2 bg-white">
+                            <div className="flex justify-between items-center">
+                              <span className="font-bold text-sm text-slate-800">Box #{box.id}</span>
+                              <span className="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                                {box.entered_weight} kg
+                              </span>
+                            </div>
+                            {boxItems.length > 0 ? (
+                              <div className="pl-2 border-l-2 border-slate-100 mt-1 space-y-1">
+                                {boxItems.map((bi: any) => (
+                                  <div key={bi.id} className="flex justify-between items-center text-xs text-slate-500">
+                                    <span className="truncate max-w-[200px]">{bi.product_name}</span>
+                                    <span>{bi.quantity} {bi.unit}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-400 italic">Empty box</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-outline-variant">

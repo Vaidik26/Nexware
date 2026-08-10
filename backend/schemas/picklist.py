@@ -8,6 +8,7 @@ class PickListItemBase(BaseModel):
     quantity: float
     unit: str
     is_picked: bool = False
+    is_audited: bool = False
     is_full_carton: bool = True
     box_id: Optional[int] = None
     missing_reported: bool = False

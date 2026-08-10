@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
 import { getToken, clearSession } from './session';
+import { useAuthStore } from '../store/authStore';
 
 let baseURL = process.env.EXPO_PUBLIC_API_URL || 'https://nexware.vercel.app/api';
 if (Platform.OS === 'android' && (baseURL.includes('localhost') || baseURL.includes('127.0.0.1'))) {
@@ -35,7 +36,7 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
-      await clearSession();
+      await useAuthStore.getState().logout();
     }
     return Promise.reject(error);
   }
