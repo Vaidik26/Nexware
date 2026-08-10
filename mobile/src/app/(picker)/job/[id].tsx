@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Modal, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, Modal, ActivityIndicator, TextInput, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, CheckCircle, CheckCircle2 } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle, CheckCircle2, Box, Scan } from 'lucide-react-native';
 import PickItemRow from '../../../components/PickItemRow';
 import api from '../../../lib/api';
 
@@ -15,6 +15,13 @@ export default function JobDetailScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  
+  const [scanInput, setScanInput] = useState('');
+  const [showBoxModal, setShowBoxModal] = useState(false);
+  const [cartonTypes, setCartonTypes] = useState<any[]>([]);
+  const [selectedCartonType, setSelectedCartonType] = useState<number | null>(null);
+  const [boxWeight, setBoxWeight] = useState('');
+  const [isBoxing, setIsBoxing] = useState(false);
 
   useEffect(() => {
     const fetchPicklistDetails = async () => {
@@ -29,7 +36,8 @@ export default function JobDetailScreen() {
             name: item.product_name || 'Item',
             qty: item.quantity || 1,
             uom: item.unit || 'EA',
-            picked: item.is_picked || false
+            picked: item.is_picked || false,
+            missing_reported: item.missing_reported || false
           }));
           setItems(mappedItems);
         }
@@ -39,7 +47,15 @@ export default function JobDetailScreen() {
         setIsLoading(false);
       }
     };
+    };
+    const fetchCartonTypes = async () => {
+      try {
+        const res = await api.get('/catalogue/cartons');
+        setCartonTypes(res.data || []);
+      } catch (err) {}
+    };
     fetchPicklistDetails();
+    fetchCartonTypes();
   }, [id]);
 
   const pickedCount = items.filter(i => i.picked).length;
@@ -63,6 +79,30 @@ export default function JobDetailScreen() {
     }
   };
 
+  const handleScan = () => {
+    if (!scanInput.trim()) return;
+    const barcode = scanInput.trim();
+    setScanInput('');
+    
+    // Find item with this barcode that is not picked yet
+    const item = items.find(i => i.barcode === barcode && !i.picked && !i.missing_reported);
+    if (item) {
+      toggleItem(item.id);
+    } else {
+      Alert.alert('Scan Failed', 'Item not found in this picklist or already picked.');
+    }
+  };
+
+  const handleMissing = async (itemId: string) => {
+    if (isSubmitted) return;
+    setItems(prev => prev.map(i => i.id === itemId ? { ...i, missing_reported: true } : i));
+    try {
+      await api.patch(`/picklists/${id}/items/${itemId}/report-missing`);
+    } catch (err) {
+      setItems(prev => prev.map(i => i.id === itemId ? { ...i, missing_reported: false } : i));
+    }
+  };
+
   const handleComplete = () => {
     setSubmitError('');
     setShowConfirm(true);
@@ -81,6 +121,43 @@ export default function JobDetailScreen() {
     }
   };
 
+  const createBox = async () => {
+    if (!selectedCartonType || !boxWeight) {
+      Alert.alert('Error', 'Please select carton type and enter weight');
+      return;
+    }
+    
+    // Get loose items (picked but not missing) - for simplicity we just box all picked items that aren't already in a box
+    // Wait, the API takes item_ids. The user wants to box loose items. We assume all picked items are loose until boxed.
+    const looseItemIds = items.filter(i => i.picked && !i.missing_reported && !i.box_id).map(i => parseInt(i.id));
+    if (looseItemIds.length === 0) {
+      Alert.alert('Error', 'No loose items available to box');
+      return;
+    }
+
+    setIsBoxing(true);
+    try {
+      await api.post(`/picklists/${id}/boxes`, {
+        carton_type_id: selectedCartonType,
+        item_ids: looseItemIds,
+        measured_weight: parseFloat(boxWeight)
+      });
+      
+      // Update local state to mark them as boxed
+      setItems(prev => prev.map(i => looseItemIds.includes(parseInt(i.id)) ? { ...i, box_id: 1 } : i));
+      setShowBoxModal(false);
+      setSelectedCartonType(null);
+      setBoxWeight('');
+      Alert.alert('Success', 'Box created successfully');
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.detail || 'Failed to create box');
+    } finally {
+      setIsBoxing(false);
+    }
+  };
+
+  const unboxedPickedCount = items.filter(i => i.picked && !i.missing_reported && !i.box_id).length;
+
   return (
     <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
       {/* Header */}
@@ -88,13 +165,44 @@ export default function JobDetailScreen() {
         <TouchableOpacity onPress={() => router.back()} className="mr-3">
           <ArrowLeft size={24} color="#0b1c30" />
         </TouchableOpacity>
-        <View>
+        <View className="flex-1">
           <Text className="text-lg font-bold text-onSurface font-inter">{jobLabel}</Text>
           <Text className="text-xs text-gray-500 font-inter">
             {items.length} Items • {pickedCount} Picked
           </Text>
         </View>
+        {!isSubmitted && (
+          <TouchableOpacity onPress={() => setShowBoxModal(true)} className="bg-[#003527] px-3 py-1.5 rounded-lg flex-row items-center">
+            <Box size={16} color="white" />
+            <Text className="text-white text-xs font-bold ml-1 font-inter">Box Items</Text>
+            {unboxedPickedCount > 0 && (
+              <View className="absolute -top-2 -right-2 bg-red-500 w-5 h-5 rounded-full items-center justify-center">
+                <Text className="text-white text-[10px] font-bold">{unboxedPickedCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
+
+      {/* Barcode Scanner Input */}
+      {!isSubmitted && (
+        <View className="p-4 bg-white border-b border-gray-100 flex-row items-center">
+          <View className="flex-1 bg-gray-100 rounded-xl px-4 py-3 flex-row items-center">
+            <Scan size={18} color="#6b7280" className="mr-2" />
+            <TextInput
+              className="flex-1 font-inter text-base text-gray-800"
+              placeholder="Scan or enter barcode..."
+              value={scanInput}
+              onChangeText={setScanInput}
+              onSubmitEditing={handleScan}
+              returnKeyType="search"
+            />
+          </View>
+          <TouchableOpacity onPress={handleScan} className="ml-3 bg-primary p-3 rounded-xl">
+            <Text className="text-white font-bold text-sm">Scan</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Items List */}
       {isLoading ? (
@@ -108,7 +216,12 @@ export default function JobDetailScreen() {
           keyExtractor={item => item.id}
           contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
           renderItem={({ item }) => (
-            <PickItemRow item={item} onToggle={() => toggleItem(item.id)} disabled={isSubmitted} />
+            <PickItemRow 
+              item={item} 
+              onToggle={() => toggleItem(item.id)} 
+              onMissing={() => handleMissing(item.id)}
+              disabled={isSubmitted} 
+            />
           )}
           ListEmptyComponent={
             <View className="items-center justify-center py-12">
@@ -189,6 +302,52 @@ export default function JobDetailScreen() {
               disabled={isSubmitting}
             >
               <Text className="text-gray-600 font-semibold font-inter">Go Back</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Box Creation Modal */}
+      <Modal visible={showBoxModal} transparent animationType="slide">
+        <View className="flex-1 bg-black/50 justify-end">
+          <View className="bg-white rounded-t-3xl p-6 w-full shadow-xl">
+            <Text className="text-xl font-bold text-onSurface mb-4">Pack Loose Items</Text>
+            
+            <Text className="text-sm font-semibold text-gray-500 mb-2">Select Carton Type</Text>
+            <View className="flex-row flex-wrap gap-2 mb-4">
+              {cartonTypes.map(ct => (
+                <TouchableOpacity 
+                  key={ct.id} 
+                  onPress={() => setSelectedCartonType(ct.id)}
+                  className={`px-4 py-2 rounded-xl border ${selectedCartonType === ct.id ? 'bg-primary border-primary' : 'bg-gray-50 border-gray-200'}`}
+                >
+                  <Text className={`font-semibold ${selectedCartonType === ct.id ? 'text-white' : 'text-gray-700'}`}>{ct.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text className="text-sm font-semibold text-gray-500 mb-2">Measured Weight (kg)</Text>
+            <TextInput
+              className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-6 font-inter text-base"
+              placeholder="e.g. 5.5"
+              keyboardType="decimal-pad"
+              value={boxWeight}
+              onChangeText={setBoxWeight}
+            />
+
+            <TouchableOpacity
+              className="bg-[#003527] py-4 rounded-xl items-center mb-3"
+              onPress={createBox}
+              disabled={isBoxing || !selectedCartonType || !boxWeight}
+            >
+              {isBoxing ? <ActivityIndicator color="white" /> : <Text className="text-white font-bold text-base">Create Box</Text>}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className="py-3 rounded-xl items-center"
+              onPress={() => setShowBoxModal(false)}
+            >
+              <Text className="text-gray-500 font-semibold">Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>

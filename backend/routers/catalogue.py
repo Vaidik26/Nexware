@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List
-from backend.database import get_db
-from backend.models.catalogue import SalesItem
 from backend.models.picklist import PickListItem
-from backend.schemas.catalogue import SalesItemCreate, SalesItemOut
+from backend.database import get_db
+from backend.schemas.catalogue import SalesItemCreate, SalesItemOut, CartonTypeCreate, CartonTypeOut
+from backend.models.catalogue import SalesItem, CartonType
 from backend.dependencies import get_current_admin
 from backend.services.excel_service import parse_catalogue_excel
 
@@ -106,3 +106,28 @@ async def delete_catalogue_item(item_id: int, db: AsyncSession = Depends(get_db)
     await db.delete(item)
     await db.commit()
 
+# --- CartonType Endpoints ---
+@router.get("/cartons", response_model=List[CartonTypeOut])
+async def get_cartons(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(CartonType))
+    return result.scalars().all()
+
+@router.post("/cartons", response_model=CartonTypeOut)
+async def create_carton(item: CartonTypeCreate, db: AsyncSession = Depends(get_db), current_user = Depends(get_current_admin)):
+    existing = await db.execute(select(CartonType).filter(CartonType.name == item.name))
+    if existing.scalars().first():
+        raise HTTPException(status_code=400, detail="Carton Type with this name already exists")
+    db_item = CartonType(**item.model_dump())
+    db.add(db_item)
+    await db.commit()
+    await db.refresh(db_item)
+    return db_item
+
+@router.delete("/cartons/{carton_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_carton(carton_id: int, db: AsyncSession = Depends(get_db), current_user = Depends(get_current_admin)):
+    result = await db.execute(select(CartonType).filter(CartonType.id == carton_id))
+    item = result.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Carton Type not found")
+    await db.delete(item)
+    await db.commit()

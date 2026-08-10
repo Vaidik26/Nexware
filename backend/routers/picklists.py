@@ -12,7 +12,7 @@ import httpx
 import io
 
 from backend.database import get_db
-from backend.models.picklist import PickList, PickListItem, PickAssignment
+from backend.models.picklist import PickList, PickListItem, PickAssignment, PickListBox
 from backend.models.order import SalesOrder
 
 class DirectAssignItem(BaseModel):
@@ -28,7 +28,7 @@ class DirectAssignRequest(BaseModel):
 
 from backend.models.user import User, Notification
 from backend.models.catalogue import SalesItem
-from backend.schemas.picklist import PickListOut
+from backend.schemas.picklist import PickListOut, PickListBoxCreate, PickListBoxOut
 from backend.dependencies import get_current_user, get_current_admin, get_current_picker
 from backend.config import settings
 from backend.services.pdf_generator import generate_picklist_pdf
@@ -75,6 +75,7 @@ async def list_picklists(
 ):
     q = select(PickList).options(
         selectinload(PickList.items),
+        selectinload(PickList.boxes),
         selectinload(PickList.assignments).selectinload(PickAssignment.picker)
     )
     if status:
@@ -104,6 +105,7 @@ async def my_picklists(
         select(PickList)
         .options(
             selectinload(PickList.items),
+            selectinload(PickList.boxes),
             selectinload(PickList.assignments).selectinload(PickAssignment.picker)
         )
         .filter(PickList.id.in_(assignment_ids))
@@ -123,6 +125,7 @@ async def get_picklist(
         select(PickList)
         .options(
             selectinload(PickList.items),
+            selectinload(PickList.boxes),
             selectinload(PickList.assignments).selectinload(PickAssignment.picker)
         )
         .filter(PickList.id == picklist_id)
@@ -405,6 +408,94 @@ async def complete_picking(
 
     await db.commit()
     return {"message": "Picking complete. Awaiting verification."}
+
+
+# ---------- Boxing & Missing Items ----------
+
+@router.post("/{picklist_id}/boxes", response_model=PickListBoxOut)
+async def create_box(
+    picklist_id: int,
+    payload: PickListBoxCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_picker),
+):
+    result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    pl = result.scalars().first()
+    if not pl:
+        raise HTTPException(status_code=404, detail="Pick list not found")
+        
+    box = PickListBox(
+        pick_list_id=picklist_id,
+        carton_type_id=payload.carton_type_id,
+        entered_weight=payload.entered_weight
+    )
+    db.add(box)
+    await db.flush()
+    
+    # assign items to box
+    items_res = await db.execute(
+        select(PickListItem).filter(
+            PickListItem.id.in_(payload.item_ids),
+            PickListItem.pick_list_id == picklist_id
+        )
+    )
+    items = items_res.scalars().all()
+    for item in items:
+        item.box_id = box.id
+        item.is_full_carton = False # boxed items are loose items
+        
+    await db.commit()
+    await db.refresh(box)
+    return box
+
+@router.patch("/{picklist_id}/items/{item_id}/report-missing")
+async def report_missing_item(
+    picklist_id: int,
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_picker),
+):
+    result = await db.execute(
+        select(PickListItem).filter(
+            PickListItem.id == item_id,
+            PickListItem.pick_list_id == picklist_id,
+        )
+    )
+    item = result.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    item.missing_reported = True
+    await db.commit()
+    return {"message": "Missing reported", "item_id": item_id}
+
+@router.patch("/{picklist_id}/items/{item_id}/approve-missing")
+async def approve_missing_item(
+    picklist_id: int,
+    item_id: int,
+    approved: bool = Query(..., description="True to approve missing, False to reject"),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_admin),
+):
+    result = await db.execute(
+        select(PickListItem).filter(
+            PickListItem.id == item_id,
+            PickListItem.pick_list_id == picklist_id,
+        )
+    )
+    item = result.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    if approved:
+        item.missing_approved = True
+        item.is_picked = False # missing item is not picked
+    else:
+        item.missing_approved = False
+        item.missing_reported = False # rejected, need to find it
+
+    await db.commit()
+    return {"message": "Missing status updated", "item_id": item_id}
 
 
 # ---------- Verification ----------

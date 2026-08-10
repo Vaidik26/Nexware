@@ -15,7 +15,7 @@ class PickList(Base):
     
     items = relationship("PickListItem", back_populates="pick_list", cascade="all, delete-orphan", lazy="selectin")
     assignments = relationship("PickAssignment", back_populates="pick_list", cascade="all, delete-orphan", lazy="selectin")
-
+    boxes = relationship("PickListBox", back_populates="pick_list", cascade="all, delete-orphan", lazy="selectin")
     @property
     def assigned_picker_id(self):
         if self.assignments and len(self.assignments) > 0:
@@ -41,8 +41,25 @@ class PickListItem(Base):
     unit = Column(String, nullable=False)
     is_picked = Column(Boolean, default=False)
     picked_at = Column(DateTime(timezone=True), nullable=True)
+    is_full_carton = Column(Boolean, default=True)
+    box_id = Column(Integer, ForeignKey("pick_list_boxes.id"), nullable=True)
+    missing_reported = Column(Boolean, default=False)
+    missing_approved = Column(Boolean, nullable=True)
 
     pick_list = relationship("PickList", back_populates="items")
+    box = relationship("PickListBox", back_populates="items")
+
+class PickListBox(Base):
+    __tablename__ = "pick_list_boxes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pick_list_id = Column(Integer, ForeignKey("pick_lists.id"), nullable=False)
+    carton_type_id = Column(Integer, ForeignKey("carton_types.id"), nullable=False)
+    entered_weight = Column(Float, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    pick_list = relationship("PickList", back_populates="boxes")
+    items = relationship("PickListItem", back_populates="box")
 
 class PickAssignment(Base):
     __tablename__ = "pick_assignments"

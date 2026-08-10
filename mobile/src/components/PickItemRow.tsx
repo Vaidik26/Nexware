@@ -1,9 +1,11 @@
 import { View, Text, TouchableOpacity } from 'react-native';
-import { Check } from 'lucide-react-native';
+import { Check, AlertTriangle } from 'lucide-react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { playTickSound } from '../lib/alertSound';
 
-export default function PickItemRow({ item, onToggle, disabled }: { item: any, onToggle: () => void, disabled?: boolean }) {
+export default function PickItemRow({ item, onToggle, onMissing, disabled }: { item: any, onToggle: () => void, onMissing?: () => void, disabled?: boolean }) {
+  
+  const isMissing = item.missing_reported;
   
   const animatedStyle = useAnimatedStyle(() => {
     return {
@@ -12,7 +14,7 @@ export default function PickItemRow({ item, onToggle, disabled }: { item: any, o
   });
 
   const handlePress = () => {
-    if (disabled) return;
+    if (disabled || isMissing) return;
     if (!item.picked) {
       playTickSound();
     }
@@ -38,6 +40,8 @@ export default function PickItemRow({ item, onToggle, disabled }: { item: any, o
             </Text>
             {item.picked ? (
               <Text className="text-xs font-bold text-primary font-inter">✓ Ticked</Text>
+            ) : isMissing ? (
+              <Text className="text-xs font-bold text-red-600 font-inter">Reported Missing</Text>
             ) : (
               <Text className="text-xs font-medium text-amber-700 font-inter">Tap to tick off</Text>
             )}
@@ -52,6 +56,15 @@ export default function PickItemRow({ item, onToggle, disabled }: { item: any, o
           <Text className="text-xs font-bold text-gray-500 font-inter">{item.uom}</Text>
         </View>
       </TouchableOpacity>
+      {!item.picked && !isMissing && !disabled && onMissing && (
+        <TouchableOpacity 
+          className="bg-red-50 py-2 px-3 rounded-xl mt-[-8px] mb-3 border border-red-200 flex-row justify-center items-center"
+          onPress={onMissing}
+        >
+          <AlertTriangle size={16} color="#dc2626" />
+          <Text className="text-red-600 font-semibold text-xs ml-2">Report Missing</Text>
+        </TouchableOpacity>
+      )}
     </Animated.View>
   );
 }

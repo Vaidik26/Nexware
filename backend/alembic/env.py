@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -17,7 +18,7 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 def run_migrations_offline() -> None:
-    url = settings.DATABASE_URL
+    url = settings.get_async_database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -35,12 +36,17 @@ def do_run_migrations(connection) -> None:
 
 async def run_async_migrations() -> None:
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = settings.DATABASE_URL
+    configuration["sqlalchemy.url"] = settings.get_async_database_url()
     
     connectable = async_engine_from_config(
         configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args={
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+            "prepared_statement_name_func": lambda *_: f"__asyncpg_{uuid.uuid4().hex}__",
+        },
     )
 
     async with connectable.connect() as connection:

@@ -8,6 +8,10 @@ class PickListItemBase(BaseModel):
     quantity: float
     unit: str
     is_picked: bool = False
+    is_full_carton: bool = True
+    box_id: Optional[int] = None
+    missing_reported: bool = False
+    missing_approved: Optional[bool] = None
 
 class PickListItemOut(PickListItemBase):
     id: int
@@ -20,6 +24,19 @@ class PickListBase(BaseModel):
     customer_name: str
     status: str
 
+class PickListBoxBase(BaseModel):
+    carton_type_id: int
+    entered_weight: float
+
+class PickListBoxCreate(PickListBoxBase):
+    item_ids: List[int]
+
+class PickListBoxOut(PickListBoxBase):
+    id: int
+    pick_list_id: int
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
 class PickListOut(PickListBase):
     id: int
     sales_order_id: Optional[int]
@@ -28,4 +45,5 @@ class PickListOut(PickListBase):
     assigned_picker_name: Optional[str] = None
     created_at: datetime
     items: List[PickListItemOut] = []
+    boxes: List[PickListBoxOut] = []
     model_config = ConfigDict(from_attributes=True)

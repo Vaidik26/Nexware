@@ -14,6 +14,7 @@ export default function Verification() {
   const [isLoading, setIsLoading] = useState(!cached);
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
   const [selectedList, setSelectedList] = useState<any | null>(null);
+  const [isMissingModalOpen, setIsMissingModalOpen] = useState(false);
   const [returnReason, setReturnReason] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -126,6 +127,31 @@ export default function Verification() {
     }
   };
 
+  const handleMissingAction = async (itemId: number, approve: boolean) => {
+    try {
+      setIsProcessing(true);
+      await api.patch(`/picklists/${selectedList.id}/items/${itemId}/approve-missing?approved=${approve}`);
+      toast.success(approve ? 'Missing item approved' : 'Missing item rejected (sent back to picker)');
+      
+      // Update local state for immediate feedback
+      if (selectedList) {
+        const updatedList = { ...selectedList };
+        const itemIndex = updatedList.items.findIndex((i: any) => i.id === itemId);
+        if (itemIndex > -1) {
+          updatedList.items[itemIndex].missing_approved = approve;
+          if (!approve) updatedList.items[itemIndex].missing_reported = false;
+        }
+        setSelectedList(updatedList);
+      }
+      
+      fetchPickLists(true);
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'Failed to process missing item'));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const columns = [
     { header: 'Order / PL #', accessor: (row: any) => `PL-${row.id}`, className: 'font-black text-primary font-mono' },
     { header: 'Customer Enterprise Name', accessor: 'customer_name' as const, className: 'font-semibold text-on-surface' },
@@ -144,13 +170,20 @@ export default function Verification() {
     },
     {
       header: 'Quality Audit & Actions',
-      accessor: (row: any) => (
-        <div className="flex gap-2 items-center">
-          {row.status === 'waiting_verification' && (
-            <Button size="sm" onClick={() => handleVerify(row.id)} disabled={isProcessing} className="bg-emerald-600 hover:bg-emerald-700 font-bold shadow-xs">
-              <CheckCircle2 className="w-4 h-4 mr-1.5" /> Approve & Verify
-            </Button>
-          )}
+      accessor: (row: any) => {
+        const hasMissing = row.items?.some((i: any) => i.missing_reported && i.missing_approved === null);
+        return (
+          <div className="flex gap-2 items-center">
+            {hasMissing && (
+              <Button size="sm" onClick={() => { setSelectedList(row); setIsMissingModalOpen(true); }} className="bg-red-100 text-red-700 border border-red-300 hover:bg-red-200">
+                <AlertOctagon className="w-4 h-4 mr-1.5" /> Missing Items
+              </Button>
+            )}
+            {row.status === 'waiting_verification' && (
+              <Button size="sm" onClick={() => handleVerify(row.id)} disabled={isProcessing || hasMissing} className="bg-emerald-600 hover:bg-emerald-700 font-bold shadow-xs">
+                <CheckCircle2 className="w-4 h-4 mr-1.5" /> Approve & Verify
+              </Button>
+            )}
           {(row.status === 'waiting_verification' || row.status === 'picking') && (
             <Button size="sm" variant="outline" onClick={() => { setSelectedList(row); setIsReturnModalOpen(true); }} className="text-amber-700 border-amber-400 font-bold hover:bg-amber-50">
               <RotateCcw className="w-4 h-4 mr-1.5" /> Return to Floor
@@ -234,6 +267,46 @@ export default function Verification() {
             <Button onClick={handleReturn} isLoading={isProcessing} className="bg-amber-600 hover:bg-amber-700 font-bold">
               Confirm & Return to Floor
             </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isMissingModalOpen} onClose={() => setIsMissingModalOpen(false)} title={`Missing Items - Order PL-${selectedList?.id}`}>
+        <div className="space-y-4">
+          <p className="text-sm text-on-surface-variant">The following items were reported as missing by the picker. Please approve to exclude them from the order, or reject to send them back to the picker.</p>
+          <div className="border border-outline-variant rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-surface-variant">
+                <tr>
+                  <th className="p-3 text-left">Barcode</th>
+                  <th className="p-3 text-left">Product</th>
+                  <th className="p-3 text-left">Quantity</th>
+                  <th className="p-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant">
+                {selectedList?.items?.filter((i: any) => i.missing_reported && i.missing_approved === null).map((item: any) => (
+                  <tr key={item.id}>
+                    <td className="p-3 font-mono">{item.barcode}</td>
+                    <td className="p-3">{item.product_name}</td>
+                    <td className="p-3">{item.quantity} {item.unit}</td>
+                    <td className="p-3 flex justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={() => handleMissingAction(item.id, false)} disabled={isProcessing} className="text-red-600 border-red-200 hover:bg-red-50">
+                        Reject
+                      </Button>
+                      <Button size="sm" onClick={() => handleMissingAction(item.id, true)} disabled={isProcessing} className="bg-emerald-600 hover:bg-emerald-700">
+                        Approve
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+                {selectedList?.items?.filter((i: any) => i.missing_reported && i.missing_approved === null).length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="p-6 text-center text-on-surface-variant">No pending missing items.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </Modal>
