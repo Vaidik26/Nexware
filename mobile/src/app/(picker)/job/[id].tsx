@@ -51,7 +51,6 @@ export default function JobDetailScreen() {
         setIsLoading(false);
       }
     };
-    };
     const fetchCartonTypes = async () => {
       try {
         const res = await api.get('/catalogue/cartons');

@@ -69,10 +69,15 @@ export default function RootLayout() {
 
     const inAuthGroup = segments[0] === '(auth)';
     const inPickerGroup = segments[0] === '(picker)';
+    const inLpoGroup = segments[0] === '(lpo)';
     
-    if (isAuthenticated && !inPickerGroup) {
-      // If logged in but sitting at root (/) or auth screens, push to dashboard
-      router.replace('/(picker)/jobs');
+    if (isAuthenticated) {
+      const isLpoUser = useAuthStore.getState().picker?.role === 'lpo';
+      if (isLpoUser && !inLpoGroup) {
+        router.replace('/(lpo)/create');
+      } else if (!isLpoUser && !inPickerGroup) {
+        router.replace('/(picker)/jobs');
+      }
     } else if (!isAuthenticated && !inAuthGroup) {
       // If not logged in and trying to access anything other than auth, push to login
       router.replace('/(auth)/login');

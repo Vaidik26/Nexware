@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
-import { Plus, Trash2, Users, Search, AlertCircle, ShoppingCart } from 'lucide-react';
+import { Plus, Trash2, Users, Search, AlertCircle, ShoppingCart, QrCode } from 'lucide-react';
 import { toast } from '@/components/ui/Toast';
 import { getErrorMessage } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
@@ -23,6 +23,9 @@ export default function CreateOrder() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [assigningId, setAssigningId] = useState<number | null>(null);
   
+  const [isLpoModalOpen, setIsLpoModalOpen] = useState(false);
+  const [lpoScannerData, setLpoScannerData] = useState('');
+  
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -40,6 +43,39 @@ export default function CreateOrder() {
     };
     fetchPrereqs();
   }, []);
+
+  const handleLpoScan = (scannedData: string) => {
+    try {
+      const parsed = JSON.parse(scannedData);
+      if (parsed.type === "LPO" && Array.isArray(parsed.items)) {
+        setCustomerName(parsed.customer || '');
+        setOrderNumber(parsed.order || '');
+        
+        // Map LPO items to our format, lookup available quantity from catalogue
+        const newItems = parsed.items.map((pi: any) => {
+          const catItem = catalogue.find(c => c.barcode === pi.b) || {
+            item_name: "Unknown Item",
+            available_quantity: 0
+          };
+          return {
+            barcode: pi.b,
+            item_name: catItem.item_name,
+            available_quantity: catItem.available_quantity,
+            requested_quantity: pi.q
+          };
+        });
+        
+        setOrderItems(newItems);
+        setIsLpoModalOpen(false);
+        setLpoScannerData('');
+        toast.success(`Successfully imported LPO with ${newItems.length} items`);
+      } else {
+        toast.error('Invalid LPO QR format');
+      }
+    } catch (e) {
+      toast.error('Failed to parse LPO QR Code data');
+    }
+  };
 
   const filteredCatalogue = catalogue.filter(c => 
     c.item_name.toLowerCase().includes(search.toLowerCase()) || 
@@ -117,14 +153,20 @@ export default function CreateOrder() {
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold text-on-surface flex items-center gap-2.5">
-          <span>Create Manual Order</span>
-          <span className="bg-primary/10 text-primary border border-primary/20 text-xs px-2.5 py-1 rounded-full font-extrabold">
-            Direct Assignment
-          </span>
-        </h1>
-        <p className="text-on-surface-variant mt-1">Create sales orders manually and assign them directly to warehouse pickers.</p>
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-2xl font-bold text-on-surface flex items-center gap-2.5">
+            <span>Create Manual Order</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 text-xs px-2.5 py-1 rounded-full font-extrabold">
+              Direct Assignment
+            </span>
+          </h1>
+          <p className="text-on-surface-variant mt-1">Create sales orders manually and assign them directly to warehouse pickers.</p>
+        </div>
+        <Button onClick={() => setIsLpoModalOpen(true)} variant="secondary" className="border-primary text-primary">
+          <QrCode className="w-4 h-4 mr-2" />
+          Scan External LPO
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -334,6 +376,25 @@ export default function CreateOrder() {
           <div className="flex justify-end pt-3 border-t border-outline-variant">
             <Button variant="secondary" onClick={() => setIsAssignModalOpen(false)}>Cancel</Button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isLpoModalOpen} onClose={() => { setIsLpoModalOpen(false); setLpoScannerData(''); }} title="Scan External LPO">
+        <div className="space-y-4">
+          <p className="text-sm font-semibold text-on-surface-variant">
+            Please focus the input below and scan the LPO QR code using a 2D Barcode Scanner. The data will be instantly parsed to create an order.
+          </p>
+          <input
+            type="text"
+            autoFocus
+            className="w-full px-4 py-3 rounded-xl border border-outline-variant focus:outline-none focus:ring-2 focus:ring-primary/50 text-on-surface font-semibold"
+            placeholder="Awaiting scanner input..."
+            value={lpoScannerData}
+            onChange={(e) => {
+              setLpoScannerData(e.target.value);
+              handleLpoScan(e.target.value);
+            }}
+          />
         </div>
       </Modal>
     </div>
