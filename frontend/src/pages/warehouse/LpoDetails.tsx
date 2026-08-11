@@ -6,7 +6,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import {
   UploadCloud, ExternalLink, CheckCircle, XCircle,
-  Users, Zap, Package2, Calendar, RefreshCw, Trash2, ArrowLeft,
+  Users, Zap, Package2, RefreshCw, Trash2, ArrowLeft,
   ChevronLeft, ChevronRight, FileText
 } from 'lucide-react';
 
