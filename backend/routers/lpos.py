@@ -4,6 +4,7 @@ from sqlalchemy.future import select
 from sqlalchemy import func as sqlfunc
 from typing import List
 from pydantic import BaseModel
+from datetime import datetime
 from typing import Optional, Any
 from backend.database import get_db
 from backend.models.lpo import Lpo
@@ -29,7 +30,7 @@ class LpoCreate(BaseModel):
     customer_name: str
     items: List[LpoItemSchema]
     sales_person_id: Optional[int] = None   # optional — manual/admin orders may not have one
-    delivery_date: Optional[str] = None
+    delivery_date: Optional[datetime] = None
     source: Optional[str] = "upload"        # 'upload' | 'manual' | 'mobile'
 
 class LpoUpdateStatus(BaseModel):
@@ -48,7 +49,7 @@ class LpoOut(BaseModel):
     signed_lpo_url: Optional[str]
     status: str
     source: Optional[str] = "upload"
-    delivery_date: Optional[str] = None
+    delivery_date: Optional[datetime] = None
     created_at: Optional[Any] = None
 
     class Config:
