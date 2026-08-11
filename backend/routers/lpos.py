@@ -24,6 +24,7 @@ class LpoCreate(BaseModel):
     customer_name: str
     items: List[LpoItemSchema]
     sales_person_id: int
+    delivery_date: Optional[str] = None
 
 class LpoUpdateStatus(BaseModel):
     status: str
@@ -36,6 +37,7 @@ class LpoOut(BaseModel):
     items: Any
     signed_lpo_url: Optional[str]
     status: str
+    delivery_date: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -53,7 +55,8 @@ async def create_lpo(lpo: LpoCreate, db: AsyncSession = Depends(get_db)):
         lpo_number=lpo.lpo_number,
         customer_name=lpo.customer_name,
         sales_person_id=lpo.sales_person_id,
-        items=[item.dict() for item in lpo.items]
+        items=[item.dict() for item in lpo.items],
+        delivery_date=lpo.delivery_date
     )
     db.add(db_lpo)
     await db.commit()
@@ -112,6 +115,7 @@ async def convert_lpo_to_picklist(lpo_id: int, db: AsyncSession = Depends(get_db
         sales_order_id=None,
         status="draft",
         picker_job_number=None,
+        delivery_date=lpo.delivery_date,
     )
     db.add(db_picklist)
     await db.flush()

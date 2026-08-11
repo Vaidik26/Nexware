@@ -36,6 +36,7 @@ export default function LpoCreateScreen() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [orderNumber, setOrderNumber] = useState(generateAutoLpoNumber());
+  const [deliveryDate, setDeliveryDate] = useState('');
   
   const [showItemModal, setShowItemModal] = useState(false);
   const [search, setSearch] = useState('');
@@ -126,7 +127,7 @@ export default function LpoCreateScreen() {
     
     try {
       setIsGenerating(true);
-      const res = await api.post('/picklists/direct-assign-auto', {
+      const payload: any = {
         order_number: orderNumber.trim(),
         customer_name: customerName.trim(),
         items: cart.map(c => ({
@@ -136,7 +137,12 @@ export default function LpoCreateScreen() {
           product_name: c.product_name
         })),
         auto_assign: false // Do not assign automatically
-      });
+      };
+      if (deliveryDate.trim()) {
+        payload.delivery_date = new Date(deliveryDate.trim()).toISOString();
+      }
+
+      const res = await api.post('/picklists/direct-assign-auto', payload);
       
       const lpoData = res.data;
       setSuccessLpoData(lpoData);
@@ -154,6 +160,7 @@ export default function LpoCreateScreen() {
     setSuccessLpoData(null);
     setCart([]);
     setCustomerName('');
+    setDeliveryDate('');
     setOrderNumber(generateAutoLpoNumber());
   };
 
@@ -216,6 +223,7 @@ export default function LpoCreateScreen() {
         <div class="field-row"><span class="field-label">LPO Ref:</span><span>${orderNumber}</span></div>
         <div class="field-row"><span class="field-label">Date:</span><span>${dateStr} ${timeStr}</span></div>
         <div class="field-row"><span class="field-label">Customer:</span><span>${customerName}</span></div>
+        ${deliveryDate ? `<div class="field-row"><span class="field-label">Delivery:</span><span>${deliveryDate}</span></div>` : ''}
         <div class="field-row"><span class="field-label">Status:</span><span>${successLpoData?.picker_name ? 'Assigned' : 'PENDING'}</span></div>
         ${successLpoData?.picker_name ? `<div class="field-row"><span class="field-label">Picker:</span><span>${successLpoData.picker_name}</span></div>` : ''}
         <div class="thick-div"></div>
@@ -255,7 +263,7 @@ export default function LpoCreateScreen() {
       {/* Header */}
       <View className="px-4 py-3 bg-white border-b border-gray-200 flex-row justify-between items-center shadow-sm z-10">
         <View>
-          <Text className="text-xl font-black text-onSurface font-inter">LPO Generator</Text>
+          <Text className="text-xl font-black text-onSurface font-inter">Create Order</Text>
           <Text className="text-xs text-primary font-bold font-inter mt-0.5">Welcome, {picker?.full_name}</Text>
         </View>
         <TouchableOpacity onPress={handleLogout} className="bg-rose-50 p-2.5 rounded-xl border border-rose-100">
@@ -272,6 +280,13 @@ export default function LpoCreateScreen() {
             placeholder="e.g. Acme Corp"
             value={customerName}
             onChangeText={setCustomerName}
+          />
+          <Text className="text-[11px] font-bold text-gray-500 mb-1 font-inter uppercase tracking-wider">Delivery Date (YYYY-MM-DD)</Text>
+          <TextInput
+            className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-3 font-inter text-base text-gray-800 font-semibold"
+            placeholder="e.g. 2026-10-15 (Optional)"
+            value={deliveryDate}
+            onChangeText={setDeliveryDate}
           />
           <Text className="text-[11px] font-bold text-gray-500 mb-1 font-inter uppercase tracking-wider">LPO Number (Auto-Generated)</Text>
           <TextInput

@@ -12,6 +12,7 @@ class PickList(Base):
     sales_person_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(String, default="draft") # draft, assigned, picking, waiting_verification, verified, completed
     picker_job_number = Column(Integer, nullable=True)  # Per-picker sequence: 1, 2, 3... shown as P-001, P-002
+    delivery_date = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     sales_person = relationship("User", foreign_keys=[sales_person_id], lazy="selectin")

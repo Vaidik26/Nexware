@@ -371,15 +371,27 @@ export default function PickLists() {
               <Download className="w-3.5 h-3.5" /> Export / View
             </Button>
           )}
-          <Button 
-            size="sm" 
-            variant="ghost" 
-            onClick={() => handleCancelJob(row.id)} 
-            title="Cancel Ongoing Job & Remove from Database" 
-            className="text-rose-700 hover:bg-rose-50 hover:text-rose-800 p-1.5 border border-transparent hover:border-rose-200 font-semibold"
-          >
-            <XCircle className="w-4 h-4 text-rose-600 mr-1" /> <span className="text-xs">Cancel & Remove</span>
-          </Button>
+          {(row.status === 'verified' || row.status === 'completed') ? (
+            <Button 
+              size="sm" 
+              variant="ghost" 
+              onClick={() => handleCancelJob(row.id)} 
+              title="Purge dispatched record from database" 
+              className="text-amber-700 hover:bg-amber-50 hover:text-amber-800 p-1.5 border border-transparent hover:border-amber-200 font-semibold"
+            >
+              <XCircle className="w-4 h-4 text-amber-600 mr-1" /> <span className="text-xs">Purge Record</span>
+            </Button>
+          ) : (
+            <Button 
+              size="sm" 
+              variant="ghost" 
+              onClick={() => handleCancelJob(row.id)} 
+              title="Cancel Ongoing Job & Remove from Database" 
+              className="text-rose-700 hover:bg-rose-50 hover:text-rose-800 p-1.5 border border-transparent hover:border-rose-200 font-semibold"
+            >
+              <XCircle className="w-4 h-4 text-rose-600 mr-1" /> <span className="text-xs">Cancel & Remove</span>
+            </Button>
+          )}
         </div>
       ),
     },

@@ -25,6 +25,7 @@ class PickListBase(BaseModel):
     order_number: str
     customer_name: str
     status: str
+    delivery_date: Optional[datetime] = None
 
 class PickListBoxBase(BaseModel):
     carton_type_id: int

@@ -72,7 +72,7 @@ export default function RootLayout() {
     const inLpoGroup = segments[0] === '(lpo)';
     
     if (isAuthenticated) {
-      const isLpoUser = useAuthStore.getState().picker?.role === 'lpo';
+      const isLpoUser = useAuthStore.getState().picker?.role === 'sales_person';
       if (isLpoUser && !inLpoGroup) {
         router.replace('/(lpo)/create');
       } else if (!isLpoUser && !inPickerGroup) {

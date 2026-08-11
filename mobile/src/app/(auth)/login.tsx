@@ -35,7 +35,7 @@ export default function LoginScreen() {
       
       const { token, user } = res.data;
       
-      if (user.role !== 'picker' && user.role !== 'admin' && user.role !== 'lpo') {
+      if (user.role !== 'picker' && user.role !== 'admin' && user.role !== 'sales_person') {
         setError('Unauthorized role access');
         return;
       }

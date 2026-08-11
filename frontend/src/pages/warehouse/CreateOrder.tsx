@@ -15,6 +15,7 @@ export default function CreateOrder() {
   
   const [customerName, setCustomerName] = useState('');
   const [orderNumber, setOrderNumber] = useState(`MANUAL-${Math.floor(1000 + Math.random() * 9000)}`);
+  const [deliveryDate, setDeliveryDate] = useState('');
   const [selectedSalesPersonId, setSelectedSalesPersonId] = useState<string>('');
   
   // orderRows will hold the inline table data
@@ -27,6 +28,11 @@ export default function CreateOrder() {
   const [isLpoModalOpen, setIsLpoModalOpen] = useState(false);
   const [lpoScannerData, setLpoScannerData] = useState('');
   
+  const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
+  const [createdPicklistId, setCreatedPicklistId] = useState<number | null>(null);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -140,7 +146,7 @@ export default function CreateOrder() {
     setIsProcessing(true);
     setAssigningId(pickerId);
     try {
-      const payload = {
+      const payload: any = {
         order_number: orderNumber,
         customer_name: customerName,
         sales_person_id: selectedSalesPersonId ? parseInt(selectedSalesPersonId) : null,
@@ -151,12 +157,16 @@ export default function CreateOrder() {
           unit: 'PCS',
         })),
       };
+      if (deliveryDate) {
+        payload.delivery_date = new Date(deliveryDate).toISOString();
+      }
 
-      await api.post(`/picklists/direct-assign/${pickerId}`, payload);
+      const res = await api.post(`/picklists/direct-assign/${pickerId}`, payload);
       
       toast.success(`Order #${orderNumber} created and assigned to Picker (${pickerName})!`);
       setIsAssignModalOpen(false);
-      navigate('/warehouse/picklists');
+      setCreatedPicklistId(res.data.picklist_id);
+      setIsSuccessModalOpen(true);
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Could not assign picklist to selected operational staff'));
       setIsAssignModalOpen(false);
@@ -201,7 +211,7 @@ export default function CreateOrder() {
 
     setIsProcessing(true);
     try {
-      const payload = {
+      const payload: any = {
         order_number: orderNumber,
         customer_name: customerName,
         sales_person_id: selectedSalesPersonId ? parseInt(selectedSalesPersonId) : null,
@@ -212,11 +222,15 @@ export default function CreateOrder() {
           unit: 'PCS',
         })),
       };
+      if (deliveryDate) {
+        payload.delivery_date = new Date(deliveryDate).toISOString();
+      }
 
-      await api.post(`/picklists/direct-assign-auto`, payload);
+      const res = await api.post(`/picklists/direct-assign-auto`, payload);
       
       toast.success(`Order #${orderNumber} created and auto-assigned successfully!`);
-      navigate('/warehouse/picklists');
+      setCreatedPicklistId(res.data.picklist_id);
+      setIsSuccessModalOpen(true);
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Could not auto-assign picklist. Are pickers available?'));
     } finally {
@@ -241,6 +255,84 @@ export default function CreateOrder() {
           Scan External LPO
         </Button>
       </div>
+
+      <Modal isOpen={isSuccessModalOpen} onClose={() => { setIsSuccessModalOpen(false); navigate('/warehouse/picklists'); }} title="Order Created Successfully">
+        <div className="space-y-6 text-center py-4">
+          <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner border border-emerald-300">
+            <ShoppingCart className="w-8 h-8" />
+          </div>
+          <div>
+            <h3 className="text-xl font-extrabold text-on-surface">Order #{orderNumber} Generated!</h3>
+            <p className="text-sm text-slate-500 mt-1">The picklist has been securely dispatched to the operations floor.</p>
+          </div>
+          <div className="flex flex-col gap-3 max-w-sm mx-auto pt-2">
+            <Button 
+              onClick={async () => {
+                if (!createdPicklistId) return;
+                setIsDownloadingPdf(true);
+                try {
+                  const res = await api.get(`/picklists/${createdPicklistId}/download/pdf`, { responseType: 'blob' });
+                  const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.setAttribute('download', `Picklist_PL-${createdPicklistId}.pdf`);
+                  document.body.appendChild(link);
+                  link.click();
+                  setTimeout(() => { link.remove(); window.URL.revokeObjectURL(url); }, 200);
+                  toast.success('PDF downloaded successfully');
+                } catch (err: any) {
+                  toast.error(getErrorMessage(err, 'Could not download PDF report'));
+                } finally {
+                  setIsDownloadingPdf(false);
+                }
+              }}
+              disabled={isDownloadingPdf}
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 py-3 shadow-md flex items-center justify-center gap-2 rounded-xl text-sm"
+            >
+              <span>{isDownloadingPdf ? 'Downloading PDF...' : 'Download Picklist (PDF)'}</span>
+            </Button>
+            
+            <Button 
+              onClick={async () => {
+                if (!createdPicklistId) return;
+                setIsDownloadingExcel(true);
+                try {
+                  const res = await api.get(`/picklists/${createdPicklistId}/download/excel`, { responseType: 'blob' });
+                  const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.setAttribute('download', `Picklist_PL-${createdPicklistId}.xlsx`);
+                  document.body.appendChild(link);
+                  link.click();
+                  setTimeout(() => { link.remove(); window.URL.revokeObjectURL(url); }, 200);
+                  toast.success('Excel sheet downloaded successfully');
+                } catch (err: any) {
+                  toast.error(getErrorMessage(err, 'Could not download Excel report'));
+                } finally {
+                  setIsDownloadingExcel(false);
+                }
+              }}
+              disabled={isDownloadingExcel}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 py-3 shadow-md flex items-center justify-center gap-2 rounded-xl text-sm"
+            >
+              <span>{isDownloadingExcel ? 'Downloading Excel...' : 'Download Picklist (Excel)'}</span>
+            </Button>
+
+            <Button 
+              variant="outline"
+              onClick={() => { 
+                setIsSuccessModalOpen(false); 
+                setCustomerName(''); 
+                setOrderRows([{ id: Date.now(), catItem: null, requested_quantity: 1 }]); 
+                setOrderNumber(`MANUAL-${Math.floor(1000 + Math.random() * 9000)}`);
+              }} 
+              className="w-full font-bold px-5 py-3 mt-2"
+            >
+              Create Another Order
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <div className="grid grid-cols-1 gap-8">
         <div className="space-y-6">
@@ -267,7 +359,16 @@ export default function CreateOrder() {
                   placeholder="Order ID"
                 />
               </div>
-              <div className="sm:col-span-2">
+              <div>
+                <label className="block text-sm font-semibold text-on-surface-variant mb-1.5">Delivery Date (Optional)</label>
+                <input 
+                  type="date" 
+                  value={deliveryDate}
+                  onChange={(e) => setDeliveryDate(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-outline-variant focus:outline-none focus:ring-2 focus:ring-primary/50 text-on-surface font-semibold"
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-semibold text-on-surface-variant mb-1.5">Created by Sales Person (Optional)</label>
                 <select
                   value={selectedSalesPersonId}

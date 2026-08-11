@@ -26,7 +26,8 @@ export default function LpoManagement() {
     try {
       setLoading(true);
       const { data } = await api.get('/lpos');
-      setLpos(data);
+      // Filter out processed LPOs so they are removed from this list
+      setLpos(data.filter((lpo: LPO) => lpo.status !== 'processed'));
     } catch (err: any) {
       toast.error('Failed to load LPOs');
     } finally {

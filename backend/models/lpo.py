@@ -20,6 +20,8 @@ class Lpo(Base):
     # status: 'draft', 'processed'
     status = Column(String, default="draft")
     
+    delivery_date = Column(DateTime(timezone=True), nullable=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationship to user
