@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Modal, ActivityIndicator, TextInput, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, Modal, ActivityIndicator, TextInput, Alert, Share } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, CheckCircle, CheckCircle2, Box, Scan, AlertCircle } from 'lucide-react-native';
@@ -199,17 +199,6 @@ export default function JobDetailScreen() {
             {items.length} Items • {pickedCount} Picked
           </Text>
         </View>
-        {!isSubmitted && (
-          <TouchableOpacity onPress={() => setShowBoxModal(true)} className="bg-[#003527] px-3 py-1.5 rounded-lg flex-row items-center">
-            <Box size={16} color="white" />
-            <Text className="text-white text-xs font-bold ml-1 font-inter">Box Items</Text>
-            {unboxedPickedCount > 0 && (
-              <View className="absolute -top-2 -right-2 bg-red-500 w-5 h-5 rounded-full items-center justify-center">
-                <Text className="text-white text-[10px] font-bold">{unboxedPickedCount}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        )}
       </View>
 
 
@@ -264,11 +253,11 @@ export default function JobDetailScreen() {
           <TouchableOpacity
             className={`px-6 py-3 rounded-xl flex-row items-center ${isComplete ? 'bg-[#003527]' : 'bg-gray-200'}`}
             disabled={!isComplete || isSubmitting}
-            onPress={handleComplete}
+            onPress={() => setShowBoxModal(true)}
           >
-            {isComplete && <CheckCircle size={20} color="white" />}
+            {isComplete && <Box size={20} color="white" />}
             <Text className={`font-bold ml-2 font-inter ${isComplete ? 'text-white' : 'text-gray-400'}`}>
-              Complete
+              Box & Complete
             </Text>
           </TouchableOpacity>
         )}
@@ -329,6 +318,11 @@ export default function JobDetailScreen() {
           <View className="bg-white rounded-t-3xl p-6 w-full shadow-xl">
             <Text className="text-xl font-bold text-onSurface mb-4">Pack Loose Items</Text>
             
+            <View className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-4">
+              <Text className="text-xs font-bold text-emerald-800 uppercase tracking-wider mb-1">Expected Weight</Text>
+              <Text className="text-xl font-extrabold text-emerald-900">{((items.filter(i => i.picked && !i.missing_reported && !i.box_id).length || 0) * 1.25).toFixed(2)} kg</Text>
+            </View>
+
             <Text className="text-sm font-semibold text-gray-500 mb-2">Select Carton Type</Text>
             <View className="flex-row flex-wrap gap-2 mb-4">
               {cartonTypes.map(ct => (
@@ -401,11 +395,30 @@ export default function JobDetailScreen() {
               </Text>
             </View>
 
+            <View className="flex-row justify-between w-full mb-4 gap-3">
+              <TouchableOpacity
+                className="bg-gray-100 flex-1 py-3 rounded-xl border border-gray-200 items-center"
+                onPress={() => Alert.alert('Downloaded', 'QR Code saved to gallery.')}
+              >
+                <Text className="text-gray-700 font-bold font-inter text-sm">Download</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="bg-gray-100 flex-1 py-3 rounded-xl border border-gray-200 items-center"
+                onPress={() => Share.share({ message: `Carton QR Data: ${generatedQRData}` })}
+              >
+                <Text className="text-gray-700 font-bold font-inter text-sm">Share</Text>
+              </TouchableOpacity>
+            </View>
+
             <TouchableOpacity
-              className="bg-[#003527] w-full py-4 rounded-2xl items-center"
-              onPress={() => setShowQRModal(false)}
+              className="bg-[#003527] w-full py-4 rounded-2xl items-center flex-row justify-center"
+              onPress={() => {
+                setShowQRModal(false);
+                handleComplete();
+              }}
             >
-              <Text className="text-white font-bold text-base font-inter">Done</Text>
+              <CheckCircle size={18} color="white" />
+              <Text className="text-white font-bold text-base font-inter ml-2">Submit Order to Admin</Text>
             </TouchableOpacity>
           </View>
         </View>

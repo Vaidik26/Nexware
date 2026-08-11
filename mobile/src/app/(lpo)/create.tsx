@@ -239,11 +239,15 @@ Generated via NexWare Terminal`;
         </html>
       `;
 
-      const { uri } = await Print.printToFileAsync({ html: htmlContent });
-      if (share && await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
-      } else if (!share) {
-        Alert.alert('Downloaded', `Receipt saved to: ${uri}`);
+      if (share) {
+        if (await Sharing.isAvailableAsync()) {
+          const { uri } = await Print.printToFileAsync({ html: htmlContent });
+          await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+        } else {
+          Alert.alert('Error', 'Sharing is not available on this device');
+        }
+      } else {
+        await Print.printAsync({ html: htmlContent });
       }
     } catch (err) {
       console.error(err);
@@ -430,7 +434,7 @@ Generated via NexWare Terminal`;
                 {isAssigning ? <ActivityIndicator color="#fff" /> : (
                   <>
                     <Text className={`font-bold text-lg ${successLpoData?.picker_name ? "text-slate-500" : "text-white"}`}>
-                      {successLpoData?.picker_name ? 'Sent to Warehouse' : 'Send to Warehouse'}
+                      {successLpoData?.picker_name ? 'Assigned to Picker' : 'Assign to Picker (Auto)'}
                     </Text>
                   </>
                 )}
@@ -438,7 +442,7 @@ Generated via NexWare Terminal`;
 
               <View className="flex-row gap-3 mt-3">
                 <TouchableOpacity onPress={() => handleDownloadPDF(false)} className="flex-1 p-4 rounded-xl bg-slate-100 items-center justify-center flex-row">
-                  <Text className="font-bold text-slate-700">Download PDF</Text>
+                  <Text className="font-bold text-slate-700">Preview PDF</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => handleDownloadPDF(true)} className="flex-1 p-4 rounded-xl bg-slate-100 items-center justify-center flex-row">
                   <Text className="font-bold text-slate-700">Share</Text>
