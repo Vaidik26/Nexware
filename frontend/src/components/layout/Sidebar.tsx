@@ -25,6 +25,7 @@ const groups = [
     label: 'Warehouse Ops',
     items: [
       { name: 'Order Upload', path: '/warehouse/upload', icon: Package2 },
+      { name: 'LPO Management', path: '/warehouse/lpos', icon: Package2 },
       { name: 'Create Manual Order', path: '/warehouse/create-order', icon: Package2 },
       { name: 'Picklists & Dispatch', path: '/warehouse/picklists', icon: CheckSquare },
       { name: 'Sales Catalogue', path: '/warehouse/catalogue', icon: BookOpen },

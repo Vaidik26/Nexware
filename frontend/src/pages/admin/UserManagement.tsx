@@ -256,7 +256,7 @@ export default function UserManagement() {
             >
               <option value="picker">Picker (Mobile Access)</option>
               <option value="admin">Admin (Web Dashboard Access)</option>
-              <option value="lpo">LPO Generator (Mobile Prototype Access)</option>
+              <option value="sales_person">Sales Person</option>
             </select>
           </div>
           <div className="flex justify-end space-x-3 pt-4">

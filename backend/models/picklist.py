@@ -9,9 +9,13 @@ class PickList(Base):
     order_number = Column(String, nullable=False)
     customer_name = Column(String, nullable=False)
     sales_order_id = Column(Integer, ForeignKey("sales_orders.id"), nullable=True)
+    sales_person_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(String, default="draft") # draft, assigned, picking, waiting_verification, verified, completed
     picker_job_number = Column(Integer, nullable=True)  # Per-picker sequence: 1, 2, 3... shown as P-001, P-002
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    sales_person = relationship("User", foreign_keys=[sales_person_id], lazy="selectin")
+
     
     items = relationship("PickListItem", back_populates="pick_list", cascade="all, delete-orphan", lazy="selectin")
     assignments = relationship("PickAssignment", back_populates="pick_list", cascade="all, delete-orphan", lazy="selectin")

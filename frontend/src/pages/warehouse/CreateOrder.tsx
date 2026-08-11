@@ -11,9 +11,11 @@ import api from '@/lib/api';
 export default function CreateOrder() {
   const [catalogue, setCatalogue] = useState<any[]>([]);
   const [pickers, setPickers] = useState<any[]>([]);
+  const [salesPersons, setSalesPersons] = useState<any[]>([]);
   
   const [customerName, setCustomerName] = useState('');
   const [orderNumber, setOrderNumber] = useState(`MANUAL-${Math.floor(1000 + Math.random() * 9000)}`);
+  const [selectedSalesPersonId, setSelectedSalesPersonId] = useState<string>('');
   
   // orderRows will hold the inline table data
   const [orderRows, setOrderRows] = useState<any[]>([{ id: Date.now(), catItem: null, requested_quantity: 1 }]);
@@ -36,6 +38,7 @@ export default function CreateOrder() {
         ]);
         setCatalogue(catRes.data || []);
         setPickers((usersRes.data || []).filter((u: any) => u.role === 'picker'));
+        setSalesPersons((usersRes.data || []).filter((u: any) => u.role === 'sales_person'));
       } catch (err) {
         toast.error('Failed to load catalogue or users');
       }
@@ -140,6 +143,7 @@ export default function CreateOrder() {
       const payload = {
         order_number: orderNumber,
         customer_name: customerName,
+        sales_person_id: selectedSalesPersonId ? parseInt(selectedSalesPersonId) : null,
         items: validRows.map((r) => ({
           barcode: r.catItem.barcode,
           product_name: r.catItem.item_name,
@@ -200,6 +204,7 @@ export default function CreateOrder() {
       const payload = {
         order_number: orderNumber,
         customer_name: customerName,
+        sales_person_id: selectedSalesPersonId ? parseInt(selectedSalesPersonId) : null,
         items: validRows.map((r) => ({
           barcode: r.catItem.barcode,
           product_name: r.catItem.item_name,
@@ -261,6 +266,19 @@ export default function CreateOrder() {
                   className="w-full px-4 py-3 rounded-xl border border-outline-variant bg-surface-container/50 focus:outline-none focus:ring-2 focus:ring-primary/50 text-on-surface font-semibold"
                   placeholder="Order ID"
                 />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-semibold text-on-surface-variant mb-1.5">Created by Sales Person (Optional)</label>
+                <select
+                  value={selectedSalesPersonId}
+                  onChange={(e) => setSelectedSalesPersonId(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-outline-variant bg-white focus:outline-none focus:ring-2 focus:ring-primary/50 text-on-surface font-semibold"
+                >
+                  <option value="">None (Admin generated)</option>
+                  {salesPersons.map(sp => (
+                    <option key={sp.id} value={sp.id}>{sp.full_name || sp.email}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>

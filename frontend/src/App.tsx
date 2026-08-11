@@ -10,6 +10,7 @@ import SalesCatalogue from '@/pages/warehouse/SalesCatalogue';
 import OrderUpload from '@/pages/warehouse/OrderUpload';
 import CreateOrder from '@/pages/warehouse/CreateOrder';
 import PickLists from '@/pages/warehouse/PickLists';
+import LpoManagement from '@/pages/warehouse/LpoManagement';
 import RawMaterials from '@/pages/market/RawMaterials';
 import PriceManagement from '@/pages/market/PriceManagement';
 import MarketOverview from '@/pages/market/MarketOverview';
@@ -107,6 +108,7 @@ export default function App() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<MarketDashboard />} />
             <Route path="warehouse/catalogue" element={<SalesCatalogue />} />
+            <Route path="warehouse/lpos" element={<LpoManagement />} />
             <Route path="warehouse/upload" element={<OrderUpload />} />
             <Route path="warehouse/create-order" element={<CreateOrder />} />
             <Route path="warehouse/picking" element={<Navigate to="/warehouse/picklists" replace />} />

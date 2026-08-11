@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/components/ui/Toast';
 import api from '@/lib/api';
-import { ShieldCheck, Box, TrendingUp, ArrowRight, Lock, User } from 'lucide-react';
+import { ShieldCheck, Box, TrendingUp, ArrowRight, Lock, User, Eye, EyeOff } from 'lucide-react';
 
 const loginSchema = z.object({
   email: z.string().min(1, 'Email or Username is required'),
@@ -21,6 +21,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const login = useAuthStore((state) => state.login);
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -178,11 +179,18 @@ export default function LoginPage() {
                   <Lock className="h-4 w-4 text-emerald-400" />
                 </div>
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
-                  className="w-full h-11 pl-11 pr-4 bg-[#00211a] border border-emerald-500/30 text-white placeholder-slate-400 focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 rounded-xl text-sm transition-all shadow-inner font-medium"
+                  className="w-full h-11 pl-11 pr-11 bg-[#00211a] border border-emerald-500/30 text-white placeholder-slate-400 focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 rounded-xl text-sm transition-all shadow-inner font-medium"
                   {...register('password')}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-400 transition-colors flex items-center justify-center focus:outline-none"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
               {errors.password && <span className="text-xs text-red-400 block">{errors.password.message}</span>}
             </div>

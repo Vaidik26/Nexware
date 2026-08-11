@@ -18,7 +18,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from backend.config import settings
-from backend.routers import auth, users, catalogue, orders, picklists, market, notifications
+from backend.routers import auth, users, catalogue, orders, picklists, market, notifications, lpos
+
 
 
 @asynccontextmanager
@@ -63,6 +64,7 @@ app.include_router(orders.router)
 app.include_router(picklists.router)
 app.include_router(market.router)
 app.include_router(notifications.router)
+app.include_router(lpos.router)
 
 # Mount all routers under /api prefix as well to guarantee 100% Vercel routing compatibility
 from fastapi import APIRouter
@@ -74,6 +76,7 @@ api_router.include_router(orders.router)
 api_router.include_router(picklists.router)
 api_router.include_router(market.router)
 api_router.include_router(notifications.router)
+api_router.include_router(lpos.router)
 app.include_router(api_router)
 
 

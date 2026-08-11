@@ -26,6 +26,7 @@ class DirectAssignRequest(BaseModel):
     customer_name: str
     items: List[DirectAssignItem]
     auto_assign: bool = True
+    sales_person_id: Optional[int] = None
 
 from backend.models.user import User, Notification
 from backend.models.catalogue import SalesItem, CartonType
@@ -369,6 +370,7 @@ async def direct_assign_picklist(
         order_number=payload.order_number,
         customer_name=payload.customer_name,
         sales_order_id=None,
+        sales_person_id=payload.sales_person_id,
         status="assigned",
         picker_job_number=next_job_number,
     )
@@ -484,6 +486,7 @@ async def direct_assign_auto(
         order_number=payload.order_number,
         customer_name=payload.customer_name,
         sales_order_id=None,
+        sales_person_id=payload.sales_person_id,
         status="assigned" if payload.auto_assign else "draft",
         picker_job_number=next_job_number,
     )
