@@ -44,7 +44,6 @@ export default function LpoCreateScreen() {
   // SUCCESS MODAL STATE
   const [successModalVisible, setSuccessModalVisible] = useState(false);
   const [successLpoData, setSuccessLpoData] = useState<any>(null);
-  const [isAssigning, setIsAssigning] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
@@ -128,21 +127,21 @@ export default function LpoCreateScreen() {
     try {
       setIsGenerating(true);
       const payload: any = {
-        order_number: orderNumber.trim(),
+        lpo_number: orderNumber.trim(),
         customer_name: customerName.trim(),
+        source: 'mobile',
         items: cart.map(c => ({
           barcode: c.barcode,
           quantity: c.quantity,
           unit: c.unit,
           product_name: c.product_name
-        })),
-        auto_assign: false // Do not assign automatically
+        }))
       };
       if (deliveryDate.trim()) {
         payload.delivery_date = new Date(deliveryDate.trim()).toISOString();
       }
 
-      const res = await api.post('/picklists/direct-assign-auto', payload);
+      const res = await api.post('/lpos', payload);
       
       const lpoData = res.data;
       setSuccessLpoData(lpoData);
@@ -164,21 +163,7 @@ export default function LpoCreateScreen() {
     setOrderNumber(generateAutoLpoNumber());
   };
 
-  const handleSendToWarehouse = async () => {
-    if (!successLpoData?.picklist_id) return;
-    try {
-      setIsAssigning(true);
-      const res = await api.post(`/picklists/${successLpoData.picklist_id}/auto-assign`);
-      
-      const updatedData = { ...successLpoData, picker_name: res.data.picker_name };
-      setSuccessLpoData(updatedData);
-      Alert.alert('Success', `LPO assigned to ${res.data.picker_name}.`);
-    } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.detail || 'Failed to assign to warehouse.');
-    } finally {
-      setIsAssigning(false);
-    }
-  };
+
 
   const handleDownloadPDF = async (share: boolean = false) => {
     try {
@@ -424,36 +409,16 @@ export default function LpoCreateScreen() {
               <View className="w-16 h-16 bg-emerald-100 rounded-full items-center justify-center mb-4">
                 <Text className="text-emerald-600 text-2xl">✓</Text>
               </View>
-              <Text className="text-2xl font-black text-slate-800 text-center">Order Drafted!</Text>
-              <Text className="text-slate-500 text-center mt-2">LPO <Text className="font-bold text-slate-700">{orderNumber}</Text> has been created successfully.</Text>
+              <Text className="text-2xl font-black text-slate-800 text-center">Submitted!</Text>
+              <Text className="text-slate-500 text-center mt-2">LPO <Text className="font-bold text-slate-700">{orderNumber}</Text> has been submitted for WM Review.</Text>
             </View>
 
             <View className="space-y-3">
-              <TouchableOpacity 
-                disabled={isAssigning || !!successLpoData?.picker_name}
-                onPress={handleSendToWarehouse}
-                className={`p-4 rounded-xl flex-row justify-center items-center ${successLpoData?.picker_name ? 'bg-slate-200' : 'bg-[#003527]'}`}
-              >
-                {isAssigning ? <ActivityIndicator color="#fff" /> : (
-                  <>
-                    <Text className={`font-bold text-lg ${successLpoData?.picker_name ? "text-slate-500" : "text-white"}`}>
-                      {successLpoData?.picker_name ? 'Assigned to Picker' : 'Assign to Picker (Auto)'}
-                    </Text>
-                  </>
-                )}
+              <TouchableOpacity onPress={() => handleDownloadPDF(true)} className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row">
+                <Text className="font-bold text-slate-700">Download LPO PDF</Text>
               </TouchableOpacity>
-
-              <View className="flex-row gap-3 mt-3">
-                <TouchableOpacity onPress={() => handleDownloadPDF(true)} className="flex-1 p-4 rounded-xl bg-slate-100 items-center justify-center flex-row">
-                  <Text className="font-bold text-slate-700">Download LPO</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleDownloadPDF(true)} className="flex-1 p-4 rounded-xl bg-slate-100 items-center justify-center flex-row">
-                  <Text className="font-bold text-slate-700">Share LPO</Text>
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity onPress={handleCloseSuccess} className="p-4 rounded-xl items-center mt-2 border border-slate-200">
-                <Text className="font-bold text-slate-600">Close & Start New</Text>
+              <TouchableOpacity onPress={handleCloseSuccess} className="w-full p-4 rounded-xl bg-[#003527] items-center justify-center flex-row">
+                <Text className="font-bold text-white">Create Another</Text>
               </TouchableOpacity>
             </View>
           </View>

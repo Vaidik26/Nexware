@@ -2,6 +2,33 @@ import pdfplumber
 import re
 from typing import Dict, Any, List
 
+try:
+    import pypdfium2 as pdfium
+    _PDFIUM_AVAILABLE = True
+except ImportError:
+    _PDFIUM_AVAILABLE = False
+
+
+def _extract_text_pypdfium(file_path: str) -> tuple[str, List[str]]:
+    """
+    Extract full text from a PDF using pypdfium2 (PDFium — Chrome's PDF engine).
+    Returns (full_text, all_lines).
+    Much better than pdfplumber at preserving text order in complex layouts.
+    """
+    full_text = ""
+    all_lines: List[str] = []
+    doc = pdfium.PdfDocument(file_path)
+    for i in range(len(doc)):
+        page = doc[i]
+        textpage = page.get_textpage()
+        page_text = textpage.get_text_range() or ""
+        # pypdfium2 uses \r\n on Windows — normalise
+        page_text = page_text.replace("\r\n", "\n").replace("\r", "\n")
+        full_text += page_text + "\n"
+        all_lines.extend(page_text.split("\n"))
+    doc.close()
+    return full_text, all_lines
+
 # ---------------------------------------------------------------------------
 # Exclusion keywords — footer/tax/contact lines that are NOT product rows
 # ---------------------------------------------------------------------------
@@ -212,18 +239,32 @@ def parse_lpo_pdf(file_path: str) -> Dict[str, Any]:
     items_map: Dict[str, Any] = {}   # keyed by barcode (or synthetic key) to deduplicate
 
     all_lines: List[str] = []
+    full_text = ''
+
+    # -------------------------------------------------------------------------
+    # Step 1: Try pypdfium2 first — PDFium (Chrome's engine) handles complex
+    # LPO layouts far better than pdfplumber's text extraction.
+    # -------------------------------------------------------------------------
+    if _PDFIUM_AVAILABLE:
+        pdfium_text, pdfium_lines = _extract_text_pypdfium(file_path)
+        if pdfium_text.strip():
+            full_text = pdfium_text
+            all_lines = pdfium_lines
 
     with pdfplumber.open(file_path) as pdf:
-        full_text = ''
+        # If pypdfium2 got nothing (image-based PDF), try pdfplumber text
+        if not full_text.strip():
+            for page in pdf.pages:
+                page_text = page.extract_text() or ''
+                full_text += page_text + '\n'
+                all_lines.extend(page_text.split('\n'))
 
+        # ----------------------------------------------------------------
+        # Method 1 — Structured table scanning (grid / spreadsheet LPOs)
+        # Always runs — pdfplumber is best at extracting grid tables even
+        # when pypdfium2 is the primary text source.
+        # ----------------------------------------------------------------
         for page in pdf.pages:
-            page_text = page.extract_text() or ''
-            full_text += page_text + '\n'
-            all_lines.extend(page_text.split('\n'))
-
-            # ----------------------------------------------------------------
-            # Method 1 — Structured table scanning (grid / spreadsheet LPOs)
-            # ----------------------------------------------------------------
             tables = page.extract_tables()
             for table in tables:
                 bc_col = qty_col = desc_col = uom_col = -1
@@ -401,69 +442,71 @@ def parse_lpo_pdf(file_path: str) -> Dict[str, Any]:
                             'has_missing_quantity': not found_valid_qty,
                         }
 
-        # --------------------------------------------------------------------
-        # Method 2 — Block-style split barcode reconstruction (PDF2)
+    # ------------------------------------------------------------------------
+    # Method 2 — Block-style split barcode reconstruction (PDF2)
         # Must run BEFORE Method 3 so block barcodes claim their slots first
         # --------------------------------------------------------------------
-        for item in _reconstruct_block_barcodes(all_lines):
-            bc = item['barcode']
-            if bc and bc not in items_map:
-                items_map[bc] = item
+    # Must run BEFORE Method 3 so block barcodes claim their slots first
+    # --------------------------------------------------------------------
+    for item in _reconstruct_block_barcodes(all_lines):
+        bc = item['barcode']
+        if bc and bc not in items_map:
+            items_map[bc] = item
 
-        # --------------------------------------------------------------------
-        # Method 3 — Line-by-line fallback for barcodes missed by other methods
-        # --------------------------------------------------------------------
-        # Regex to detect block-style barcode prefix lines (handled by Method 2)
-        _BLOCK_PREFIX = re.compile(
-            r'(?:Barcode\s*/?\s*Item|Barcode|Item\s+Code|Product\s+Code)\s+\d',
-            re.IGNORECASE
-        )
+    # ------------------------------------------------------------------------
+    # Method 3 — Line-by-line fallback for barcodes missed by other methods
+    # ------------------------------------------------------------------------
+    # Regex to detect block-style barcode prefix lines (handled by Method 2)
+    _BLOCK_PREFIX = re.compile(
+        r'(?:Barcode\s*/?\s*Item|Barcode|Item\s+Code|Product\s+Code)\s+\d',
+        re.IGNORECASE
+    )
 
-        for line in all_lines:
-            line = line.strip()
-            if not line or _is_metadata_or_contact_line(line):
+    for line in all_lines:
+        line = line.strip()
+        if not line or _is_metadata_or_contact_line(line):
+            continue
+
+        # Skip block-style "Barcode / Item XXXXX" lines — handled by Method 2
+        if _BLOCK_PREFIX.match(line):
+            continue
+
+        # Strip leading apostrophe before word-boundary regex fires
+        clean_line = re.sub(r"(?<!\w)'(?=\d)", '', line)
+        # Collapse stray spaces between digit groups
+        compact_line = re.sub(r'(?<=\d) (?=\d)', '', clean_line)
+
+        bc_match = re.search(r'\b(\d{11,15})\b', compact_line)
+        if bc_match:
+            barcode = bc_match.group(1)
+            if barcode in items_map:
                 continue
 
-            # Skip block-style "Barcode / Item XXXXX" lines — handled by Method 2
-            if _BLOCK_PREFIX.match(line):
-                continue
-
-            # Strip leading apostrophe before word-boundary regex fires
-            clean_line = re.sub(r"(?<!\w)'(?=\d)", '', line)
-            # Collapse stray spaces between digit groups
-            compact_line = re.sub(r'(?<=\d) (?=\d)', '', clean_line)
-
-            bc_match = re.search(r'\b(\d{11,15})\b', compact_line)
-            if bc_match:
-                barcode = bc_match.group(1)
-                if barcode in items_map:
+            nums = re.findall(r'\b(\d+(?:\.\d+)?)\b', compact_line)
+            qty = 1.0
+            found_valid_qty = False
+            for n in reversed(nums):
+                if n == barcode or len(n) >= 11:
                     continue
+                val = _safe_float(n)
+                if 0 < val < 100000:
+                    qty = val
+                    found_valid_qty = True
+                    break
 
-                nums = re.findall(r'\b(\d+(?:\.\d+)?)\b', compact_line)
-                qty = 1.0
-                found_valid_qty = False
-                for n in reversed(nums):
-                    if n == barcode or len(n) >= 11:
-                        continue
-                    val = _safe_float(n)
-                    if 0 < val < 100000:
-                        qty = val
-                        found_valid_qty = True
-                        break
+            clean_desc = re.sub(r'\b\d{11,15}\b', '', compact_line)
+            clean_desc = re.sub(r'\b\d+(?:\.\d+)?\b', '', clean_desc).strip()
+            clean_desc = re.sub(r'\s+', ' ', clean_desc)
 
-                clean_desc = re.sub(r'\b\d{11,15}\b', '', compact_line)
-                clean_desc = re.sub(r'\b\d+(?:\.\d+)?\b', '', clean_desc).strip()
-                clean_desc = re.sub(r'\s+', ' ', clean_desc)
-
-                if clean_desc and len(clean_desc) > 2:
-                    items_map[barcode] = {
-                        'barcode': barcode,
-                        'description': clean_desc,
-                        'uom': 'PCS',
-                        'quantity': qty,
-                        'has_missing_barcode': False,
-                        'has_missing_quantity': not found_valid_qty,
-                    }
+            if clean_desc and len(clean_desc) > 2:
+                items_map[barcode] = {
+                    'barcode': barcode,
+                    'description': clean_desc,
+                    'uom': 'PCS',
+                    'quantity': qty,
+                    'has_missing_barcode': False,
+                    'has_missing_quantity': not found_valid_qty,
+                }
 
     # --------------------------------------------------------------------------
     # Metadata extraction

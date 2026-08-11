@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
-import { Plus, Trash2, Users, AlertCircle, ShoppingCart, QrCode, Search, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, ShoppingCart, QrCode, Search, ChevronDown, Send } from 'lucide-react';
 import { toast } from '@/components/ui/Toast';
 import { getErrorMessage } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import api from '@/lib/api';
+
 
 export default function CreateOrder() {
   const [catalogue, setCatalogue] = useState<any[]>([]);
@@ -29,9 +29,8 @@ export default function CreateOrder() {
   const [lpoScannerData, setLpoScannerData] = useState('');
   
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
-  const [createdPicklistId, setCreatedPicklistId] = useState<number | null>(null);
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
-  const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
+  const [createdLpoNumber, setCreatedLpoNumber] = useState('');
+
 
   const navigate = useNavigate();
 
@@ -106,77 +105,7 @@ export default function CreateOrder() {
     setOrderRows(orderRows.map(r => r.id === id ? { ...r, catItem: catItem, error: null } : r));
   };
 
-  const handleConfirmAssignment = async (pickerId: number, pickerName: string) => {
-    if (!customerName.trim()) {
-      toast.error('Please enter a customer name.');
-      setIsAssignModalOpen(false);
-      return;
-    }
-
-    const validRows = orderRows.filter(r => r.catItem !== null);
-    if (validRows.length === 0) {
-      toast.error('Cannot submit an empty order. Please select at least one item.');
-      setIsAssignModalOpen(false);
-      return;
-    }
-
-    let hasErrors = false;
-    const validatedRows = orderRows.map(r => {
-      if (!r.catItem) return r;
-      if (r.requested_quantity > r.catItem.available_quantity) {
-        hasErrors = true;
-        return { ...r, error: `Quantity exceeds available stock (${r.catItem.available_quantity})` };
-      }
-      return { ...r, error: null };
-    });
-
-    if (orderRows.some(r => !r.catItem)) {
-      toast.error('Blank line items are not allowed. Please remove empty rows or select an item.');
-      setIsAssignModalOpen(false);
-      return;
-    }
-
-    if (hasErrors) {
-      setOrderRows(validatedRows);
-      toast.error('Inventory validation failed. Please check quantities.');
-      setIsAssignModalOpen(false);
-      return;
-    }
-
-    setIsProcessing(true);
-    setAssigningId(pickerId);
-    try {
-      const payload: any = {
-        order_number: orderNumber,
-        customer_name: customerName,
-        sales_person_id: selectedSalesPersonId ? parseInt(selectedSalesPersonId) : null,
-        items: validRows.map((r) => ({
-          barcode: r.catItem.barcode,
-          product_name: r.catItem.item_name,
-          quantity: r.requested_quantity || 1,
-          unit: 'PCS',
-        })),
-      };
-      if (deliveryDate) {
-        payload.delivery_date = new Date(deliveryDate).toISOString();
-      }
-
-      const res = await api.post(`/picklists/direct-assign/${pickerId}`, payload);
-      
-      toast.success(`Order #${orderNumber} created and assigned to Picker (${pickerName})!`);
-      setIsAssignModalOpen(false);
-      setCreatedPicklistId(res.data.picklist_id);
-      setIsSuccessModalOpen(true);
-    } catch (err: any) {
-      toast.error(getErrorMessage(err, 'Could not assign picklist to selected operational staff'));
-      setIsAssignModalOpen(false);
-    } finally {
-      setIsProcessing(false);
-      setAssigningId(null);
-    }
-  };
-
-  const handleAutoAssign = async () => {
+  const handleSubmitForApproval = async () => {
     if (!customerName.trim()) {
       toast.error('Please enter a customer name.');
       return;
@@ -188,33 +117,18 @@ export default function CreateOrder() {
       return;
     }
 
-    let hasErrors = false;
-    const validatedRows = orderRows.map(r => {
-      if (!r.catItem) return r;
-      if (r.requested_quantity > r.catItem.available_quantity) {
-        hasErrors = true;
-        return { ...r, error: `Quantity exceeds available stock (${r.catItem.available_quantity})` };
-      }
-      return { ...r, error: null };
-    });
-
     if (orderRows.some(r => !r.catItem)) {
       toast.error('Blank line items are not allowed. Please remove empty rows or select an item.');
-      return;
-    }
-
-    if (hasErrors) {
-      setOrderRows(validatedRows);
-      toast.error('Inventory validation failed. Please check quantities.');
       return;
     }
 
     setIsProcessing(true);
     try {
       const payload: any = {
-        order_number: orderNumber,
+        lpo_number: orderNumber,
         customer_name: customerName,
         sales_person_id: selectedSalesPersonId ? parseInt(selectedSalesPersonId) : null,
+        source: 'manual',
         items: validRows.map((r) => ({
           barcode: r.catItem.barcode,
           product_name: r.catItem.item_name,
@@ -226,17 +140,18 @@ export default function CreateOrder() {
         payload.delivery_date = new Date(deliveryDate).toISOString();
       }
 
-      const res = await api.post(`/picklists/direct-assign-auto`, payload);
-      
-      toast.success(`Order #${orderNumber} created and auto-assigned successfully!`);
-      setCreatedPicklistId(res.data.picklist_id);
+      await api.post('/lpos', payload);
+
+      setCreatedLpoNumber(orderNumber);
       setIsSuccessModalOpen(true);
     } catch (err: any) {
-      toast.error(getErrorMessage(err, 'Could not auto-assign picklist. Are pickers available?'));
+      toast.error(getErrorMessage(err, 'Could not submit order for approval'));
     } finally {
       setIsProcessing(false);
     }
   };
+
+
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
@@ -244,11 +159,11 @@ export default function CreateOrder() {
         <div>
           <h1 className="text-2xl font-bold text-on-surface flex items-center gap-2.5">
             <span>Create Manual Order</span>
-            <span className="bg-primary/10 text-primary border border-primary/20 text-xs px-2.5 py-1 rounded-full font-extrabold">
-              Direct Assignment
+            <span className="bg-amber-100 text-amber-700 border border-amber-200 text-xs px-2.5 py-1 rounded-full font-extrabold">
+              Pending WM Approval
             </span>
           </h1>
-          <p className="text-on-surface-variant mt-1">Create sales orders manually and assign them directly to warehouse pickers.</p>
+          <p className="text-on-surface-variant mt-1">Build a manual order — it will be sent to LPO Management for Warehouse Manager review before picking begins.</p>
         </div>
         <Button onClick={() => setIsLpoModalOpen(true)} variant="secondary" className="border-primary text-primary">
           <QrCode className="w-4 h-4 mr-2" />
@@ -256,68 +171,22 @@ export default function CreateOrder() {
         </Button>
       </div>
 
-      <Modal isOpen={isSuccessModalOpen} onClose={() => { setIsSuccessModalOpen(false); navigate('/warehouse/picklists'); }} title="Order Created Successfully">
+      <Modal isOpen={isSuccessModalOpen} onClose={() => { setIsSuccessModalOpen(false); navigate('/warehouse/lpos'); }} title="Order Submitted for Approval">
         <div className="space-y-6 text-center py-4">
-          <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner border border-emerald-300">
-            <ShoppingCart className="w-8 h-8" />
+          <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto shadow-inner border border-amber-300">
+            <Send className="w-8 h-8" />
           </div>
           <div>
-            <h3 className="text-xl font-extrabold text-on-surface">Order #{orderNumber} Generated!</h3>
-            <p className="text-sm text-slate-500 mt-1">The picklist has been securely dispatched to the operations floor.</p>
+            <h3 className="text-xl font-extrabold text-on-surface">Order #{createdLpoNumber} Submitted!</h3>
+            <p className="text-sm text-slate-500 mt-1">Your order has been sent to LPO Management. The Warehouse Manager will review, then approve or disapprove it.</p>
           </div>
           <div className="flex flex-col gap-3 max-w-sm mx-auto pt-2">
             <Button 
-              onClick={async () => {
-                if (!createdPicklistId) return;
-                setIsDownloadingPdf(true);
-                try {
-                  const res = await api.get(`/picklists/${createdPicklistId}/download/pdf`, { responseType: 'blob' });
-                  const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-                  const link = document.createElement('a');
-                  link.href = url;
-                  link.setAttribute('download', `Picklist_PL-${createdPicklistId}.pdf`);
-                  document.body.appendChild(link);
-                  link.click();
-                  setTimeout(() => { link.remove(); window.URL.revokeObjectURL(url); }, 200);
-                  toast.success('PDF downloaded successfully');
-                } catch (err: any) {
-                  toast.error(getErrorMessage(err, 'Could not download PDF report'));
-                } finally {
-                  setIsDownloadingPdf(false);
-                }
-              }}
-              disabled={isDownloadingPdf}
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 py-3 shadow-md flex items-center justify-center gap-2 rounded-xl text-sm"
+              onClick={() => navigate('/warehouse/lpos')}
+              className="w-full bg-primary hover:bg-primary/90 text-white font-bold px-5 py-3 shadow-md flex items-center justify-center gap-2 rounded-xl text-sm"
             >
-              <span>{isDownloadingPdf ? 'Downloading PDF...' : 'Download Picklist (PDF)'}</span>
+              Go to LPO Management
             </Button>
-            
-            <Button 
-              onClick={async () => {
-                if (!createdPicklistId) return;
-                setIsDownloadingExcel(true);
-                try {
-                  const res = await api.get(`/picklists/${createdPicklistId}/download/excel`, { responseType: 'blob' });
-                  const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-                  const link = document.createElement('a');
-                  link.href = url;
-                  link.setAttribute('download', `Picklist_PL-${createdPicklistId}.xlsx`);
-                  document.body.appendChild(link);
-                  link.click();
-                  setTimeout(() => { link.remove(); window.URL.revokeObjectURL(url); }, 200);
-                  toast.success('Excel sheet downloaded successfully');
-                } catch (err: any) {
-                  toast.error(getErrorMessage(err, 'Could not download Excel report'));
-                } finally {
-                  setIsDownloadingExcel(false);
-                }
-              }}
-              disabled={isDownloadingExcel}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 py-3 shadow-md flex items-center justify-center gap-2 rounded-xl text-sm"
-            >
-              <span>{isDownloadingExcel ? 'Downloading Excel...' : 'Download Picklist (Excel)'}</span>
-            </Button>
-
             <Button 
               variant="outline"
               onClick={() => { 
@@ -483,75 +352,17 @@ export default function CreateOrder() {
             <div className="p-6 bg-surface-container-low border-t border-outline-variant flex justify-end gap-3">
               <Button
                 size="lg"
-                onClick={handleAutoAssign}
-                disabled={isProcessing}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-black px-8 shadow-md"
-              >
-                Auto Assign (Round Robin)
-              </Button>
-              <Button
-                size="lg"
-                onClick={() => setIsAssignModalOpen(true)}
+                onClick={handleSubmitForApproval}
                 disabled={isProcessing}
                 className="bg-primary hover:bg-primary/90 text-white font-black px-8 shadow-md"
               >
-                <Users className="w-5 h-5 mr-2" />
-                Manual Assign
+                <Send className="w-5 h-5 mr-2" />
+                {isProcessing ? 'Submitting...' : 'Submit Order for Approval'}
               </Button>
             </div>
           </div>
         </div>
       </div>
-
-      <Modal isOpen={isAssignModalOpen} onClose={() => setIsAssignModalOpen(false)} title={`Assign Order #${orderNumber} to Mobile Picker`}>
-        <div className="space-y-5">
-          <p className="text-sm font-semibold text-on-surface-variant">
-            Select an active mobile warehouse terminal or operator to push this task:
-          </p>
-          <div className="grid grid-cols-1 gap-3 max-h-72 overflow-y-auto pr-1">
-            {pickers.map((picker) => (
-              <button
-                key={picker.id}
-                type="button"
-                onClick={() => handleConfirmAssignment(picker.id, picker.full_name || picker.email)}
-                disabled={isProcessing}
-                className={`flex items-center justify-between gap-4 p-4 rounded-2xl border transition-all text-left shadow-2xs group ${
-                  assigningId === picker.id
-                    ? 'border-primary bg-primary/10 opacity-90'
-                    : isProcessing
-                    ? 'border-outline-variant opacity-50 cursor-not-allowed'
-                    : 'border-outline-variant hover:border-primary hover:bg-primary/5'
-                }`}
-              >
-                <div className="flex items-center gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-primary-container text-white flex items-center justify-center font-black text-lg group-hover:scale-105 transition-transform">
-                    <Users className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="font-extrabold text-on-surface text-sm">{picker.full_name || picker.email}</div>
-                    <div className="text-xs text-on-surface-variant font-bold capitalize mt-0.5">{picker.role} Account — Available on Floor</div>
-                  </div>
-                </div>
-                <span className={`text-xs px-3.5 py-2 rounded-xl font-extrabold shadow-sm transition-colors ${
-                  assigningId === picker.id
-                    ? 'bg-primary text-white animate-pulse'
-                    : 'bg-primary text-white group-hover:bg-primary/90'
-                }`}>
-                  {assigningId === picker.id ? 'Pushing...' : 'Push Task Now →'}
-                </span>
-              </button>
-            ))}
-            {pickers.length === 0 && (
-              <div className="text-center py-10 text-amber-700 text-sm font-bold bg-amber-50 rounded-2xl border border-amber-200">
-                No active picker staff detected.
-              </div>
-            )}
-          </div>
-          <div className="flex justify-end pt-3 border-t border-outline-variant">
-            <Button variant="secondary" onClick={() => setIsAssignModalOpen(false)}>Cancel</Button>
-          </div>
-        </div>
-      </Modal>
 
       <Modal isOpen={isLpoModalOpen} onClose={() => { setIsLpoModalOpen(false); setLpoScannerData(''); }} title="Scan External LPO">
         <div className="space-y-4">

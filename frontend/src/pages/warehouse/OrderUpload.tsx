@@ -34,23 +34,18 @@ export default function OrderUpload() {
   } | null>(null);
   
   const [isProcessing, setIsProcessing] = useState(false);
-  const [assigningId, setAssigningId] = useState<number | null>(null);
-  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [validationErrors, setValidationErrors] = useState<{barcode: string, error: string}[]>([]);
   const navigate = useNavigate();
 
-  // Load Sales Catalogue & Active Pickers on mount
+
+  // Load Sales Catalogue on mount
   useEffect(() => {
     const fetchPrereqs = async () => {
       try {
-        const [catRes, usersRes] = await Promise.all([
-          api.get('/catalogue').catch(() => ({ data: [] })),
-          api.get('/users').catch(() => ({ data: [] })),
-        ]);
+        const catRes = await api.get('/catalogue').catch(() => ({ data: [] }));
         setCatalogue(catRes.data || []);
-        setPickers((usersRes.data || []).filter((u: any) => u.role === 'picker'));
-      } catch {
-        // Silent fallback
+      } catch (e) {
+        // Handle error quietly
       }
     };
     fetchPrereqs();
@@ -302,24 +297,23 @@ export default function OrderUpload() {
     setValidationErrors([]);
   };
 
-  // Assign ONLY verified catalogue items to selected picker staff directly from memory!
-  const handleConfirmAssignment = async (pickerId: number, pickerName: string) => {
+  const handleSubmitToLpoManagement = async () => {
     if (!results || results.items.length === 0) {
-      toast.error('No extracted items available to assign.');
+      toast.error('No extracted items available.');
       return;
     }
     const verifiedItems = results.items.filter((i) => i.inCatalogue);
     if (verifiedItems.length === 0) {
-      toast.error('Error: Cannot assign order to mobile terminal. No verified items matched the active system catalogue. Unmatched exceptions cannot be pushed to mobile pickers.');
+      toast.error('Cannot submit. No verified items matched the active system catalogue.');
       return;
     }
 
     setIsProcessing(true);
-    setAssigningId(pickerId);
     try {
       const payload = {
-        order_number: results.orderNumber,
+        lpo_number: results.orderNumber,
         customer_name: results.customerName,
+        source: 'upload',
         items: verifiedItems.map((i) => ({
           barcode: i.barcode || 'N/A',
           product_name: i.itemName,
@@ -328,24 +322,17 @@ export default function OrderUpload() {
         })),
       };
 
-      await api.post(`/picklists/direct-assign/${pickerId}`, payload);
+      await api.post('/lpos', payload);
       
-      toast.success(`Order #${results.orderNumber} assigned directly to Picker (${pickerName})! Only verified catalogue SKUs pushed to terminal.`);
-      setIsAssignModalOpen(false);
-      navigate('/warehouse/picklists');
+      toast.success(`Order #${results.orderNumber} successfully pushed to LPO Management for WM Review!`);
+      navigate('/warehouse/lpos');
     } catch (err: any) {
-      if (err.response?.status === 400 && err.response?.data?.detail?.errors) {
-        setValidationErrors(err.response.data.detail.errors);
-        toast.error(err.response.data.detail.message || 'Inventory validation failed. Please review errors on the items.');
-        setIsAssignModalOpen(false);
-      } else {
-        toast.error(getErrorMessage(err, 'Could not assign picklist to selected operational staff'));
-      }
+      toast.error(getErrorMessage(err, 'Could not submit LPO to management queue'));
     } finally {
       setIsProcessing(false);
-      setAssigningId(null);
     }
   };
+
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
@@ -403,24 +390,11 @@ export default function OrderUpload() {
                 </span>
                 {results.items.filter(i => !i.inCatalogue).length > 0 && (
                   <span className="bg-amber-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs px-3.5 py-2 rounded-xl">
-                    + {results.items.filter(i => !i.inCatalogue).length} Exceptions (Excluded from Picklists & App)
+                    + {results.items.filter(i => !i.inCatalogue).length} Exceptions (Excluded from Picklists)
                   </span>
                 )}
-                <Button
-                  onClick={downloadPicklistExcel}
-                  size="sm"
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold shadow-sm flex items-center gap-1.5 py-2 px-4"
-                >
-                  <Download className="w-4 h-4" /> Download Excel (.XLS)
-                </Button>
-                <Button
-                  onClick={downloadPicklistPDF}
-                  size="sm"
-                  className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold shadow-sm flex items-center gap-1.5 py-2 px-4"
-                >
-                  <Printer className="w-4 h-4" /> Download PDF (.PDF)
-                </Button>
               </div>
+
             </div>
 
             {/* Table 1: Verified SKUs Ready for Floor Pick List Operations */}
@@ -535,12 +509,12 @@ export default function OrderUpload() {
               </div>
             )}
 
-            {/* User Choice Routing Controls: Process Another vs Assign to Picker */}
+            {/* User Choice Routing Controls */}
             <div className="bg-surface-container-low p-6 rounded-3xl border border-outline-variant shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-6">
               <div>
                 <h4 className="font-extrabold text-on-surface text-base">Warehouse Routing Control</h4>
                 <p className="text-xs text-on-surface-variant font-semibold mt-0.5">
-                  Download the formatted picklists above, assign immediately to floor workers when ready, or generate another order.
+                  Submit this extracted LPO to LPO Management for review, or generate another order.
                 </p>
               </div>
 
@@ -552,18 +526,17 @@ export default function OrderUpload() {
                   className="font-extrabold text-sm bg-white hover:bg-slate-100 border-slate-300 text-slate-800 shadow-2xs"
                 >
                   <RefreshCw className="w-4 h-4 mr-2 text-primary" />
-                  <span>Generate Another Order</span>
+                  <span>Process Another LPO</span>
                 </Button>
 
                 <Button
                   size="lg"
-                  onClick={() => setIsAssignModalOpen(true)}
-                  disabled={results.items.filter(i => i.inCatalogue).length === 0}
+                  onClick={handleSubmitToLpoManagement}
+                  disabled={isProcessing || results.items.filter(i => i.inCatalogue).length === 0}
                   className="bg-primary hover:bg-primary/90 text-white font-black text-sm px-6 shadow-md"
                 >
-                  <Users className="w-4 h-4 mr-2" />
-                  <span>Assign to Picker</span>
-                  <ArrowRight className="w-4 h-4 ml-1.5" />
+                  <ArrowRight className="w-4 h-4 mr-2" />
+                  <span>{isProcessing ? 'Submitting...' : 'Submit to LPO Management'}</span>
                 </Button>
               </div>
             </div>
@@ -571,56 +544,6 @@ export default function OrderUpload() {
         )}
       </AnimatePresence>
 
-      {/* Staff Assignment Modal */}
-      <Modal isOpen={isAssignModalOpen} onClose={() => setIsAssignModalOpen(false)} title={`Assign Order #${results?.orderNumber} to Mobile Picker`}>
-        <div className="space-y-5">
-          <p className="text-sm font-semibold text-on-surface-variant">
-            Select an active mobile warehouse terminal or operator to push this task:
-          </p>
-          <div className="grid grid-cols-1 gap-3 max-h-72 overflow-y-auto pr-1">
-            {pickers.map((picker) => (
-              <button
-                key={picker.id}
-                type="button"
-                onClick={() => handleConfirmAssignment(picker.id, picker.full_name || picker.email)}
-                disabled={isProcessing}
-                className={`flex items-center justify-between gap-4 p-4 rounded-2xl border transition-all text-left shadow-2xs group ${
-                  assigningId === picker.id
-                    ? 'border-primary bg-primary/10 opacity-90'
-                    : isProcessing
-                    ? 'border-outline-variant opacity-50 cursor-not-allowed'
-                    : 'border-outline-variant hover:border-primary hover:bg-primary/5'
-                }`}
-              >
-                <div className="flex items-center gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-primary-container text-white flex items-center justify-center font-black text-lg group-hover:scale-105 transition-transform">
-                    <Users className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="font-extrabold text-on-surface text-sm">{picker.full_name || picker.email}</div>
-                    <div className="text-xs text-on-surface-variant font-bold capitalize mt-0.5">{picker.role} Account — Available on Floor</div>
-                  </div>
-                </div>
-                <span className={`text-xs px-3.5 py-2 rounded-xl font-extrabold shadow-sm transition-colors ${
-                  assigningId === picker.id
-                    ? 'bg-primary text-white animate-pulse'
-                    : 'bg-primary text-white group-hover:bg-primary/90'
-                }`}>
-                  {assigningId === picker.id ? 'Pushing...' : 'Push Task Now →'}
-                </span>
-              </button>
-            ))}
-            {pickers.length === 0 && (
-              <div className="text-center py-10 text-amber-700 text-sm font-bold bg-amber-50 rounded-2xl border border-amber-200">
-                No active picker staff detected.
-              </div>
-            )}
-          </div>
-          <div className="flex justify-end pt-3 border-t border-outline-variant">
-            <Button variant="secondary" onClick={() => setIsAssignModalOpen(false)}>Cancel</Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }
