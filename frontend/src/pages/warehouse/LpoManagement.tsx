@@ -5,7 +5,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import {
   UploadCloud, ExternalLink, CheckCircle, XCircle, Clock,
-  Users, Zap, Package2, Calendar, RefreshCw,
+  Users, Zap, Package2, Calendar, RefreshCw, Trash2, Eye, FileText
 } from 'lucide-react';
 
 interface LPO {
@@ -60,6 +60,15 @@ export default function LpoManagement() {
   const [disapproveModalOpen, setDisapproveModalOpen] = useState(false);
   const [disapprovingLpo, setDisapprovingLpo] = useState<LPO | null>(null);
   const [isDisapproving, setIsDisapproving] = useState(false);
+
+  // Details modal
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [selectedLpo, setSelectedLpo] = useState<LPO | null>(null);
+
+  // Delete modal
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deletingLpo, setDeletingLpo] = useState<LPO | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Filter
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -146,6 +155,31 @@ export default function LpoManagement() {
       toast.error(err.response?.data?.detail || 'Failed to disapprove LPO');
     } finally {
       setIsDisapproving(false);
+    }
+  };
+
+  const openDetailsModal = (lpo: LPO) => {
+    setSelectedLpo(lpo);
+    setDetailsModalOpen(true);
+  };
+
+  const openDeleteModal = (lpo: LPO) => {
+    setDeletingLpo(lpo);
+    setDeleteModalOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deletingLpo) return;
+    setIsDeleting(true);
+    try {
+      await api.delete(`/lpos/${deletingLpo.id}`);
+      toast.success(`LPO #${deletingLpo.lpo_number} deleted permanently.`);
+      setDeleteModalOpen(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to delete LPO');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -302,34 +336,69 @@ export default function LpoManagement() {
                       </td>
                       <td className="p-4 text-right">
                         {isPending && (
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => openApproveModal(lpo)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors shadow-sm"
-                            >
-                              <CheckCircle className="w-3.5 h-3.5" />
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => openDisapproveModal(lpo)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition-colors"
-                            >
-                              <XCircle className="w-3.5 h-3.5" />
-                              Disapprove
-                            </button>
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => openApproveModal(lpo)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors shadow-sm"
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => openDisapproveModal(lpo)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition-colors"
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                                Disapprove
+                              </button>
+                            </div>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => openDetailsModal(lpo)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-surface border border-outline-variant text-on-surface hover:bg-surface-variant transition-colors"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                Details
+                              </button>
+                              <button
+                                onClick={() => openDeleteModal(lpo)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-red-600 hover:bg-red-50 transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Delete
+                              </button>
+                            </div>
                           </div>
                         )}
                         {lpo.status === 'disapproved' && (
-                          <button
-                            onClick={() => openApproveModal(lpo)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors"
-                          >
-                            <CheckCircle className="w-3.5 h-3.5" />
-                            Re-approve
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => openApproveModal(lpo)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              Re-approve
+                            </button>
+                            <button
+                              onClick={() => openDeleteModal(lpo)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-red-600 hover:bg-red-50 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete
+                            </button>
+                          </div>
                         )}
                         {isProcessed && (
-                          <span className="text-xs text-on-surface-variant font-medium">Completed</span>
+                          <div className="flex items-center justify-end gap-3">
+                            <button
+                                onClick={() => openDetailsModal(lpo)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold text-primary hover:underline"
+                              >
+                                <Eye className="w-3.5 h-3.5" /> View
+                            </button>
+                            <span className="text-xs text-on-surface-variant font-medium">Completed</span>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -453,6 +522,124 @@ export default function LpoManagement() {
             >
               <XCircle className="w-4 h-4 mr-2" />
               {isDisapproving ? 'Disapproving...' : 'Confirm Disapprove'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Details Modal */}
+      {selectedLpo && (
+        <Modal
+          isOpen={detailsModalOpen}
+          onClose={() => setDetailsModalOpen(false)}
+          title={`LPO #${selectedLpo.lpo_number} Details`}
+        >
+          <div className="space-y-6 max-h-[80vh] overflow-y-auto pr-2">
+            
+            {/* Header info */}
+            <div className="grid grid-cols-2 gap-4 p-4 bg-surface-variant/30 rounded-xl border border-outline-variant">
+              <div>
+                <p className="text-xs font-bold text-on-surface-variant uppercase">Customer</p>
+                <p className="font-semibold text-on-surface">{selectedLpo.customer_name}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-on-surface-variant uppercase">Delivery Date</p>
+                <p className="font-semibold text-on-surface">
+                  {selectedLpo.delivery_date ? new Date(selectedLpo.delivery_date).toLocaleDateString() : 'N/A'}
+                </p>
+              </div>
+            </div>
+
+            {/* Items List */}
+            <div>
+              <h3 className="font-bold text-on-surface mb-3 flex items-center gap-2">
+                <Package2 className="w-4 h-4 text-primary" />
+                Line Items ({selectedLpo.items?.length || 0})
+              </h3>
+              <div className="border border-outline-variant rounded-xl overflow-hidden">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-surface-variant/50 border-b border-outline-variant">
+                    <tr>
+                      <th className="p-3 font-semibold text-on-surface-variant">Barcode</th>
+                      <th className="p-3 font-semibold text-on-surface-variant">Product Name</th>
+                      <th className="p-3 font-semibold text-on-surface-variant text-right">Qty</th>
+                      <th className="p-3 font-semibold text-on-surface-variant">Unit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant">
+                    {selectedLpo.items?.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-surface-variant/20">
+                        <td className="p-3 font-mono text-xs">{item.barcode}</td>
+                        <td className="p-3 font-medium">{item.product_name}</td>
+                        <td className="p-3 text-right font-semibold">{item.quantity}</td>
+                        <td className="p-3 text-on-surface-variant">{item.unit}</td>
+                      </tr>
+                    ))}
+                    {(!selectedLpo.items || selectedLpo.items.length === 0) && (
+                      <tr>
+                        <td colSpan={4} className="p-4 text-center text-on-surface-variant">No items found</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Embedded PDF Viewer */}
+            {selectedLpo.signed_lpo_url && (
+              <div>
+                <h3 className="font-bold text-on-surface mb-3 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" />
+                  Source PDF Document
+                </h3>
+                <div className="border border-outline-variant rounded-xl overflow-hidden h-[500px] bg-slate-100 flex flex-col">
+                  {/* Provide a direct link just in case the iframe doesn't render properly in some browsers */}
+                  <div className="bg-surface p-2 border-b border-outline-variant flex justify-between items-center px-4">
+                    <span className="text-xs font-semibold text-on-surface-variant">Preview</span>
+                    <a href={selectedLpo.signed_lpo_url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+                      <ExternalLink className="w-3 h-3" /> Open in new tab
+                    </a>
+                  </div>
+                  <iframe 
+                    src={`${selectedLpo.signed_lpo_url}#toolbar=0`} 
+                    className="w-full flex-1"
+                    title="LPO PDF"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2 border-t border-outline-variant">
+              <Button onClick={() => setDetailsModalOpen(false)}>Close</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete Modal */}
+      <Modal
+        isOpen={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        title="Delete LPO"
+      >
+        <div className="space-y-5">
+          <div className="flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-200">
+            <Trash2 className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-red-800">Are you sure you want to delete this order?</p>
+              <p className="text-sm text-red-600 mt-1">
+                LPO <strong>#{deletingLpo?.lpo_number}</strong> from <strong>{deletingLpo?.customer_name}</strong> will be permanently deleted from the database. This action cannot be undone.
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="secondary" onClick={() => setDeleteModalOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-500 text-white font-bold"
+            >
+              {isDeleting ? 'Deleting...' : 'Yes, Delete Order'}
             </Button>
           </div>
         </div>
