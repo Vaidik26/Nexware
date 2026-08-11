@@ -145,7 +145,7 @@ export default function UserManagement() {
       accessor: (r: any) => (
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-container/20 text-primary uppercase">
           {r.role === 'admin' ? <Shield className="w-3 h-3 mr-1" /> : <User className="w-3 h-3 mr-1" />}
-          {r.role}
+          {r.role === 'lpo' || r.role === 'sales_person' ? 'Sales Person' : r.role.replace('_', ' ')}
         </span>
       ),
     },
