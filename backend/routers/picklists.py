@@ -325,7 +325,6 @@ async def auto_assign_existing(
     # 5. Push Notification
     job_label = f"P-{str(db_picklist.picker_job_number).zfill(3)}"
     if picker.push_token:
-        from backend.routers.notifications import trigger_push
         trigger_push(
             picker.push_token,
             f"New Job Assigned: {job_label}",
@@ -566,10 +565,14 @@ async def direct_assign_auto(
 
 # ---------- Picking (Mobile) ----------
 
+class PickQuantityRequest(BaseModel):
+    picked_quantity: Optional[float] = None
+
 @router.patch("/{picklist_id}/items/{item_id}/pick")
 async def mark_item_picked(
     picklist_id: int,
     item_id: int,
+    payload: Optional[PickQuantityRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -583,7 +586,14 @@ async def mark_item_picked(
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    item.is_picked = not item.is_picked
+    if payload and payload.picked_quantity is not None:
+        item.picked_quantity = payload.picked_quantity
+        item.is_picked = True
+    else:
+        item.is_picked = not item.is_picked
+        if not item.is_picked:
+            item.picked_quantity = 0.0
+
     item.picked_at = datetime.now(timezone.utc) if item.is_picked else None
 
     pl_result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
@@ -824,6 +834,12 @@ async def return_to_picker(
         raise HTTPException(status_code=404, detail="Pick list not found")
 
     pl.status = "picking"
+    
+    # Mark incomplete items as un-picked so the picker knows what to pick
+    items_res = await db.execute(select(PickListItem).filter(PickListItem.pick_list_id == picklist_id))
+    for item in items_res.scalars().all():
+        if (item.picked_quantity or 0) < item.quantity:
+            item.is_picked = False
 
     assignment_res = await db.execute(
         select(PickAssignment).filter(PickAssignment.pick_list_id == picklist_id)

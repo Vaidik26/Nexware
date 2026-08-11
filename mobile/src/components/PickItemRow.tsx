@@ -62,7 +62,9 @@ export default function PickItemRow({ item, onScanStart, onMissing, onToggleCart
           )}
         </View>
         <View className="items-end ml-3 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
-          <Text className={`text-lg font-extrabold font-inter ${item.picked ? 'text-primary' : 'text-onSurface'}`}>{item.qty}</Text>
+          <Text className={`text-lg font-extrabold font-inter ${item.picked ? 'text-primary' : 'text-onSurface'}`}>
+            {item.picked ? `${item.picked_qty} / ${item.qty}` : item.qty}
+          </Text>
           <Text className="text-xs font-bold text-gray-500 font-inter">{item.uom}</Text>
         </View>
       </View>

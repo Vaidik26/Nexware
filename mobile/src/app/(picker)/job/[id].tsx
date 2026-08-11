@@ -27,6 +27,10 @@ export default function JobDetailScreen() {
   const [cameraScanned, setCameraScanned] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   
+  const [qtyModalVisible, setQtyModalVisible] = useState(false);
+  const [qtyInput, setQtyInput] = useState('');
+  const [qtyTargetItem, setQtyTargetItem] = useState<any>(null);
+  
   const [showBoxModal, setShowBoxModal] = useState(false);
   const [cartonTypes, setCartonTypes] = useState<any[]>([]);
   const [selectedCartonType, setSelectedCartonType] = useState<number | null>(null);
@@ -53,6 +57,7 @@ export default function JobDetailScreen() {
             qty: item.quantity || 1,
             uom: item.unit || 'EA',
             picked: item.is_picked || false,
+            picked_qty: item.picked_quantity || 0,
             missing_reported: item.missing_reported || false,
             bin_location: item.bin_location,
             is_full_carton: item.is_full_carton
@@ -86,14 +91,25 @@ export default function JobDetailScreen() {
 
   const isSubmitted = picklistInfo?.status === 'waiting_verification' || picklistInfo?.status === 'verified' || picklistInfo?.status === 'completed';
 
-  const toggleItem = async (itemId: string) => {
-    if (isSubmitted) return;
-    setItems(prev => prev.map(i => i.id === itemId ? { ...i, picked: !i.picked } : i));
-    try {
-      await api.patch(`/picklists/${id}/items/${itemId}/pick`);
-    } catch (err) {
-      setItems(prev => prev.map(i => i.id === itemId ? { ...i, picked: !i.picked } : i));
+  const handleQtySubmit = async () => {
+    if (!qtyTargetItem) return;
+    const val = parseFloat(qtyInput);
+    if (isNaN(val) || val < 0) {
+      Alert.alert('Invalid Quantity', 'Please enter a valid number');
+      return;
     }
+    setQtyModalVisible(false);
+    
+    // Optimistic update
+    setItems(prev => prev.map(i => i.id === qtyTargetItem.id ? { ...i, picked: true, picked_qty: val } : i));
+    try {
+      await api.patch(`/picklists/${id}/items/${qtyTargetItem.id}/pick`, { picked_quantity: val });
+    } catch (err) {
+      // Revert if error
+      setItems(prev => prev.map(i => i.id === qtyTargetItem.id ? { ...i, picked: qtyTargetItem.picked, picked_qty: qtyTargetItem.picked_qty } : i));
+      Alert.alert('Error', 'Failed to update quantity');
+    }
+    setQtyTargetItem(null);
   };
 
   const handleItemScanSubmit = (scannedBarcode?: string) => {
@@ -102,12 +118,14 @@ export default function JobDetailScreen() {
     const barcode = rawBarcode.trim();
     
     if (barcode === scanTargetItem.barcode) {
-      toggleItem(scanTargetItem.id);
       setScanModalVisible(false);
-      setScanTargetItem(null);
-      setScanInput('');
       setCameraScanned(false);
+      setScanInput('');
       playTickSound();
+      
+      setQtyTargetItem(scanTargetItem);
+      setQtyInput(String(scanTargetItem.qty)); // Default to requested quantity
+      setQtyModalVisible(true);
     } else {
       Alert.alert('Scan Failed', 'The scanned barcode does not match this item.', [
         { text: 'OK', onPress: () => setCameraScanned(false) }
@@ -548,6 +566,54 @@ export default function JobDetailScreen() {
               }}
             >
               <Text className="text-gray-500 font-semibold">{scanMode === 'choice' ? 'Cancel' : 'Go Back'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Quantity Modal */}
+      <Modal visible={qtyModalVisible} animationType="fade" transparent>
+        <View className="flex-1 bg-black/60 justify-center px-6">
+          <View className="bg-white rounded-3xl p-6 shadow-xl">
+            <View className="items-center mb-6">
+              <View className="w-16 h-16 bg-blue-100 rounded-full items-center justify-center mb-4">
+                <Box size={28} color="#2563eb" />
+              </View>
+              <Text className="text-xl font-bold text-gray-900 font-inter text-center mb-1">
+                Enter Picked Quantity
+              </Text>
+              <Text className="text-sm text-gray-500 font-inter text-center">
+                Requested: {qtyTargetItem?.qty} {qtyTargetItem?.uom}
+              </Text>
+            </View>
+
+            <View className="flex-row items-center bg-gray-50 rounded-2xl border border-gray-200 px-4 py-3 mb-6">
+              <TextInput
+                className="flex-1 font-inter text-lg text-center font-bold text-gray-800"
+                keyboardType="numeric"
+                value={qtyInput}
+                onChangeText={setQtyInput}
+                autoFocus
+                selectTextOnFocus
+              />
+            </View>
+
+            <TouchableOpacity
+              className="bg-[#2563eb] py-4 rounded-xl items-center mb-3"
+              onPress={handleQtySubmit}
+            >
+              <Text className="text-white font-bold text-base">Confirm Quantity</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className="py-3 rounded-xl items-center"
+              onPress={() => {
+                setQtyModalVisible(false);
+                setQtyTargetItem(null);
+                // We don't mark as picked if they cancel
+              }}
+            >
+              <Text className="text-gray-500 font-semibold">Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>

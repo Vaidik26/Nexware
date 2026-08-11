@@ -38,6 +38,7 @@ class PickListItem(Base):
     barcode = Column(String, nullable=False)
     product_name = Column(String, nullable=False)
     quantity = Column(Float, nullable=False)
+    picked_quantity = Column(Float, default=0.0)
     unit = Column(String, nullable=False)
     is_picked = Column(Boolean, default=False)
     picked_at = Column(DateTime(timezone=True), nullable=True)

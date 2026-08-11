@@ -253,6 +253,14 @@ export default function PickLists() {
 
   const handleApproveAudit = async () => {
     if (!selectedAuditList) return;
+    
+    const hasPartialPicks = selectedAuditList.items?.some((i: any) => i.is_picked && i.picked_quantity < i.quantity);
+    if (hasPartialPicks) {
+      if (!window.confirm('Some items have not been fully picked. Are you sure you want to proceed and finalize this order with partial quantities?')) {
+        return;
+      }
+    }
+
     try {
       setIsProcessingAudit(true);
       await api.patch(`/picklists/${selectedAuditList.id}/verify`);
@@ -679,7 +687,9 @@ export default function PickLists() {
                           </div>
                         ) : (
                           <div className="text-right">
-                            <div className={`font-extrabold text-sm ${isMissingApproved ? 'text-slate-400' : 'text-on-surface'}`}>{item.quantity || 1} {item.unit || 'Units'}</div>
+                            <div className={`font-extrabold text-sm ${isMissingApproved ? 'text-slate-400' : (item.is_picked && item.picked_quantity < item.quantity ? 'text-amber-600' : 'text-on-surface')}`}>
+                              {item.is_picked ? `${item.picked_quantity} / ` : ''}{item.quantity || 1} {item.unit || 'Units'}
+                            </div>
                             <div className={`text-[10px] font-bold uppercase mt-0.5 ${
                               isMissingApproved ? 'text-slate-500' :
                               item.is_audited ? 'text-emerald-700' : 
