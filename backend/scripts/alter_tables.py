@@ -23,6 +23,7 @@ async def alter_tables():
         "ALTER TABLE pick_list_items ADD COLUMN IF NOT EXISTS box_id INTEGER;",
         "ALTER TABLE pick_list_items ADD COLUMN IF NOT EXISTS missing_reported BOOLEAN DEFAULT FALSE;",
         "ALTER TABLE pick_list_items ADD COLUMN IF NOT EXISTS missing_approved BOOLEAN;",
+        "ALTER TABLE pick_list_items ADD COLUMN IF NOT EXISTS bin_location VARCHAR;",
         
         # sales_items additions
         "ALTER TABLE sales_items ADD COLUMN IF NOT EXISTS bin_location VARCHAR;",

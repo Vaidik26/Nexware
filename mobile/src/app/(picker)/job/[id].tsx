@@ -53,7 +53,9 @@ export default function JobDetailScreen() {
             qty: item.quantity || 1,
             uom: item.unit || 'EA',
             picked: item.is_picked || false,
-            missing_reported: item.missing_reported || false
+            missing_reported: item.missing_reported || false,
+            bin_location: item.bin_location,
+            is_full_carton: item.is_full_carton
           }));
           setItems(mappedItems);
         }
@@ -123,6 +125,16 @@ export default function JobDetailScreen() {
       await api.patch(`/picklists/${id}/items/${itemId}/report-missing`);
     } catch (err) {
       setItems(prev => prev.map(i => i.id === itemId ? { ...i, missing_reported: false } : i));
+    }
+  };
+
+  const handleToggleCarton = async (itemId: string, isFullCarton: boolean) => {
+    if (isSubmitted) return;
+    setItems(prev => prev.map(i => i.id === itemId ? { ...i, is_full_carton: isFullCarton } : i));
+    try {
+      await api.patch(`/picklists/${id}/items/${itemId}/toggle-carton`, { is_full_carton: isFullCarton });
+    } catch (err) {
+      setItems(prev => prev.map(i => i.id === itemId ? { ...i, is_full_carton: !isFullCarton } : i));
     }
   };
 
@@ -235,6 +247,7 @@ export default function JobDetailScreen() {
                 setScanModalVisible(true);
               }} 
               onMissing={() => handleMissing(item.id)}
+              onToggleCarton={(isFull: boolean) => handleToggleCarton(item.id, isFull)}
               disabled={isSubmitted} 
             />
           )}

@@ -13,6 +13,7 @@ class PickListItemBase(BaseModel):
     box_id: Optional[int] = None
     missing_reported: bool = False
     missing_approved: Optional[bool] = None
+    bin_location: Optional[str] = None
 
 class PickListItemOut(PickListItemBase):
     id: int

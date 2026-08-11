@@ -46,6 +46,7 @@ class PickListItem(Base):
     box_id = Column(Integer, ForeignKey("pick_list_boxes.id"), nullable=True)
     missing_reported = Column(Boolean, default=False)
     missing_approved = Column(Boolean, nullable=True)
+    bin_location = Column(String, nullable=True)
 
     pick_list = relationship("PickList", back_populates="items")
     box = relationship("PickListBox", back_populates="items")

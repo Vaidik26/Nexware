@@ -1,9 +1,9 @@
-import { View, Text, TouchableOpacity } from 'react-native';
-import { Check, AlertTriangle } from 'lucide-react-native';
+import { View, Text, TouchableOpacity, Switch } from 'react-native';
+import { Check, AlertTriangle, Box } from 'lucide-react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { playTickSound } from '../lib/alertSound';
 
-export default function PickItemRow({ item, onScanStart, onMissing, disabled }: { item: any, onScanStart: () => void, onMissing?: () => void, disabled?: boolean }) {
+export default function PickItemRow({ item, onScanStart, onMissing, onToggleCarton, disabled }: { item: any, onScanStart: () => void, onMissing?: () => void, onToggleCarton?: (isFull: boolean) => void, disabled?: boolean }) {
   
   const isMissing = item.missing_reported;
   
@@ -25,21 +25,41 @@ export default function PickItemRow({ item, onScanStart, onMissing, disabled }: 
         </View>
         
         <View className="flex-1">
-          <View className="flex-row items-center mb-1">
+          <View className="flex-row items-center mb-1 flex-wrap gap-y-1">
             <Text className="text-xs font-semibold text-gray-500 font-inter bg-gray-100 px-2 py-0.5 rounded mr-2">
               SKU: {item.barcode}
             </Text>
+            {item.bin_location && (
+              <Text className="text-xs font-bold text-amber-700 font-inter bg-amber-50 border border-amber-200 px-2 py-0.5 rounded mr-2 shadow-sm">
+                Bin: {item.bin_location}
+              </Text>
+            )}
             {item.picked ? (
               <Text className="text-xs font-bold text-primary font-inter">✓ Picked</Text>
             ) : isMissing ? (
               <Text className="text-xs font-bold text-red-600 font-inter">Reported Missing</Text>
             ) : (
-              <Text className="text-xs font-medium text-amber-700 font-inter">Pending Scan</Text>
+              <Text className="text-xs font-medium text-gray-500 font-inter">Pending Scan</Text>
             )}
           </View>
-          <Text className={`text-base font-inter ${item.picked ? 'line-through text-gray-500 font-medium' : 'font-bold text-onSurface'}`}>
+          <Text className={`text-base font-inter mt-1 ${item.picked ? 'line-through text-gray-500 font-medium' : 'font-bold text-onSurface'}`}>
             {item.name}
           </Text>
+          {onToggleCarton && !disabled && !item.picked && !isMissing && (
+            <View className="flex-row items-center mt-2.5">
+              <View className={`flex-row items-center px-3 py-1.5 rounded-lg border ${item.is_full_carton ? 'bg-primary/10 border-primary' : 'bg-gray-50 border-gray-200'}`}>
+                <Box size={14} color={item.is_full_carton ? '#006c49' : '#6b7280'} />
+                <Text className={`text-xs font-bold ml-1.5 mr-3 ${item.is_full_carton ? 'text-primary' : 'text-gray-600'}`}>Full Carton Pick</Text>
+                <Switch 
+                  value={item.is_full_carton || false} 
+                  onValueChange={(val) => onToggleCarton(val)} 
+                  trackColor={{ false: '#d1d5db', true: '#a7f3d0' }}
+                  thumbColor={item.is_full_carton ? '#006c49' : '#f3f4f6'}
+                  style={{ transform: [{ scaleX: 0.75 }, { scaleY: 0.75 }] }}
+                />
+              </View>
+            </View>
+          )}
         </View>
         <View className="items-end ml-3 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
           <Text className={`text-lg font-extrabold font-inter ${item.picked ? 'text-primary' : 'text-onSurface'}`}>{item.qty}</Text>

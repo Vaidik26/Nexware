@@ -22,22 +22,39 @@ export default function PickLists() {
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [selectedAuditList, setSelectedAuditList] = useState<any | null>(null);
   const [isProcessingAudit, setIsProcessingAudit] = useState(false);
+  const [isReassignModalOpen, setIsReassignModalOpen] = useState(false);
+  const [isAutoAssigning, setIsAutoAssigning] = useState(false);
 
   // Poll for fresh data while audit modal is open
+  // Poll for fresh data while audit modal is open - adjusted to not fight optimistic UI
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (isAuditModalOpen && selectedAuditList) {
       interval = setInterval(async () => {
         try {
-          const freshRes = await api.get(`/picklists/${selectedAuditList.id}`);
-          if (freshRes.data) setSelectedAuditList(freshRes.data);
+          // Only poll if we aren't actively processing an audit to prevent optimistic UI reverting
+          if (!isProcessingAudit) {
+            const freshRes = await api.get(`/picklists/${selectedAuditList.id}`);
+            if (freshRes.data) {
+                // Ensure we don't overwrite if the user just clicked a checkbox
+                // We'll trust our optimistic UI more than the 3s poll if they differ
+                setSelectedAuditList((prev: any) => {
+                   if (!prev) return freshRes.data;
+                   // Just update the status and boxes, leave items to optimistic UI
+                   return {
+                       ...freshRes.data,
+                       items: prev.items, // Keep optimistic items
+                   };
+                });
+            }
+          }
         } catch (e) {
           // ignore
         }
-      }, 3000);
+      }, 5000);
     }
     return () => clearInterval(interval);
-  }, [isAuditModalOpen, selectedAuditList?.id]);
+  }, [isAuditModalOpen, selectedAuditList?.id, isProcessingAudit]);
   const [assigningPickerId, setAssigningPickerId] = useState<number | null>(null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
@@ -72,7 +89,6 @@ export default function PickLists() {
     };
   }, []);
 
-  // Use verified backend router endpoint POST /picklists/{id}/assign/{picker_id}
   const handleAssign = async (pickerId: number, pickerName: string) => {
     if (!selectedList || assigningPickerId !== null) return;
     setAssigningPickerId(pickerId);
@@ -83,6 +99,35 @@ export default function PickLists() {
       fetchData(true);
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Could not assign task to picker'));
+    } finally {
+      setAssigningPickerId(null);
+    }
+  };
+
+  const handleAutoAssign = async (id: number) => {
+    if (isAutoAssigning) return;
+    setIsAutoAssigning(true);
+    try {
+      await api.post(`/picklists/${id}/auto-assign`);
+      toast.success(`Job PL-${id} auto-assigned successfully.`);
+      fetchData(true);
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'Could not auto-assign job. Are pickers available?'));
+    } finally {
+      setIsAutoAssigning(false);
+    }
+  };
+
+  const handleReassign = async (pickerId: number, pickerName: string) => {
+    if (!selectedList || assigningPickerId !== null) return;
+    setAssigningPickerId(pickerId);
+    try {
+      await api.patch(`/picklists/${selectedList.id}/reassign`, { new_picker_id: pickerId });
+      toast.success(`Reassigned Order PL-${selectedList.id} to ${pickerName}`);
+      setIsReassignModalOpen(false);
+      fetchData(true);
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'Could not reassign task to picker'));
     } finally {
       setAssigningPickerId(null);
     }
@@ -280,8 +325,18 @@ export default function PickLists() {
       accessor: (row: any) => (
         <div className="flex gap-1.5 items-center flex-wrap">
           {row.status === 'draft' && (
-            <Button size="sm" onClick={() => { setSelectedList(row); setIsAssignModalOpen(true); }} className="bg-primary hover:bg-primary/90 text-white font-semibold text-xs py-1">
-              Assign Staff
+            <>
+              <Button size="sm" onClick={() => handleAutoAssign(row.id)} disabled={isAutoAssigning} className="bg-primary hover:bg-primary/90 text-white font-semibold text-xs py-1">
+                Auto Assign
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => { setSelectedList(row); setIsAssignModalOpen(true); }} className="font-semibold text-xs py-1">
+                Manual Assign
+              </Button>
+            </>
+          )}
+          {(row.status === 'assigned' || row.status === 'picking') && (
+            <Button size="sm" variant="outline" onClick={() => { setSelectedList(row); setIsReassignModalOpen(true); }} className="font-semibold text-xs py-1 text-orange-600 border-orange-300 bg-orange-50 hover:bg-orange-600 hover:text-white">
+              Reassign
             </Button>
           )}
           {row.status === 'picking' && (
@@ -451,7 +506,62 @@ export default function PickLists() {
         </div>
       </Modal>
 
-      {/* Item-Level Audit & Verification Modal */}
+      {/* Reassign Staff Modal */}
+      <Modal isOpen={isReassignModalOpen} onClose={() => setIsReassignModalOpen(false)} title={`Reassign Picker Staff — Order PL-${selectedList?.id}`}>
+        <div className="space-y-4">
+          <p className="text-sm font-medium text-on-surface-variant">
+            Select a new active warehouse worker to reassign picking responsibility:
+          </p>
+          <div className="grid grid-cols-1 gap-2.5 max-h-72 overflow-y-auto pr-1">
+            {pickers.map((picker) => (
+              <button
+                key={picker.id}
+                disabled={assigningPickerId !== null}
+                onClick={() => handleReassign(picker.id, picker.full_name || picker.email)}
+                className={`flex items-center justify-between gap-3 p-4 rounded-2xl border transition-all text-left shadow-xs group ${
+                  assigningPickerId === picker.id
+                    ? 'border-primary bg-primary/10 opacity-90'
+                    : assigningPickerId !== null
+                    ? 'border-outline-variant opacity-50 cursor-not-allowed'
+                    : 'border-outline-variant hover:border-primary hover:bg-primary/5'
+                }`}
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-primary-container text-white flex items-center justify-center font-black text-base group-hover:scale-105 transition-transform">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-on-surface text-sm flex items-center gap-2">
+                      <span>{picker.full_name || picker.email}</span>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                        picker.is_available ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-100 text-slate-500 border border-slate-300'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full mr-1 ${picker.is_available ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                        {picker.is_available ? 'Online' : 'Offline'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-on-surface-variant font-semibold capitalize mt-0.5">{picker.role} Account — Ready for assignment</div>
+                  </div>
+                </div>
+                <span className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-colors ${
+                  assigningPickerId === picker.id
+                    ? 'bg-primary text-white animate-pulse'
+                    : 'bg-primary/10 text-primary group-hover:bg-primary group-hover:text-white'
+                }`}>
+                  {assigningPickerId === picker.id ? 'Reassigning...' : 'Reassign →'}
+                </span>
+              </button>
+            ))}
+            {pickers.length === 0 && (
+              <div className="text-center py-8 text-amber-600 text-sm font-semibold bg-amber-50/50 rounded-2xl border border-amber-200">
+                No active picker accounts detected.
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Inspect / Audit Modal */}
       <Modal isOpen={isAuditModalOpen} onClose={() => setIsAuditModalOpen(false)} title={`Audit & Verify Order ${selectedAuditList?.picker_job_number ? 'P-' + String(selectedAuditList.picker_job_number).padStart(3, '0') : 'PL-' + selectedAuditList?.id}`}>
         <div className="space-y-5 max-h-[80vh] overflow-y-auto pr-1">
           <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 flex items-center justify-between">
@@ -543,7 +653,18 @@ export default function PickLists() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className={`font-bold text-sm truncate ${isMissingApproved ? 'text-slate-400 line-through' : 'text-on-surface'}`}>{item.product_name || `Item SKU #${item.id}`}</div>
-                            <div className="text-xs text-on-surface-variant font-mono mt-0.5">Barcode: {item.barcode || 'N/A'}</div>
+                            <div className="text-xs text-on-surface-variant font-mono mt-0.5 flex items-center gap-2">
+                              <span>Barcode: {item.barcode || 'N/A'}</span>
+                              {item.bin_location && (
+                                <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded text-[10px] font-bold">Bin: {item.bin_location}</span>
+                              )}
+                              {item.is_full_carton && (
+                                <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px] font-bold flex items-center gap-1">
+                                  <Package className="w-3 h-3" />
+                                  Full Carton Pick
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                         

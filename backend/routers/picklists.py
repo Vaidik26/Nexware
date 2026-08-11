@@ -165,7 +165,8 @@ async def generate_picklist(
             "product_name": cat_item.item_name if cat_item else item.get("product_name", "Item"),
             "quantity": item.get("quantity", 1),
             "unit": item.get("uom", "EA"),
-            "available_quantity": cat_item.available_quantity if cat_item else 0
+            "available_quantity": cat_item.available_quantity if cat_item else 0,
+            "bin_location": cat_item.bin_location if cat_item else None
         })
 
     if not matched_items:
@@ -205,6 +206,7 @@ async def generate_picklist(
             product_name=mi["product_name"],
             quantity=mi["quantity"],
             unit=mi["unit"],
+            bin_location=mi.get("bin_location"),
         ))
 
     order.status = "picklist_generated"
@@ -408,6 +410,7 @@ async def direct_assign_picklist(
             product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
             quantity=item.quantity or 1,
             unit=item.unit or "EA",
+            bin_location=cat_item.bin_location if cat_item else None,
         ))
         verified_count += 1
 
@@ -522,6 +525,7 @@ async def direct_assign_auto(
             product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
             quantity=item.quantity or 1,
             unit=item.unit or "EA",
+            bin_location=cat_item.bin_location if cat_item else None,
         ))
         verified_count += 1
 
@@ -1079,3 +1083,100 @@ async def purge_completed_picklist(
     await db.delete(pl)
     await db.commit()
     return {"message": "Order completed and all operational data cleanly purged from the database."}
+
+class ReassignRequest(BaseModel):
+    new_picker_id: int
+
+@router.patch("/{picklist_id}/reassign")
+async def reassign_picklist(
+    picklist_id: int,
+    payload: ReassignRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_admin),
+):
+    result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    picklist = result.scalars().first()
+    if not picklist:
+        raise HTTPException(status_code=404, detail="Pick list not found")
+
+    new_user_res = await db.execute(
+        select(User).filter(User.id == payload.new_picker_id, User.role == "picker", User.is_active == True)
+    )
+    new_picker = new_user_res.scalars().first()
+    if not new_picker:
+        raise HTTPException(status_code=404, detail="New picker not found or inactive")
+    if not new_picker.is_available:
+        raise HTTPException(status_code=400, detail="New picker is not available")
+
+    assignment_res = await db.execute(
+        select(PickAssignment).filter(PickAssignment.pick_list_id == picklist_id)
+    )
+    old_assignments = assignment_res.scalars().all()
+    
+    if old_assignments:
+        old_assignment = old_assignments[-1]
+        if old_assignment.picker_id == payload.new_picker_id:
+            raise HTTPException(status_code=400, detail="Pick list is already assigned to this picker")
+            
+        old_user_res = await db.execute(select(User).filter(User.id == old_assignment.picker_id))
+        old_picker = old_user_res.scalars().first()
+        if old_picker:
+            old_picker.is_available = True
+            db.add(Notification(
+                user_id=old_picker.id,
+                type="job_cancelled",
+                title="Job Reassigned",
+                message=f"Order #{picklist.order_number} has been reassigned to another picker.",
+            ))
+            trigger_push(
+                old_picker.push_token,
+                "Job Reassigned",
+                f"Order #{picklist.order_number} has been reassigned to another picker.",
+                background_tasks=background_tasks,
+            )
+
+    new_assignment = PickAssignment(pick_list_id=picklist_id, picker_id=new_picker.id)
+    db.add(new_assignment)
+    new_picker.is_available = False
+    
+    db.add(Notification(
+        user_id=new_picker.id,
+        type="pick_assignment",
+        title="New Job Assigned",
+        message=f"Order #{picklist.order_number} has been reassigned to you.",
+    ))
+    trigger_push(
+        new_picker.push_token,
+        "New Job Assigned",
+        f"Order #{picklist.order_number} has been reassigned to you.",
+        background_tasks=background_tasks,
+    )
+
+    await db.commit()
+    return {"message": "Reassigned successfully"}
+
+class ToggleCartonRequest(BaseModel):
+    is_full_carton: bool
+
+@router.patch("/{picklist_id}/items/{item_id}/toggle-carton")
+async def toggle_item_carton(
+    picklist_id: int,
+    item_id: int,
+    payload: ToggleCartonRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = await db.execute(
+        select(PickListItem).filter(
+            PickListItem.id == item_id,
+            PickListItem.pick_list_id == picklist_id,
+        )
+    )
+    item = result.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    item.is_full_carton = payload.is_full_carton
+    await db.commit()
+    return {"is_full_carton": item.is_full_carton}
