@@ -6,6 +6,7 @@ import { useAuthStore } from '../../store/authStore';
 import api from '../../lib/api';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 interface CatalogueItem {
   barcode: string;
@@ -36,7 +37,8 @@ export default function LpoCreateScreen() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [orderNumber, setOrderNumber] = useState(generateAutoLpoNumber());
-  const [deliveryDate, setDeliveryDate] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState<Date | undefined>(undefined);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   
   const [showItemModal, setShowItemModal] = useState(false);
   const [search, setSearch] = useState('');
@@ -137,8 +139,8 @@ export default function LpoCreateScreen() {
           product_name: c.product_name
         }))
       };
-      if (deliveryDate.trim()) {
-        payload.delivery_date = new Date(deliveryDate.trim()).toISOString();
+      if (deliveryDate) {
+        payload.delivery_date = deliveryDate.toISOString();
       }
 
       const res = await api.post('/lpos', payload);
@@ -159,7 +161,7 @@ export default function LpoCreateScreen() {
     setSuccessLpoData(null);
     setCart([]);
     setCustomerName('');
-    setDeliveryDate('');
+    setDeliveryDate(undefined);
     setOrderNumber(generateAutoLpoNumber());
   };
 
@@ -208,7 +210,7 @@ export default function LpoCreateScreen() {
         <div class="field-row"><span class="field-label">LPO Ref:</span><span>${orderNumber}</span></div>
         <div class="field-row"><span class="field-label">Date:</span><span>${dateStr} ${timeStr}</span></div>
         <div class="field-row"><span class="field-label">Customer:</span><span>${customerName}</span></div>
-        ${deliveryDate ? `<div class="field-row"><span class="field-label">Delivery:</span><span>${deliveryDate}</span></div>` : ''}
+        ${deliveryDate ? `<div class="field-row"><span class="field-label">Delivery:</span><span>${deliveryDate.toISOString().split('T')[0]}</span></div>` : ''}
         <div class="field-row"><span class="field-label">Status:</span><span>${successLpoData?.picker_name ? 'Assigned' : 'PENDING'}</span></div>
         ${successLpoData?.picker_name ? `<div class="field-row"><span class="field-label">Picker:</span><span>${successLpoData.picker_name}</span></div>` : ''}
         <div class="thick-div"></div>
@@ -266,13 +268,28 @@ export default function LpoCreateScreen() {
             value={customerName}
             onChangeText={setCustomerName}
           />
-          <Text className="text-[11px] font-bold text-gray-500 mb-1 font-inter uppercase tracking-wider">Delivery Date (YYYY-MM-DD)</Text>
-          <TextInput
-            className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-3 font-inter text-base text-gray-800 font-semibold"
-            placeholder="e.g. 2026-10-15 (Optional)"
-            value={deliveryDate}
-            onChangeText={setDeliveryDate}
-          />
+          <Text className="text-[11px] font-bold text-gray-500 mb-1 font-inter uppercase tracking-wider">Delivery Date (Optional)</Text>
+          <TouchableOpacity 
+            className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-3"
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Text className={`font-inter text-base font-semibold ${deliveryDate ? 'text-gray-800' : 'text-gray-400'}`}>
+              {deliveryDate ? deliveryDate.toISOString().split('T')[0] : 'Select Date'}
+            </Text>
+          </TouchableOpacity>
+          {showDatePicker && (
+            <DateTimePicker
+              value={deliveryDate || new Date()}
+              mode="date"
+              display="default"
+              onChange={(event: any, selectedDate?: Date) => {
+                setShowDatePicker(false);
+                if (selectedDate) {
+                  setDeliveryDate(selectedDate);
+                }
+              }}
+            />
+          )}
           <Text className="text-[11px] font-bold text-gray-500 mb-1 font-inter uppercase tracking-wider">LPO Number (Auto-Generated)</Text>
           <TextInput
             className="bg-gray-100 border border-gray-200 rounded-xl px-4 py-3 font-inter text-base text-gray-800 font-semibold"
