@@ -1,0 +1,73 @@
+"""
+Supabase Storage service for NexWare backend.
+Handles upload/delete of files to Supabase Storage buckets.
+"""
+import uuid
+from typing import Optional
+from backend.config import settings
+
+# Lazy import to avoid errors when SUPABASE_URL/KEY not configured
+_supabase_client = None
+
+def _get_client():
+    global _supabase_client
+    if _supabase_client is None:
+        if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY or settings.SUPABASE_SERVICE_KEY == "PASTE_YOUR_SERVICE_ROLE_KEY_HERE":
+            raise RuntimeError(
+                "Supabase storage is not configured. "
+                "Please add SUPABASE_URL and SUPABASE_SERVICE_KEY to backend/.env"
+            )
+        from supabase import create_client
+        _supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+    return _supabase_client
+
+
+def upload_to_supabase(
+    file_bytes: bytes,
+    original_filename: str,
+    bucket: str,
+    folder: str = "",
+    content_type: str = "application/pdf",
+) -> str:
+    """
+    Upload a file to Supabase Storage and return its public URL.
+
+    Args:
+        file_bytes: Raw file bytes to upload.
+        original_filename: The original filename (used to derive extension).
+        bucket: Supabase bucket name, e.g. 'Customer Confirmation'
+        folder: Optional folder/path prefix inside the bucket.
+        content_type: MIME type of the file.
+
+    Returns:
+        Public URL string of the uploaded file.
+    """
+    client = _get_client()
+    ext = original_filename.rsplit(".", 1)[-1] if "." in original_filename else "pdf"
+    unique_name = f"{uuid.uuid4().hex}.{ext}"
+    path = f"{folder}/{unique_name}".lstrip("/") if folder else unique_name
+
+    client.storage.from_(bucket).upload(
+        path=path,
+        file=file_bytes,
+        file_options={"content-type": content_type, "upsert": "false"},
+    )
+
+    # Construct public URL
+    public_url = f"{settings.SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}"
+    return public_url
+
+
+def delete_from_supabase(bucket: str, file_url: str) -> None:
+    """
+    Delete a file from Supabase Storage given its public URL.
+    """
+    try:
+        client = _get_client()
+        # Extract path from URL: .../object/public/{bucket}/{path}
+        marker = f"/object/public/{bucket}/"
+        if marker in file_url:
+            path = file_url.split(marker, 1)[1]
+            client.storage.from_(bucket).remove([path])
+    except Exception:
+        pass  # Non-critical: log and continue

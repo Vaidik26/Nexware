@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     # Notifications
     EXPO_PUSH_URL: str = "https://exp.host/--/api/v2/push/send"
 
+    # Supabase Storage
+    SUPABASE_URL: str = ""
+    SUPABASE_SERVICE_KEY: str = ""
+
     model_config = SettingsConfigDict(
         env_file=(
             os.path.join(BACKEND_DIR, ".env"),
