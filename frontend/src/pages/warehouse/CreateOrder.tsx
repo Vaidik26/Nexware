@@ -162,6 +162,63 @@ export default function CreateOrder() {
     }
   };
 
+  const handleAutoAssign = async () => {
+    if (!customerName.trim()) {
+      toast.error('Please enter a customer name.');
+      return;
+    }
+
+    const validRows = orderRows.filter(r => r.catItem !== null);
+    if (validRows.length === 0) {
+      toast.error('Cannot submit an empty order. Please select at least one item.');
+      return;
+    }
+
+    let hasErrors = false;
+    const validatedRows = orderRows.map(r => {
+      if (!r.catItem) return r;
+      if (r.requested_quantity > r.catItem.available_quantity) {
+        hasErrors = true;
+        return { ...r, error: `Quantity exceeds available stock (${r.catItem.available_quantity})` };
+      }
+      return { ...r, error: null };
+    });
+
+    if (orderRows.some(r => !r.catItem)) {
+      toast.error('Blank line items are not allowed. Please remove empty rows or select an item.');
+      return;
+    }
+
+    if (hasErrors) {
+      setOrderRows(validatedRows);
+      toast.error('Inventory validation failed. Please check quantities.');
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const payload = {
+        order_number: orderNumber,
+        customer_name: customerName,
+        items: validRows.map((r) => ({
+          barcode: r.catItem.barcode,
+          product_name: r.catItem.item_name,
+          quantity: r.requested_quantity || 1,
+          unit: 'PCS',
+        })),
+      };
+
+      await api.post(`/picklists/direct-assign-auto`, payload);
+      
+      toast.success(`Order #${orderNumber} created and auto-assigned successfully!`);
+      navigate('/warehouse/picklists');
+    } catch (err: any) {
+      toast.error(getErrorMessage(err, 'Could not auto-assign picklist. Are pickers available?'));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
       <div className="flex justify-between items-start">
@@ -304,14 +361,23 @@ export default function CreateOrder() {
               </div>
             </div>
             
-            <div className="p-6 bg-surface-container-low border-t border-outline-variant flex justify-end">
+            <div className="p-6 bg-surface-container-low border-t border-outline-variant flex justify-end gap-3">
+              <Button
+                size="lg"
+                onClick={handleAutoAssign}
+                disabled={isProcessing}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-black px-8 shadow-md"
+              >
+                Auto Assign (Round Robin)
+              </Button>
               <Button
                 size="lg"
                 onClick={() => setIsAssignModalOpen(true)}
+                disabled={isProcessing}
                 className="bg-primary hover:bg-primary/90 text-white font-black px-8 shadow-md"
               >
                 <Users className="w-5 h-5 mr-2" />
-                Assign to Picker
+                Manual Assign
               </Button>
             </div>
           </div>
