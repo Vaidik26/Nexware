@@ -10,7 +10,6 @@ import api from '@/lib/api';
 
 export default function CreateOrder() {
   const [catalogue, setCatalogue] = useState<any[]>([]);
-  const [pickers, setPickers] = useState<any[]>([]);
   const [salesPersons, setSalesPersons] = useState<any[]>([]);
   
   const [customerName, setCustomerName] = useState('');
@@ -21,9 +20,7 @@ export default function CreateOrder() {
   // orderRows will hold the inline table data
   const [orderRows, setOrderRows] = useState<any[]>([{ id: Date.now(), catItem: null, requested_quantity: 1 }]);
   
-  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [assigningId, setAssigningId] = useState<number | null>(null);
   
   const [isLpoModalOpen, setIsLpoModalOpen] = useState(false);
   const [lpoScannerData, setLpoScannerData] = useState('');
@@ -42,7 +39,6 @@ export default function CreateOrder() {
           api.get('/users'),
         ]);
         setCatalogue(catRes.data || []);
-        setPickers((usersRes.data || []).filter((u: any) => u.role === 'picker'));
         setSalesPersons((usersRes.data || []).filter((u: any) => u.role === 'sales_person'));
       } catch (err) {
         toast.error('Failed to load catalogue or users');

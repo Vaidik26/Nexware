@@ -5,7 +5,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import {
   UploadCloud, ExternalLink, CheckCircle, XCircle, Clock,
-  Users, Zap, FileText, Package2, Calendar, RefreshCw,
+  Users, Zap, Package2, Calendar, RefreshCw,
 } from 'lucide-react';
 
 interface LPO {

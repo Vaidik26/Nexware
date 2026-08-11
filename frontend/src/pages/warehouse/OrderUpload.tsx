@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FileUpload } from '@/components/ui/FileUpload';
 import { Button } from '@/components/ui/Button';
-import { Modal } from '@/components/ui/Modal';
-import { CheckCircle2, AlertCircle, Download, FileText, Sparkles, Users, ArrowRight, RefreshCw, Printer } from 'lucide-react';
+import { CheckCircle2, AlertCircle, FileText, Sparkles, ArrowRight, RefreshCw } from 'lucide-react';
 import { toast } from '@/components/ui/Toast';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { getErrorMessage } from '@/lib/utils';
@@ -24,8 +23,6 @@ export default function OrderUpload() {
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [catalogue, setCatalogue] = useState<any[]>([]);
-  const [pickers, setPickers] = useState<any[]>([]);
-  
   const [results, setResults] = useState<{
     orderId?: number;
     orderNumber: string;
@@ -155,139 +152,6 @@ export default function OrderUpload() {
       setProgress(0);
       toast.error(getErrorMessage(err, 'Failed to extract barcodes from LPO PDF'));
     }
-  };
-
-  // Download jaw-dropping branded native Excel (.xlsx) spreadsheet via backend style engine with pre-adjusted column widths & zero scientific notation
-  const downloadPicklistExcel = async () => {
-    if (!results || results.items.length === 0) {
-      toast.error('No extracted items available to export.');
-      return;
-    }
-
-    const now = new Date();
-    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
-    const fileName = `picklist_${timestamp}.xlsx`;
-
-    try {
-      const verifiedItems = results.items.filter((item) => item.inCatalogue);
-      if (verifiedItems.length === 0) {
-        toast.error('Error: Cannot export Excel picklist. No verified items matched the active system catalogue. Unmatched exceptions cannot be exported for picking.', { id: 'excel-export' });
-        return;
-      }
-
-      toast.loading('Generating branded Excel spreadsheet (.xlsx)...', { id: 'excel-export' });
-      // Export ONLY verified SKUs present in the master system catalogue to the floor picklist Excel
-      const payload = verifiedItems.map((item) => ({
-        barcode: item.barcode || 'N/A',
-        product_name: item.itemName,
-        quantity: item.quantity || 1,
-        unit: 'PCS',
-      }));
-      
-      const res = await api.post('/picklists/export-preview-excel', payload, {
-        responseType: 'blob',
-      });
-
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-
-      toast.success(`Downloaded Branded Excel: ${fileName}`, { id: 'excel-export' });
-    } catch (err: any) {
-      toast.error(getErrorMessage(err, 'Failed to export branded Excel spreadsheet.'), { id: 'excel-export' });
-    }
-  };
-
-  // Instant browser PDF / Print generation matching exact pick list layout with picklist_date_time filename and no signature footers
-  const downloadPicklistPDF = () => {
-    if (!results || results.items.length === 0) {
-      toast.error('No extracted items available to print.');
-      return;
-    }
-    
-    const verifiedItems = results.items.filter((item) => item.inCatalogue);
-    if (verifiedItems.length === 0) {
-      toast.error('Error: Cannot generate PDF picklist. No verified items matched the system catalogue. Unmatched exceptions cannot be printed for warehouse floor picking.');
-      return;
-    }
-
-    const now = new Date();
-    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
-    const fileName = `picklist_${timestamp}`;
-
-    // Include ONLY verified catalogue items in PDF print out for warehouse floor operations
-    const rowsHtml = verifiedItems
-      .map(
-        (item, idx) => `
-        <tr>
-          <td style="text-align: center; padding: 8px; border: 1px solid #333;">${idx + 1}</td>
-          <td style="text-align: center; padding: 8px; font-family: monospace; font-weight: bold; border: 1px solid #333;">${item.barcode || 'N/A'}</td>
-          <td style="padding: 8px; font-weight: bold; border: 1px solid #333;">${item.itemName}</td>
-          <td style="text-align: center; padding: 8px; font-weight: bold; border: 1px solid #333; font-size: 16px;">${item.quantity || 1}</td>
-          <td style="text-align: center; padding: 8px; border: 1px solid #333;">[ &nbsp; &nbsp; ]</td>
-          <td style="text-align: center; padding: 8px; border: 1px solid #333;">[ &nbsp; &nbsp; ]</td>
-        </tr>`
-      )
-      .join('');
-
-    const printWindow = window.open('', '_blank', 'width=900,height=800');
-    if (!printWindow) {
-      toast.error('Pop-ups blocked by browser. Please allow pop-ups to generate PDF.');
-      return;
-    }
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>${fileName}</title>
-        <style>
-          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #111; }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #154c34; padding-bottom: 15px; margin-bottom: 25px; }
-          .logo { font-size: 26px; font-weight: 900; color: #154c34; letter-spacing: -0.5px; }
-          .meta { text-align: right; font-size: 14px; line-height: 1.5; }
-          table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-          th { background-color: #154c34; color: #fff; text-transform: uppercase; font-size: 12px; padding: 10px; border: 1px solid #154c34; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div>
-            <div class="logo">NexWare Enterprise OS</div>
-            <div style="font-size: 16px; font-weight: bold; margin-top: 4px; color: #555;">WAREHOUSE FLOOR PICK LIST</div>
-          </div>
-          <div class="meta">
-            <div><b>Date Generated:</b> ${now.toLocaleDateString()}</div>
-          </div>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 5%;">SI</th>
-              <th style="width: 25%;">Item Code (Barcode)</th>
-              <th style="width: 40%;">Description / Product Title</th>
-              <th style="width: 10%;">Quantity</th>
-              <th style="width: 10%;">Checked</th>
-              <th style="width: 10%;">Picked</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml}
-          </tbody>
-        </table>
-        <script>
-          window.onload = function() { window.print(); };
-        </script>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
-    toast.success(`Generated ${fileName}.pdf for instant printing!`);
   };
 
   // Reset screen to upload another order immediately
