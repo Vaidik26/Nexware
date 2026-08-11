@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Modal, ActivityIndicator, TextInput, Alert, Share } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,6 +8,8 @@ import { playTickSound } from '../../../lib/alertSound';
 import api from '../../../lib/api';
 import QRCode from 'react-native-qrcode-svg';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 
 export default function JobDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -33,6 +35,9 @@ export default function JobDetailScreen() {
   
   const [showQRModal, setShowQRModal] = useState(false);
   const [generatedQRData, setGeneratedQRData] = useState<any>(null);
+  const [expectedWeight, setExpectedWeight] = useState<number | null>(null);
+  const [isFetchingExpectedWeight, setIsFetchingExpectedWeight] = useState(false);
+  const qrRef = useRef<any>(null);
 
   useEffect(() => {
     const fetchPicklistDetails = async () => {
@@ -136,6 +141,27 @@ export default function JobDetailScreen() {
       setSubmitError(err.response?.data?.detail || 'Could not submit. Please try again.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const openBoxModal = async () => {
+    setShowBoxModal(true);
+    setExpectedWeight(null);
+    setIsFetchingExpectedWeight(true);
+    try {
+      // Ask backend for expected weight preview
+      const looseItems = items.filter(i => i.picked && !i.missing_reported && !i.box_id);
+      if (looseItems.length === 0) return;
+      const res = await api.post(`/picklists/${id}/boxes/preview-weight`, {
+        item_ids: looseItems.map(i => parseInt(i.id)),
+        carton_type_id: selectedCartonType || (cartonTypes[0]?.id ?? null),
+      });
+      setExpectedWeight(res.data.expected_weight);
+    } catch {
+      // fallback: show nothing / just let backend validate
+      setExpectedWeight(null);
+    } finally {
+      setIsFetchingExpectedWeight(false);
     }
   };
 
@@ -253,7 +279,7 @@ export default function JobDetailScreen() {
           <TouchableOpacity
             className={`px-6 py-3 rounded-xl flex-row items-center ${isComplete ? 'bg-[#003527]' : 'bg-gray-200'}`}
             disabled={!isComplete || isSubmitting}
-            onPress={() => setShowBoxModal(true)}
+            onPress={() => openBoxModal()}
           >
             {isComplete && <Box size={20} color="white" />}
             <Text className={`font-bold ml-2 font-inter ${isComplete ? 'text-white' : 'text-gray-400'}`}>
@@ -320,7 +346,13 @@ export default function JobDetailScreen() {
             
             <View className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-4">
               <Text className="text-xs font-bold text-emerald-800 uppercase tracking-wider mb-1">Expected Weight</Text>
-              <Text className="text-xl font-extrabold text-emerald-900">{((items.filter(i => i.picked && !i.missing_reported && !i.box_id).length || 0) * 1.25).toFixed(2)} kg</Text>
+              {isFetchingExpectedWeight ? (
+                <ActivityIndicator size="small" color="#059669" />
+              ) : expectedWeight !== null ? (
+                <Text className="text-xl font-extrabold text-emerald-900">{expectedWeight.toFixed(2)} kg</Text>
+              ) : (
+                <Text className="text-sm text-emerald-700">Select carton type to calculate</Text>
+              )}
             </View>
 
             <Text className="text-sm font-semibold text-gray-500 mb-2">Select Carton Type</Text>
@@ -328,10 +360,24 @@ export default function JobDetailScreen() {
               {cartonTypes.map(ct => (
                 <TouchableOpacity 
                   key={ct.id} 
-                  onPress={() => setSelectedCartonType(ct.id)}
+                  onPress={async () => {
+                    setSelectedCartonType(ct.id);
+                    // Refetch expected weight for this carton type
+                    const looseItems = items.filter(i => i.picked && !i.missing_reported && !i.box_id);
+                    if (looseItems.length === 0) return;
+                    setIsFetchingExpectedWeight(true);
+                    try {
+                      const res = await api.post(`/picklists/${id}/boxes/preview-weight`, {
+                        item_ids: looseItems.map(i => parseInt(i.id)),
+                        carton_type_id: ct.id,
+                      });
+                      setExpectedWeight(res.data.expected_weight);
+                    } catch { setExpectedWeight(null); }
+                    finally { setIsFetchingExpectedWeight(false); }
+                  }}
                   className={`px-4 py-2 rounded-xl border ${selectedCartonType === ct.id ? 'bg-primary border-primary' : 'bg-gray-50 border-gray-200'}`}
                 >
-                  <Text className={`font-semibold ${selectedCartonType === ct.id ? 'text-white' : 'text-gray-700'}`}>{ct.name}</Text>
+                  <Text className={`font-semibold ${selectedCartonType === ct.id ? 'text-white' : 'text-gray-700'}`}>{ct.name} ({ct.tare_weight}kg tare)</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -390,7 +436,7 @@ export default function JobDetailScreen() {
 
             <View className="w-full bg-gray-50 p-4 rounded-xl mb-6">
               <Text className="text-xs text-gray-500 font-inter text-center mb-1">DATA PAYLOAD</Text>
-              <Text className="text-xs font-mono text-gray-700 text-center">
+              <Text className="text-xs text-gray-700 text-center" numberOfLines={3}>
                 {generatedQRData}
               </Text>
             </View>
@@ -398,7 +444,17 @@ export default function JobDetailScreen() {
             <View className="flex-row justify-between w-full mb-4 gap-3">
               <TouchableOpacity
                 className="bg-gray-100 flex-1 py-3 rounded-xl border border-gray-200 items-center"
-                onPress={() => Alert.alert('Downloaded', 'QR Code saved to gallery.')}
+                onPress={async () => {
+                  try {
+                    const html = `<html><body style="display:flex;justify-content:center;align-items:center;height:100vh;"><p style="font-family:monospace;font-size:10px">${generatedQRData}</p></body></html>`;
+                    const { uri } = await Print.printToFileAsync({ html });
+                    if (await Sharing.isAvailableAsync()) {
+                      await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: '.pdf' });
+                    } else {
+                      Alert.alert('Saved', `QR saved to: ${uri}`);
+                    }
+                  } catch { Alert.alert('Error', 'Could not save QR'); }
+                }}
               >
                 <Text className="text-gray-700 font-bold font-inter text-sm">Download</Text>
               </TouchableOpacity>

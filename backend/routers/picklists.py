@@ -649,6 +649,47 @@ async def complete_picking(
 
 # ---------- Boxing & Missing Items ----------
 
+class PreviewWeightRequest(BaseModel):
+    item_ids: List[int]
+    carton_type_id: int
+
+@router.post("/{picklist_id}/boxes/preview-weight")
+async def preview_box_weight(
+    picklist_id: int,
+    payload: PreviewWeightRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_picker),
+):
+    """Returns the expected weight for the selected items + carton type before the picker commits."""
+    carton_res = await db.execute(select(CartonType).filter(CartonType.id == payload.carton_type_id))
+    carton = carton_res.scalars().first()
+    if not carton:
+        raise HTTPException(status_code=400, detail="Carton type not found")
+
+    items_res = await db.execute(
+        select(PickListItem).filter(
+            PickListItem.id.in_(payload.item_ids),
+            PickListItem.pick_list_id == picklist_id
+        )
+    )
+    items = items_res.scalars().all()
+
+    barcodes = [item.barcode for item in items]
+    cat_items_res = await db.execute(select(SalesItem).filter(SalesItem.barcode.in_(barcodes)))
+    cat_map = {ci.barcode: ci for ci in cat_items_res.scalars().all()}
+
+    expected_weight = carton.tare_weight
+    for item in items:
+        ci = cat_map.get(item.barcode)
+        if ci:
+            expected_weight += (ci.packaging_weight * item.quantity)
+
+    return {
+        "expected_weight": round(expected_weight, 3),
+        "tare_weight": carton.tare_weight,
+        "items_net_weight": round(expected_weight - carton.tare_weight, 3),
+    }
+
 @router.post("/{picklist_id}/boxes", response_model=PickListBoxOut)
 async def create_box(
     picklist_id: int,

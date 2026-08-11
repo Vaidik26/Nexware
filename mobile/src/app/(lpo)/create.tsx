@@ -176,82 +176,71 @@ export default function LpoCreateScreen() {
   const handleDownloadPDF = async (share: boolean = false) => {
     try {
       const d = new Date();
-      const dateStr = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-      
-      const padR = (str: string, len: number) => (str.length > len ? str.substring(0, len) : str + ' '.repeat(len - str.length));
-      const padL = (str: string, len: number) => (str.length > len ? str.substring(0, len) : ' '.repeat(len - str.length) + str);
+      const dateStr = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+      const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      const totalQty = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-      const W = 48;
-      const divider = '-'.repeat(W);
-      const thickDivider = '='.repeat(W);
+      const itemRows = cart.map((item, idx) => (
+        `<tr><td class="num">${idx + 1}</td><td class="desc">${item.product_name}</td><td class="bc">${item.barcode}</td><td class="uom">${item.unit}</td><td class="qty">${item.quantity}</td></tr>`
+      )).join('');
 
-      let itemsText = '';
-      cart.forEach((item, index) => {
-          const nameLine = `${index + 1}. ${item.product_name}`;
-          itemsText += padR(nameLine, W) + '\n';
-          
-          const bcStr = `   BC: ${item.barcode}`;
-          const qtyStr = `${item.quantity} ${item.unit}`;
-          itemsText += padR(bcStr, W - qtyStr.length - 1) + ' ' + padL(qtyStr, qtyStr.length) + '\n\n';
-      });
+      const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>
+        @page { size: 80mm auto; margin: 4mm 3mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Courier New', Courier, monospace; font-size: 10px; width: 74mm; color: #000; background: #fff; }
+        .center { text-align: center; }
+        .header-company { font-size: 13px; font-weight: bold; text-align: center; margin-bottom: 2px; }
+        .header-sub { font-size: 9px; text-align: center; margin-bottom: 4px; }
+        .divider { border-top: 1px dashed #000; margin: 3px 0; }
+        .thick-div { border-top: 2px solid #000; margin: 4px 0; }
+        .field-row { display: flex; justify-content: space-between; margin: 1.5px 0; font-size: 10px; }
+        .field-label { font-weight: bold; min-width: 65px; }
+        .section-title { font-weight: bold; font-size: 11px; text-align: center; margin: 3px 0; text-transform: uppercase; letter-spacing: 1px; }
+        table { width: 100%; border-collapse: collapse; margin: 3px 0; font-size: 9px; }
+        th { font-weight: bold; border-bottom: 1px solid #000; padding: 2px 1px; text-align: left; }
+        td { padding: 2px 1px; border-bottom: 1px dotted #ccc; vertical-align: top; }
+        .num { width: 8%; text-align: center; }
+        .desc { width: 42%; word-break: break-word; }
+        .bc { width: 26%; font-size: 8px; color: #333; }
+        .uom { width: 10%; text-align: center; }
+        .qty { width: 14%; text-align: right; font-weight: bold; }
+        .total-row { display: flex; justify-content: space-between; font-size: 10px; font-weight: bold; margin: 1px 0; }
+        .footer { font-size: 8px; text-align: center; margin-top: 6px; color: #444; }
+        .status-box { border: 1px solid #000; padding: 3px 6px; margin: 4px 0; font-size: 9px; text-align: center; }
+      </style></head><body>
+        <div class="header-company">NOOR GHAZAL GENERAL TRADING LLC</div>
+        <div class="header-sub">Dubai, UAE | Internal Warehouse Document</div>
+        <div class="thick-div"></div>
+        <div class="section-title">Local Purchase Order</div>
+        <div class="thick-div"></div>
+        <div class="field-row"><span class="field-label">LPO Ref:</span><span>${orderNumber}</span></div>
+        <div class="field-row"><span class="field-label">Date:</span><span>${dateStr} ${timeStr}</span></div>
+        <div class="field-row"><span class="field-label">Customer:</span><span>${customerName}</span></div>
+        <div class="field-row"><span class="field-label">Status:</span><span>${successLpoData?.picker_name ? 'Assigned' : 'PENDING'}</span></div>
+        ${successLpoData?.picker_name ? `<div class="field-row"><span class="field-label">Picker:</span><span>${successLpoData.picker_name}</span></div>` : ''}
+        <div class="thick-div"></div>
+        <div class="section-title">Line Items (${cart.length})</div>
+        <div class="divider"></div>
+        <table><thead><tr>
+          <th class="num">#</th><th class="desc">Description</th><th class="bc">Barcode</th><th class="uom">UOM</th><th class="qty">Qty</th>
+        </tr></thead><tbody>${itemRows}</tbody></table>
+        <div class="thick-div"></div>
+        <div class="total-row"><span>Total Lines:</span><span>${cart.length}</span></div>
+        <div class="total-row"><span>Total Qty:</span><span>${totalQty}</span></div>
+        <div class="thick-div"></div>
+        <div class="status-box"><strong>INTERNAL USE ONLY</strong><br/>Generated via NexWare Terminal</div>
+        <div class="footer">* Please verify all items before dispatch *</div>
+      </body></html>`;
 
-      const receiptContent = `NOOR GHAZAL GENERAL TRADING LLC
-Dubai, UAE
-
-${thickDivider}
-LOCAL PURCHASE ORDER
-${divider}
-LPO Ref   : ${orderNumber}
-Date/Time : ${dateStr}
-Customer  : ${customerName}
-Assigned  : ${successLpoData?.picker_name || 'Pending Warehouse Assignment'} (${successLpoData?.job_label || '-'})
-${thickDivider}
-ITEMS
-${divider}
-${itemsText}${thickDivider}
-Total Lines: ${cart.length}
-Total Qty  : ${cart.reduce((sum, item) => sum + item.quantity, 0)}
-${divider}
-
-* INTERNAL DOCUMENT *
-Generated via NexWare Terminal`;
-
-      const htmlContent = `
-        <html>
-          <head>
-            <style>
-              @page { margin: 10mm 5mm; }
-              body { 
-                font-family: 'Courier New', Courier, monospace; 
-                font-size: 14px; 
-                white-space: pre-wrap; 
-                word-wrap: break-word;
-                margin: 0;
-                padding: 10px;
-                line-height: 1.2;
-                max-width: 400px;
-                background-color: #fff;
-                color: #000;
-              }
-            </style>
-          </head>
-          <body>${receiptContent.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</body>
-        </html>
-      `;
-
-      if (share) {
-        if (await Sharing.isAvailableAsync()) {
-          const { uri } = await Print.printToFileAsync({ html: htmlContent });
-          await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
-        } else {
-          Alert.alert('Error', 'Sharing is not available on this device');
-        }
+      const { uri } = await Print.printToFileAsync({ html: htmlContent, base64: false });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
       } else {
         await Print.printAsync({ html: htmlContent });
       }
     } catch (err) {
       console.error(err);
-      Alert.alert('Error', 'Failed to generate PDF.');
+      Alert.alert('Error', 'Failed to generate LPO PDF.');
     }
   };
 
