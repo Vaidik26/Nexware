@@ -21,7 +21,10 @@ def _get_client():
             )
         try:
             from supabase import create_client
-            _supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+            # Strip trailing/leading whitespace and quotes to prevent JWS errors
+            url = settings.SUPABASE_URL.strip().strip("'").strip('"')
+            key = settings.SUPABASE_SERVICE_KEY.strip().strip("'").strip('"')
+            _supabase_client = create_client(url, key)
         except ImportError:
             raise HTTPException(
                 status_code=500,
