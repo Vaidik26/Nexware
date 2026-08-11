@@ -86,8 +86,9 @@ async def create_lpo(lpo: LpoCreate, db: AsyncSession = Depends(get_db)):
     lpo_number = lpo.lpo_number
     exists = await db.execute(select(Lpo).filter(Lpo.lpo_number == lpo_number))
     if exists.scalar_one_or_none():
-        count_res = await db.execute(sqlfunc.count(Lpo.id))
-        lpo_number = f"{lpo_number}-{count_res.scalar() or 0}"
+        from datetime import datetime
+        suffix = datetime.utcnow().strftime("%H%M%S")
+        lpo_number = f"{lpo_number}-{suffix}"
 
     db_lpo = Lpo(
         lpo_number=lpo_number,

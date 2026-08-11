@@ -2,11 +2,13 @@ import axios from 'axios';
 import { useAuthStore } from '@/store/authStore';
 
 const getBaseUrl = () => {
+  // VITE_API_URL set explicitly (local dev or via Vercel env vars dashboard)
   const envUrl = import.meta.env.VITE_API_URL;
-  if (envUrl && envUrl !== 'http://localhost:8000') {
-    return envUrl.replace(/\/+$/, '');
-  }
-  return import.meta.env.PROD ? '/api' : 'http://localhost:8000';
+  if (envUrl) return envUrl.replace(/\/+$/, '');
+  // Production build without explicit env var → same-host /api (only works if frontend+backend are on same Vercel project)
+  if (import.meta.env.PROD) return '/api';
+  // Local dev default
+  return 'http://localhost:8000';
 };
 
 const api = axios.create({
@@ -46,6 +48,7 @@ export function handleMutationInvalidation(url?: string) {
   }
   if (url.includes('/catalogue')) clearApiCache('/catalogue');
   else if (url.includes('/users')) clearApiCache('/users');
+  else if (url.includes('/lpos')) clearApiCache('/lpos');
   else if (url.includes('/picklists') || url.includes('/orders')) {
     clearApiCache('/picklists');
     clearApiCache('/orders');
