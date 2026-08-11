@@ -80,6 +80,15 @@ async def get_lpos(db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 
+@router.get("/{lpo_id}", response_model=LpoOut)
+async def get_lpo_by_id(lpo_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
+    lpo = result.scalar_one_or_none()
+    if not lpo:
+        raise HTTPException(status_code=404, detail="LPO not found")
+    return lpo
+
+
 @router.post("", response_model=LpoOut)
 @router.post("/", response_model=LpoOut)
 async def create_lpo(lpo: LpoCreate, db: AsyncSession = Depends(get_db)):

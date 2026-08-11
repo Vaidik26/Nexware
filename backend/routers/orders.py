@@ -150,8 +150,8 @@ async def upload_signed_lpo(
             folder="Customer-Signed",
             content_type="application/pdf",
         )
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload to Supabase failed: {str(e)}")
 

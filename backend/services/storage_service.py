@@ -9,16 +9,24 @@ from backend.config import settings
 # Lazy import to avoid errors when SUPABASE_URL/KEY not configured
 _supabase_client = None
 
+from fastapi import HTTPException
+
 def _get_client():
     global _supabase_client
     if _supabase_client is None:
         if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY or settings.SUPABASE_SERVICE_KEY == "PASTE_YOUR_SERVICE_ROLE_KEY_HERE":
-            raise RuntimeError(
-                "Supabase storage is not configured. "
-                "Please add SUPABASE_URL and SUPABASE_SERVICE_KEY to backend/.env"
+            raise HTTPException(
+                status_code=400,
+                detail="Supabase storage is not configured in Vercel. Please add SUPABASE_URL and SUPABASE_SERVICE_KEY to your Environment Variables."
             )
-        from supabase import create_client
-        _supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+        try:
+            from supabase import create_client
+            _supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+        except ImportError:
+            raise HTTPException(
+                status_code=500,
+                detail="The 'supabase' python package is missing. Please ensure requirements.txt is updated."
+            )
     return _supabase_client
 
 

@@ -27,7 +27,7 @@ class DirectAssignRequest(BaseModel):
     items: List[DirectAssignItem]
     auto_assign: bool = True
     sales_person_id: Optional[int] = None
-    delivery_date: Optional[str] = None
+    delivery_date: Optional[datetime] = None
 
 from backend.models.user import User, Notification
 from backend.models.catalogue import SalesItem, CartonType
