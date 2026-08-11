@@ -118,14 +118,11 @@ async def upload_lpo(
             detail="No barcodes could be extracted from this document."
         )
 
-    # Auto-sync new items to the catalogue — no hardcoded values
-    new_items_count = await _sync_lpo_items_to_db(extracted_data["items"], db)
-
     return {
         "id": None,
         "filename": file.filename,
         "extracted_data": extracted_data,
-        "new_catalogue_items_added": new_items_count or 0,
+        "new_catalogue_items_added": 0,
         "status": "extracted"
     }
 

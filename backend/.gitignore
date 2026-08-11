@@ -4,3 +4,9 @@ __pycache__/
 *.log
 .env
 item_master.csv
+# Temporary files and uploads
+uploads/
+tmp/
+temp/
+*.pdf
+*.csv
