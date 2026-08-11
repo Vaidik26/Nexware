@@ -351,8 +351,7 @@ export default function LpoCreateScreen() {
             <ActivityIndicator color="white" />
           ) : (
             <>
-              <QrCode size={20} color="white" />
-              <Text className="text-white font-black ml-2 text-base font-inter uppercase tracking-widest">Generate LPO & Print</Text>
+              <Text className="text-white font-black text-base font-inter uppercase tracking-widest">Generate LPO & Print</Text>
             </>
           )}
         </TouchableOpacity>
@@ -430,11 +429,11 @@ export default function LpoCreateScreen() {
               </TouchableOpacity>
 
               <View className="flex-row gap-3 mt-3">
-                <TouchableOpacity onPress={() => handleDownloadPDF(false)} className="flex-1 p-4 rounded-xl bg-slate-100 items-center justify-center flex-row">
-                  <Text className="font-bold text-slate-700">Preview PDF</Text>
+                <TouchableOpacity onPress={() => handleDownloadPDF(true)} className="flex-1 p-4 rounded-xl bg-slate-100 items-center justify-center flex-row">
+                  <Text className="font-bold text-slate-700">Download LPO</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => handleDownloadPDF(true)} className="flex-1 p-4 rounded-xl bg-slate-100 items-center justify-center flex-row">
-                  <Text className="font-bold text-slate-700">Share</Text>
+                  <Text className="font-bold text-slate-700">Share LPO</Text>
                 </TouchableOpacity>
               </View>
 

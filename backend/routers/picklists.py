@@ -273,8 +273,10 @@ async def auto_assign_existing(
     picklist_id: int,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_admin),
+    current_user=Depends(get_current_user),
 ):
+    if current_user.role not in ("admin", "lpo"):
+        raise HTTPException(status_code=403, detail="Admin or LPO access required")
     from sqlalchemy import func as sqlfunc
     
     # 1. Fetch Picklist

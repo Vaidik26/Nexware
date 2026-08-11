@@ -147,22 +147,6 @@ export default function JobDetailScreen() {
   const openBoxModal = async () => {
     setShowBoxModal(true);
     setExpectedWeight(null);
-    setIsFetchingExpectedWeight(true);
-    try {
-      // Ask backend for expected weight preview
-      const looseItems = items.filter(i => i.picked && !i.missing_reported && !i.box_id);
-      if (looseItems.length === 0) return;
-      const res = await api.post(`/picklists/${id}/boxes/preview-weight`, {
-        item_ids: looseItems.map(i => parseInt(i.id)),
-        carton_type_id: selectedCartonType || (cartonTypes[0]?.id ?? null),
-      });
-      setExpectedWeight(res.data.expected_weight);
-    } catch {
-      // fallback: show nothing / just let backend validate
-      setExpectedWeight(null);
-    } finally {
-      setIsFetchingExpectedWeight(false);
-    }
   };
 
   const createBox = async () => {
@@ -341,18 +325,14 @@ export default function JobDetailScreen() {
       {/* Box Creation Modal */}
       <Modal visible={showBoxModal} transparent animationType="slide">
         <View className="flex-1 bg-black/50 justify-end">
-          <View className="bg-white rounded-t-3xl p-6 w-full shadow-xl">
-            <Text className="text-xl font-bold text-onSurface mb-4">Pack Loose Items</Text>
+          <View className="bg-white rounded-3xl p-6 w-full shadow-2xl">
+            <Text className="text-xl font-bold text-gray-800 mb-4 font-inter">Pack Loose Items</Text>
             
-            <View className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-4">
-              <Text className="text-xs font-bold text-emerald-800 uppercase tracking-wider mb-1">Expected Weight</Text>
-              {isFetchingExpectedWeight ? (
-                <ActivityIndicator size="small" color="#059669" />
-              ) : expectedWeight !== null ? (
-                <Text className="text-xl font-extrabold text-emerald-900">{expectedWeight.toFixed(2)} kg</Text>
-              ) : (
-                <Text className="text-sm text-emerald-700">Select carton type to calculate</Text>
-              )}
+            <View className="bg-emerald-50 rounded-xl p-4 mb-4 border border-emerald-100">
+              <Text className="text-xs font-bold text-emerald-800 tracking-wider mb-1">WEIGHT GUIDELINES</Text>
+              <Text className="text-emerald-700 text-sm">
+                Enter the total weight of the items + box. A margin of ±5% difference is allowed by the system.
+              </Text>
             </View>
 
             <Text className="text-sm font-semibold text-gray-500 mb-2">Select Carton Type</Text>
@@ -360,21 +340,7 @@ export default function JobDetailScreen() {
               {cartonTypes.map(ct => (
                 <TouchableOpacity 
                   key={ct.id} 
-                  onPress={async () => {
-                    setSelectedCartonType(ct.id);
-                    // Refetch expected weight for this carton type
-                    const looseItems = items.filter(i => i.picked && !i.missing_reported && !i.box_id);
-                    if (looseItems.length === 0) return;
-                    setIsFetchingExpectedWeight(true);
-                    try {
-                      const res = await api.post(`/picklists/${id}/boxes/preview-weight`, {
-                        item_ids: looseItems.map(i => parseInt(i.id)),
-                        carton_type_id: ct.id,
-                      });
-                      setExpectedWeight(res.data.expected_weight);
-                    } catch { setExpectedWeight(null); }
-                    finally { setIsFetchingExpectedWeight(false); }
-                  }}
+                  onPress={() => setSelectedCartonType(ct.id)}
                   className={`px-4 py-2 rounded-xl border ${selectedCartonType === ct.id ? 'bg-primary border-primary' : 'bg-gray-50 border-gray-200'}`}
                 >
                   <Text className={`font-semibold ${selectedCartonType === ct.id ? 'text-white' : 'text-gray-700'}`}>{ct.name} ({ct.tare_weight}kg tare)</Text>
@@ -444,22 +410,6 @@ export default function JobDetailScreen() {
             <View className="flex-row justify-between w-full mb-4 gap-3">
               <TouchableOpacity
                 className="bg-gray-100 flex-1 py-3 rounded-xl border border-gray-200 items-center"
-                onPress={async () => {
-                  try {
-                    const html = `<html><body style="display:flex;justify-content:center;align-items:center;height:100vh;"><p style="font-family:monospace;font-size:10px">${generatedQRData}</p></body></html>`;
-                    const { uri } = await Print.printToFileAsync({ html });
-                    if (await Sharing.isAvailableAsync()) {
-                      await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: '.pdf' });
-                    } else {
-                      Alert.alert('Saved', `QR saved to: ${uri}`);
-                    }
-                  } catch { Alert.alert('Error', 'Could not save QR'); }
-                }}
-              >
-                <Text className="text-gray-700 font-bold font-inter text-sm">Download</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="bg-gray-100 flex-1 py-3 rounded-xl border border-gray-200 items-center"
                 onPress={() => Share.share({ message: `Carton QR Data: ${generatedQRData}` })}
               >
                 <Text className="text-gray-700 font-bold font-inter text-sm">Share</Text>
@@ -470,11 +420,15 @@ export default function JobDetailScreen() {
               className="bg-[#003527] w-full py-4 rounded-2xl items-center flex-row justify-center"
               onPress={() => {
                 setShowQRModal(false);
-                handleComplete();
+                confirmSubmit();
               }}
             >
-              <CheckCircle size={18} color="white" />
-              <Text className="text-white font-bold text-base font-inter ml-2">Submit Order to Admin</Text>
+              {isSubmitting ? <ActivityIndicator color="white" /> : (
+                <>
+                  <CheckCircle size={18} color="white" />
+                  <Text className="text-white font-bold text-base font-inter ml-2">Submit Order to Admin</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
