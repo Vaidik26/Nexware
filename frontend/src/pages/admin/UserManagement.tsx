@@ -4,7 +4,6 @@ import { Table } from '@/components/ui/Table';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
-import { StatusBadge } from '@/components/ui/StatusBadge';
 import { toast } from '@/components/ui/Toast';
 import { ActionRestrictedModal } from '@/components/ui/ActionRestrictedModal';
 import { getErrorMessage } from '@/lib/utils';

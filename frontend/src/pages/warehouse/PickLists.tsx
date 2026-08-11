@@ -25,7 +25,7 @@ export default function PickLists() {
 
   // Poll for fresh data while audit modal is open
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     if (isAuditModalOpen && selectedAuditList) {
       interval = setInterval(async () => {
         try {
@@ -587,7 +587,7 @@ export default function PickLists() {
                       </div>
                     </div>
                     <div className="divide-y divide-slate-100">
-                      {(selectedAuditList?.boxes || []).map((box: any, idx: number) => {
+                      {(selectedAuditList?.boxes || []).map((box: any) => {
                         const boxItems = (selectedAuditList?.items || []).filter((i: any) => i.box_id === box.id);
                         return (
                           <div key={box.id} className="p-3.5 flex flex-col gap-2 bg-white">
