@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useAuthStore } from '@/store/authStore';
-import { api } from '@/lib/api';
+import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { FileText, Download, UploadCloud, CheckCircle, ExternalLink, X } from 'lucide-react';
+import { UploadCloud, CheckCircle, ExternalLink } from 'lucide-react';
 
 interface LPO {
   id: number;
