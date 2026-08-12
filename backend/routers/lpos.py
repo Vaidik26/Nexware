@@ -9,7 +9,7 @@ from typing import Optional, Any
 from backend.database import get_db
 from backend.models.lpo import Lpo
 from backend.models.user import User, Notification
-from backend.models.picklist import PickList, PickListItem
+from backend.models.picklist import PickList, PickListItem, PickAssignment
 from backend.models.catalogue import SalesItem
 import httpx
 
@@ -260,20 +260,26 @@ async def approve_lpo(
         picker = p_res.scalar_one_or_none()
         if not picker:
             raise HTTPException(status_code=404, detail="Picker not found")
+        if not picker.is_available:
+            raise HTTPException(status_code=400, detail="Picker is not available")
     else:
-        # Auto: find picker with fewest active picklists
+        # Auto: find available picker with fewest active picklists
         from sqlalchemy import func as sa_func
-        pickers_res = await db.execute(select(User).filter(User.role == "picker", User.is_active == True))
+        pickers_res = await db.execute(
+            select(User).filter(User.role == "picker", User.is_active == True, User.is_available == True)
+        )
         all_pickers = pickers_res.scalars().all()
         if not all_pickers:
-            raise HTTPException(status_code=404, detail="No active pickers available for auto-assign")
-        # Round-robin: pick the one with fewest non-completed picklists
+            raise HTTPException(status_code=400, detail="No available pickers right now")
+        
         best = None
         best_count = 999999
         for p in all_pickers:
             cnt_res = await db.execute(
-                select(sa_func.count(PickList.id)).filter(
-                    PickList.picker_job_number == p.id,
+                select(sa_func.count(PickAssignment.id))
+                .join(PickList, PickAssignment.pick_list_id == PickList.id)
+                .filter(
+                    PickAssignment.picker_id == p.id,
                     PickList.status.notin_(["completed", "cancelled"])
                 )
             )
@@ -284,8 +290,11 @@ async def approve_lpo(
         picker = best
 
     if picker:
-        db_picklist.picker_job_number = picker.id
+        assignment = PickAssignment(pick_list_id=db_picklist.id, picker_id=picker.id)
+        db.add(assignment)
         db_picklist.status = "assigned"
+        picker.is_available = False
+        
         # Notify picker
         notif = Notification(
             user_id=picker.id,

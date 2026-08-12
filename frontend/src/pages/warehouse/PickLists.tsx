@@ -7,6 +7,8 @@ import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { getErrorMessage, getCachedData, setCachedData } from '@/lib/utils';
+import { downloadPicklistPDF, downloadPicklistExcel } from '@/lib/downloadPicklist';
+import { FileSpreadsheet } from 'lucide-react';
 import api from '@/lib/api';
 
 export default function PickLists() {
@@ -366,11 +368,12 @@ export default function PickLists() {
               <ShieldCheck className="w-3.5 h-3.5" /> Audit & Verify →
             </Button>
           )}
-          {(row.status === 'verified' || row.status === 'completed') && (
-            <Button size="sm" variant="outline" onClick={() => { setSelectedAuditList(row); setIsAuditModalOpen(true); }} className="text-emerald-800 border-emerald-300 bg-emerald-50 hover:bg-emerald-600 hover:text-white font-bold text-xs py-1 flex items-center gap-1">
-              <Download className="w-3.5 h-3.5" /> Export / View
-            </Button>
-          )}
+          <Button size="sm" variant="outline" onClick={() => downloadPicklistPDF(row)} className="text-slate-800 border-slate-300 bg-slate-50 hover:bg-slate-800 hover:text-white font-bold text-xs py-1 flex items-center gap-1">
+            <Download className="w-3.5 h-3.5" /> PDF
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => downloadPicklistExcel(row)} className="text-emerald-800 border-emerald-300 bg-emerald-50 hover:bg-emerald-600 hover:text-white font-bold text-xs py-1 flex items-center gap-1">
+            <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+          </Button>
           {(row.status === 'verified' || row.status === 'completed') ? (
             <Button 
               size="sm" 
