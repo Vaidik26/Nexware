@@ -271,7 +271,7 @@ async def approve_lpo(
         for p in all_pickers:
             cnt_res = await db.execute(
                 select(sa_func.count(PickList.id)).filter(
-                    PickList.picker_job_number == str(p.id),
+                    PickList.picker_job_number == p.id,
                     PickList.status.notin_(["completed", "cancelled"])
                 )
             )
@@ -282,7 +282,7 @@ async def approve_lpo(
         picker = best
 
     if picker:
-        db_picklist.picker_job_number = str(picker.id)
+        db_picklist.picker_job_number = picker.id
         db_picklist.status = "assigned"
         # Notify picker
         notif = Notification(
