@@ -244,7 +244,7 @@ async def approve_lpo(
         notif = Notification(
             user_id=picker.id,
             title="New Picklist Assigned",
-            body=f"LPO #{lpo.lpo_number} for {lpo.customer_name} has been approved and assigned to you.",
+            message=f"LPO #{lpo.lpo_number} for {lpo.customer_name} has been approved and assigned to you.",
         )
         db.add(notif)
         if picker.push_token:
