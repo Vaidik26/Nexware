@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func as sqlfunc
@@ -126,6 +126,44 @@ async def update_lpo_url(lpo_id: int, url: str, db: AsyncSession = Depends(get_d
     await db.commit()
     await db.refresh(lpo)
     return lpo
+
+
+@router.post("/{lpo_id}/upload-pdf")
+async def upload_lpo_pdf(
+    lpo_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Upload an LPO PDF (generated on mobile) to Supabase Storage and save the URL on the LPO record.
+    No admin auth required — called directly from mobile after LPO creation.
+    """
+    result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
+    lpo = result.scalar_one_or_none()
+    if not lpo:
+        raise HTTPException(status_code=404, detail="LPO not found")
+
+    file_bytes = await file.read()
+    filename = file.filename or f"lpo-{lpo.lpo_number}.pdf"
+
+    try:
+        from backend.services.storage_service import upload_to_supabase
+        public_url = upload_to_supabase(
+            file_bytes=file_bytes,
+            original_filename=filename,
+            bucket="Customer Confirmation",
+            folder="Mobile-LPOs",
+            content_type="application/pdf",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+    lpo.signed_lpo_url = public_url
+    await db.commit()
+    await db.refresh(lpo)
+    return {"url": public_url, "lpo_id": lpo_id}
 
 
 @router.patch("/{lpo_id}/status", response_model=LpoOut)
