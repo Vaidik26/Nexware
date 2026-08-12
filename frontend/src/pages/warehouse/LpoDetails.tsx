@@ -25,7 +25,8 @@ interface LPO {
   items: LPOItem[];
   signed_lpo_url: string | null;
   status: string;
-  source: string;
+  source?: string;
+  created_by_name?: string;
   delivery_date: string | null;
   created_at: string | null;
 }

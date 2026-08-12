@@ -21,6 +21,7 @@ interface LPO {
   status: string;
   source: string;
   created_at: string | null;
+  created_by_name?: string;
 }
 
 export default function LpoManagement() {
