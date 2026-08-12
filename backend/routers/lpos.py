@@ -312,12 +312,13 @@ async def approve_lpo(
     else:
         # Auto: least-loaded available picker
         from sqlalchemy import func as sa_func
+        # Lock available pickers to serialize concurrent assignments and prevent dogpiling
         pickers_res = await db.execute(
             select(User).filter(
                 User.role == "picker",
                 User.is_active == True,
                 User.is_available == True,
-            )
+            ).with_for_update()
         )
         all_pickers = pickers_res.scalars().all()
         if not all_pickers:

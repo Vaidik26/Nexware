@@ -871,62 +871,18 @@ async def return_to_picker(
     return {"message": "Returned to picker"}
 
 
+from backend.services.picklist_service import verify_picklist_service
+
 @router.patch("/{picklist_id}/verify")
 async def verify_picklist(
     picklist_id: int,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_admin),
 ):
-    result = await db.execute(
-        select(PickList)
-        .options(selectinload(PickList.items))
-        .filter(PickList.id == picklist_id)
-    )
-    pl = result.scalars().first()
-    if not pl:
-        raise HTTPException(status_code=404, detail="Pick list not found")
-    if pl.status not in ("waiting_verification", "picking", "assigned"):
-        raise HTTPException(status_code=400, detail="Pick list is not in an active operational state")
-        
-    unresolved_missing = [item for item in pl.items if item.missing_reported and item.missing_approved is None]
-    if unresolved_missing:
-        raise HTTPException(status_code=400, detail="Please approve or reject all missing items before verifying this order.")
-
-    pl.status = "verified"
-
-    # Reset picker availability & purge associated operational notifications
-    assignment_res = await db.execute(select(PickAssignment).filter(PickAssignment.pick_list_id == picklist_id))
-    assignments = assignment_res.scalars().all()
-    for assign in assignments:
-        assign.completed_at = datetime.now(timezone.utc)
-        picker_res = await db.execute(select(User).filter(User.id == assign.picker_id))
-        picker = picker_res.scalars().first()
-        if picker:
-            picker.is_available = True
-            await db.execute(
-                delete(Notification).where(
-                    (Notification.user_id == picker.id) & 
-                    (Notification.message.ilike(f"%{pl.order_number}%"))
-                )
-            )
-
-    # Deduct verified quantities from inventory
-    # Sum up the verified picked items (where is_picked is true, and it wasn't a rejected missing item)
-    for item in pl.items:
-        if item.is_picked and not item.missing_approved:
-            cat_res = await db.execute(select(SalesItem).filter(SalesItem.barcode == item.barcode))
-            cat_item = cat_res.scalars().first()
-            if cat_item:
-                cat_item.available_quantity = max(0, cat_item.available_quantity - item.quantity)
-
-    if pl.sales_order_id:
-        order_res = await db.execute(select(SalesOrder).filter(SalesOrder.id == pl.sales_order_id))
-        order = order_res.scalars().first()
-        if order:
-            order.status = "verified"
-
-    await db.commit()
-    return {"message": "Order verified successfully", "picklist_id": pl.id}
+    """
+    Verifies a picklist, deducting inventory automatically.
+    """
+    return await verify_picklist_service(picklist_id, db)
 
 
 # ---------- Export ----------
