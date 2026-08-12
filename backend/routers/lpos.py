@@ -100,14 +100,17 @@ async def create_lpo(lpo: LpoCreate, db: AsyncSession = Depends(get_db)):
         suffix = datetime.utcnow().strftime("%H%M%S")
         lpo_number = f"{lpo_number}-{suffix}"
 
+    source = lpo.source or "upload"
+    # Mobile LPOs start as 'draft' until PDF is uploaded to confirm them
+    initial_status = "draft" if source == "mobile" else "pending"
     db_lpo = Lpo(
         lpo_number=lpo_number,
         customer_name=lpo.customer_name,
         sales_person_id=lpo.sales_person_id,
         items=[item.dict() for item in lpo.items],
         delivery_date=lpo.delivery_date,
-        status="pending",
-        source=lpo.source or "upload",
+        status=initial_status,
+        source=source,
     )
     db.add(db_lpo)
     await db.commit()
@@ -161,9 +164,12 @@ async def upload_lpo_pdf(
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
     lpo.signed_lpo_url = public_url
+    # Confirming the LPO — move from draft to pending so admin can see it
+    if lpo.status == "draft":
+        lpo.status = "pending"
     await db.commit()
     await db.refresh(lpo)
-    return {"url": public_url, "lpo_id": lpo_id}
+    return {"url": public_url, "lpo_id": lpo_id, "status": lpo.status}
 
 
 @router.patch("/{lpo_id}/status", response_model=LpoOut)

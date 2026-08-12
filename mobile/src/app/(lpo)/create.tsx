@@ -48,6 +48,7 @@ export default function LpoCreateScreen() {
   const [successLpoData, setSuccessLpoData] = useState<any>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isPdfUploaded, setIsPdfUploaded] = useState(false);
 
   useEffect(() => {
     fetchCatalogue();
@@ -164,6 +165,7 @@ export default function LpoCreateScreen() {
     setCustomerName('');
     setDeliveryDate(undefined);
     setOrderNumber(generateAutoLpoNumber());
+    setIsPdfUploaded(false);
   };
 
 
@@ -249,7 +251,8 @@ export default function LpoCreateScreen() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      Alert.alert('Uploaded!', 'LPO PDF has been uploaded to the admin portal.');
+      setIsPdfUploaded(true);
+      Alert.alert('✅ LPO Confirmed!', 'PDF uploaded. Your LPO is now submitted to the admin portal.');
     } catch (err: any) {
       Alert.alert('Upload Failed', err.response?.data?.detail || err.message || 'Could not upload PDF.');
     } finally {
@@ -520,19 +523,43 @@ export default function LpoCreateScreen() {
               <Text className="text-slate-500 text-center mt-2">LPO <Text className="font-bold text-slate-700">{orderNumber}</Text> has been submitted for WM Review.</Text>
             </View>
 
-            <View className="space-y-3">
-              <TouchableOpacity onPress={handleUploadLpoPdf} disabled={isUploading} className="w-full p-4 rounded-xl bg-emerald-600 items-center justify-center flex-row">
-                {isUploading ? (
-                  <ActivityIndicator color="white" />
-                ) : (
-                  <Text className="font-bold text-white">⬆ Upload LPO to Admin Portal</Text>
-                )}
+            <View className="gap-3">
+              {/* Step 1 - Download */}
+              <TouchableOpacity 
+                onPress={() => handleDownloadPDF(true)} 
+                className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row gap-2"
+              >
+                <Text className="font-bold text-slate-700 text-base">⬇ Download PDF</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleDownloadPDF(true)} className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row">
-                <Text className="font-bold text-slate-700">Download LPO PDF</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleCloseSuccess} className="w-full p-4 rounded-xl bg-[#003527] items-center justify-center flex-row">
-                <Text className="font-bold text-white">Create Another</Text>
+
+              {/* Step 2 - Upload to confirm */}
+              {!isPdfUploaded ? (
+                <TouchableOpacity 
+                  onPress={handleUploadLpoPdf} 
+                  disabled={isUploading} 
+                  className="w-full p-4 rounded-xl bg-emerald-600 items-center justify-center flex-row gap-2"
+                >
+                  {isUploading ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text className="font-bold text-white text-base">⬆ Upload PDF & Confirm LPO</Text>
+                  )}
+                </TouchableOpacity>
+              ) : (
+                <View className="w-full p-4 rounded-xl bg-emerald-100 border border-emerald-300 items-center justify-center flex-row gap-2">
+                  <Text className="font-bold text-emerald-700 text-base">✅ LPO Confirmed!</Text>
+                </View>
+              )}
+
+              {/* Step 3 - New order (locked until PDF uploaded) */}
+              <TouchableOpacity 
+                onPress={isPdfUploaded ? handleCloseSuccess : undefined}
+                disabled={!isPdfUploaded}
+                className={`w-full p-4 rounded-xl items-center justify-center flex-row gap-2 ${isPdfUploaded ? 'bg-[#003527]' : 'bg-gray-300'}`}
+              >
+                <Text className={`font-bold text-base ${isPdfUploaded ? 'text-white' : 'text-gray-500'}`}>
+                  {isPdfUploaded ? 'Create New Order' : '🔒 Upload PDF First'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
