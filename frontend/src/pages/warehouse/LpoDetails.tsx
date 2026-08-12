@@ -142,6 +142,17 @@ export default function LpoDetails() {
     }
   };
 
+  const handleDeliveryDateChange = async (dateStr: string) => {
+    if (!lpo) return;
+    try {
+      await api.patch(`/lpos/${lpo.id}/delivery-date`, null, { params: { delivery_date: dateStr } });
+      toast.success('Delivery date updated');
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to update delivery date');
+    }
+  };
+
   const handleDelete = async () => {
     if (!lpo) return;
     setIsDeleting(true);
@@ -263,9 +274,12 @@ export default function LpoDetails() {
               </div>
               <div>
                 <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Delivery Date</p>
-                <p className="font-semibold text-on-surface mt-1">
-                  {lpo.delivery_date ? new Date(lpo.delivery_date).toLocaleDateString() : 'N/A'}
-                </p>
+                <input
+                  type="date"
+                  className="mt-1 bg-transparent border-none p-0 text-on-surface font-semibold focus:ring-0 cursor-pointer hover:bg-surface-variant/50 rounded px-1 -ml-1 transition-colors"
+                  value={lpo.delivery_date ? new Date(lpo.delivery_date).toISOString().split('T')[0] : ''}
+                  onChange={(e) => handleDeliveryDateChange(e.target.value)}
+                />
               </div>
               <div>
                 <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Created At</p>
