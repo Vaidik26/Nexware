@@ -151,12 +151,14 @@ async def upload_lpo_pdf(
 
     try:
         from backend.services.storage_service import upload_to_supabase
+        # Detect content type from upload (supports PDF and images from camera)
+        content_type = file.content_type or "application/octet-stream"
         public_url = upload_to_supabase(
             file_bytes=file_bytes,
             original_filename=filename,
             bucket="Customer Confirmation",
             folder="Mobile-LPOs",
-            content_type="application/pdf",
+            content_type=content_type,
         )
     except HTTPException:
         raise
