@@ -274,9 +274,9 @@ export default function OrderUpload() {
                 </span>
               </div>
               
-              <div className="p-5 overflow-x-auto">
+              <div className="p-5 overflow-auto max-h-[400px]">
                 <table className="w-full text-sm text-left">
-                  <thead className="bg-surface-container text-on-surface-variant border-b border-outline-variant text-xs uppercase font-extrabold">
+                  <thead className="bg-surface-container text-on-surface-variant border-b border-outline-variant text-xs uppercase font-extrabold sticky top-0 z-10 shadow-sm">
                     <tr>
                       <th className="py-3.5 px-4 rounded-tl-xl text-center w-14">SI</th>
                       <th className="py-3.5 px-4 w-56">Item Code (Barcode)</th>
@@ -338,9 +338,9 @@ export default function OrderUpload() {
                   </span>
                 </div>
                 
-                <div className="p-5 overflow-x-auto">
+                <div className="p-5 overflow-auto max-h-[400px]">
                   <table className="w-full text-sm text-left">
-                    <thead className="bg-amber-100/50 text-amber-900 border-b border-amber-200 text-xs uppercase font-extrabold">
+                    <thead className="bg-amber-100/90 backdrop-blur text-amber-900 border-b border-amber-200 text-xs uppercase font-extrabold sticky top-0 z-10 shadow-sm">
                       <tr>
                         <th className="py-3.5 px-4 rounded-tl-xl text-center w-16">PDF Row</th>
                         <th className="py-3.5 px-4 w-56">Extracted Barcode</th>
