@@ -85,7 +85,7 @@ async def get_lpos(db: AsyncSession = Depends(get_db)):
 
 @router.get("/{lpo_id}", response_model=LpoOut)
 async def get_lpo_by_id(lpo_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
+    result = await db.execute(select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person)).filter(Lpo.id == lpo_id))
     lpo = result.scalar_one_or_none()
     if not lpo:
         raise HTTPException(status_code=404, detail="LPO not found")
