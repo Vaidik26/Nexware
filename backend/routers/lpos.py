@@ -131,7 +131,6 @@ async def update_lpo_url(lpo_id: int, url: str, db: AsyncSession = Depends(get_d
 
     lpo.signed_lpo_url = url
     await db.commit()
-    await db.refresh(lpo)
     return lpo
 
 
