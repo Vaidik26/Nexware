@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -9,7 +10,10 @@ from backend.models.catalogue import SalesItem, CartonType
 from backend.dependencies import get_current_admin
 from backend.services.excel_service import parse_catalogue_excel
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/catalogue", tags=["catalogue"])
+
 
 @router.get("", response_model=List[SalesItemOut])
 @router.get("/", response_model=List[SalesItemOut])

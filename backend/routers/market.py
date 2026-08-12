@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,8 +18,10 @@ from backend.schemas.market import (
 )
 from backend.services.excel_service import generate_branded_price_history_excel
 from backend.services.pdf_generator import generate_price_history_pdf
-from backend.dependencies import get_current_admin
+from backend.dependencies import get_current_admin, get_current_user
 from sqlalchemy.exc import IntegrityError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/market", tags=["market"])
 
@@ -28,7 +31,8 @@ router = APIRouter(prefix="/market", tags=["market"])
 @router.get("/materials", response_model=List[RawMaterialOut])
 async def list_materials(
     search: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),  # AUTH REQUIRED — pricing data is sensitive
 ):
     q = select(RawMaterial)
     if search:
@@ -110,7 +114,8 @@ async def list_dubai_prices(
     material_id: Optional[int] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),  # AUTH REQUIRED
 ):
     q = select(DubaiPrice)
     if material_id:
@@ -177,7 +182,8 @@ async def list_international_prices(
     material_id: Optional[int] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),  # AUTH REQUIRED
 ):
     q = select(InternationalPrice)
     if material_id:
@@ -241,7 +247,10 @@ async def delete_international_price(
 # ---------- Dashboard Endpoints ----------
 
 @router.get("/dashboard/stats")
-async def dashboard_stats(db: AsyncSession = Depends(get_db)):
+async def dashboard_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),  # AUTH REQUIRED — business-sensitive aggregate
+):
     today = date.today()
 
     dubai_today = await db.execute(
@@ -275,7 +284,8 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db)):
 @router.get("/prices/trend")
 async def price_trend(
     range: str = Query("7d", regex="^(7d|30d|ytd)$"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),  # AUTH REQUIRED
 ):
     today = date.today()
     if range == "7d":
@@ -316,7 +326,11 @@ async def price_trend(
 
 
 @router.get("/prices/recent-updates")
-async def recent_updates(limit: int = 10, db: AsyncSession = Depends(get_db)):
+async def recent_updates(
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),  # AUTH REQUIRED
+):
     materials = await db.execute(select(RawMaterial).order_by(RawMaterial.id).limit(limit))
     mats = materials.scalars().all()
 
@@ -365,7 +379,10 @@ async def recent_updates(limit: int = 10, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/prices/summary")
-async def price_summary(db: AsyncSession = Depends(get_db)):
+async def price_summary(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),  # AUTH REQUIRED
+):
     avg_dubai = await db.execute(select(func.avg(DubaiPrice.local_market_price)))
     avg_fob = await db.execute(select(func.avg(InternationalPrice.fob_price)))
     avg_cif = await db.execute(select(func.avg(InternationalPrice.cif_price)))
@@ -378,7 +395,11 @@ async def price_summary(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/prices/latest-changes")
-async def latest_price_changes(limit: int = 8, db: AsyncSession = Depends(get_db)):
+async def latest_price_changes(
+    limit: int = 8,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),  # AUTH REQUIRED
+):
     last_dubai = await db.execute(
         select(DubaiPrice, RawMaterial)
         .join(RawMaterial, DubaiPrice.material_id == RawMaterial.id)
@@ -416,7 +437,10 @@ async def latest_price_changes(limit: int = 8, db: AsyncSession = Depends(get_db
 
 
 @router.post("/prices/export-excel")
-async def export_price_history_excel(request: PriceHistoryReportRequest):
+async def export_price_history_excel(
+    request: PriceHistoryReportRequest,
+    current_user=Depends(get_current_user),  # AUTH REQUIRED
+):
     excel_bytes = generate_branded_price_history_excel(request.model_dump())
     filename = f"NexWare_Commodity_Price_Report_{request.scope.lower()}.xlsx"
     return StreamingResponse(
@@ -427,7 +451,10 @@ async def export_price_history_excel(request: PriceHistoryReportRequest):
 
 
 @router.post("/prices/export-pdf")
-async def export_price_history_pdf(request: PriceHistoryReportRequest):
+async def export_price_history_pdf(
+    request: PriceHistoryReportRequest,
+    current_user=Depends(get_current_user),  # AUTH REQUIRED
+):
     pdf_bytes = generate_price_history_pdf(request.model_dump())
     filename = f"NexWare_Commodity_Price_Report_{request.scope.lower()}.pdf"
     return StreamingResponse(

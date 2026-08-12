@@ -1,91 +1,71 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File
+"""
+LPO (Local Purchase Order) router.
+
+All write operations and sensitive reads require authentication.
+Schemas live in backend/schemas/lpo.py.
+Push notifications are centralised in backend/services/notification_service.py.
+"""
+import logging
+from datetime import datetime, timezone
+from typing import List
+
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy import func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func as sqlfunc
-from typing import List
-from pydantic import BaseModel
-from datetime import datetime
-from typing import Optional, Any
-from backend.database import get_db
-from backend.dependencies import get_current_user_optional
-from backend.models.lpo import Lpo
-from backend.models.user import User, Notification
-from backend.models.picklist import PickList, PickListItem, PickAssignment
-from backend.models.catalogue import SalesItem
-import httpx
 
+from backend.config import settings
+from backend.constants import (
+    ALLOWED_DOCUMENT_MIME_TYPES,
+    BUCKET_CUSTOMER_CONFIRMATION,
+    FOLDER_MOBILE_LPOS,
+    MAX_UPLOAD_SIZE_BYTES,
+)
+from backend.database import get_db
+from backend.dependencies import get_current_admin, get_current_user, get_current_user_optional
+from backend.models.catalogue import SalesItem
+from backend.models.lpo import Lpo
+from backend.models.picklist import PickAssignment, PickList, PickListItem
+from backend.models.user import Notification, User
+from backend.schemas.lpo import ApproveRequest, LpoCreate, LpoOut, LpoUpdateStatus
+from backend.services.notification_service import send_push_notification
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/lpos", tags=["lpos"])
 
 
-# ─── Schemas ──────────────────────────────────────────────────────────────────
-
-class LpoItemSchema(BaseModel):
-    barcode: str
-    product_name: str
-    quantity: float
-    unit: str
-
-class LpoCreate(BaseModel):
-    lpo_number: str
-    customer_name: str
-    items: List[LpoItemSchema]
-    sales_person_id: Optional[int] = None   # optional — manual/admin orders may not have one
-    delivery_date: Optional[datetime] = None
-    source: Optional[str] = "upload"        # 'upload' | 'manual' | 'mobile'
-
-class LpoUpdateStatus(BaseModel):
-    status: str
-
-class ApproveRequest(BaseModel):
-    assign_mode: str            # 'auto' | 'manual'
-    picker_id: Optional[int] = None   # required when assign_mode == 'manual'
-
-class LpoOut(BaseModel):
-    id: int
-    lpo_number: str
-    customer_name: str
-    sales_person_id: Optional[int]
-    items: Any
-    signed_lpo_url: Optional[str]
-    status: str
-    source: Optional[str] = "upload"
-    delivery_date: Optional[datetime] = None
-    created_at: Optional[Any] = None
-    created_by_name: Optional[str] = None
-
-    class Config:
-        from_attributes = True
-
-
-# ─── Helpers ──────────────────────────────────────────────────────────────────
-
-def _send_push_sync(push_token: str, title: str, body: str):
-    if not push_token:
-        return
-    try:
-        with httpx.Client(timeout=1.0) as client:
-            client.post(
-                "https://exp.host/--/api/v2/push/send",
-                json={"to": push_token, "title": title, "body": body},
-            )
-    except Exception:
-        pass
-
-
-# ─── Routes ───────────────────────────────────────────────────────────────────
+# ─── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=List[LpoOut])
 @router.get("/", response_model=List[LpoOut])
-async def get_lpos(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person)).order_by(Lpo.created_at.desc()))
-    return result.scalars().all()
+async def get_lpos(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),  # ← AUTH REQUIRED
+):
+    """List all LPOs ordered by creation date descending."""
+    result = await db.execute(
+        select(Lpo)
+        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
+        .order_by(Lpo.created_at.desc())
+    )
+    lpos = result.scalars().all()
+    logger.info("user=%s fetched %d LPOs", current_user.id, len(lpos))
+    return lpos
 
 
 @router.get("/{lpo_id}", response_model=LpoOut)
-async def get_lpo_by_id(lpo_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person)).filter(Lpo.id == lpo_id))
+async def get_lpo_by_id(
+    lpo_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),  # ← AUTH REQUIRED
+):
+    result = await db.execute(
+        select(Lpo)
+        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
+        .filter(Lpo.id == lpo_id)
+    )
     lpo = result.scalar_one_or_none()
     if not lpo:
         raise HTTPException(status_code=404, detail="LPO not found")
@@ -94,23 +74,29 @@ async def get_lpo_by_id(lpo_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("", response_model=LpoOut)
 @router.post("/", response_model=LpoOut)
-async def create_lpo(lpo: LpoCreate, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user_optional)):
-    # Auto-generate unique LPO number if duplicate exists
+async def create_lpo(
+    lpo: LpoCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user_optional),  # optional — mobile creates without admin token
+):
+    """Create a new LPO. Mobile clients may call this without authentication."""
+    # Auto-deduplicate LPO number to prevent conflicts
     lpo_number = lpo.lpo_number
     exists = await db.execute(select(Lpo).filter(Lpo.lpo_number == lpo_number))
     if exists.scalar_one_or_none():
-        from datetime import datetime
-        suffix = datetime.utcnow().strftime("%H%M%S")
+        suffix = datetime.now(timezone.utc).strftime("%H%M%S")
         lpo_number = f"{lpo_number}-{suffix}"
+        logger.warning("Duplicate LPO number detected, auto-suffixed to: %s", lpo_number)
 
     source = lpo.source or "upload"
-    # Mobile LPOs start as 'draft' until PDF is uploaded to confirm them
+    # Mobile LPOs start as 'draft' until the PDF is uploaded to confirm them
     initial_status = "draft" if source == "mobile" else "pending"
+
     db_lpo = Lpo(
         lpo_number=lpo_number,
         customer_name=lpo.customer_name,
         sales_person_id=lpo.sales_person_id,
-        items=[item.dict() for item in lpo.items],
+        items=[item.model_dump() for item in lpo.items],
         delivery_date=lpo.delivery_date,
         status=initial_status,
         source=source,
@@ -118,19 +104,35 @@ async def create_lpo(lpo: LpoCreate, db: AsyncSession = Depends(get_db), current
     )
     db.add(db_lpo)
     await db.commit()
-    result = await db.execute(select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person)).filter(Lpo.id == db_lpo.id))
+
+    result = await db.execute(
+        select(Lpo)
+        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
+        .filter(Lpo.id == db_lpo.id)
+    )
+    logger.info("LPO created: lpo_number=%s status=%s source=%s", lpo_number, initial_status, source)
     return result.scalar_one()
 
 
 @router.patch("/{lpo_id}/url", response_model=LpoOut)
-async def update_lpo_url(lpo_id: int, url: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person)).filter(Lpo.id == lpo_id))
+async def update_lpo_url(
+    lpo_id: int,
+    url: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),  # ← AUTH REQUIRED
+):
+    result = await db.execute(
+        select(Lpo)
+        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
+        .filter(Lpo.id == lpo_id)
+    )
     lpo = result.scalar_one_or_none()
     if not lpo:
         raise HTTPException(status_code=404, detail="LPO not found")
 
     lpo.signed_lpo_url = url
     await db.commit()
+    logger.info("LPO %s URL updated by user=%s", lpo_id, current_user.id)
     return lpo
 
 
@@ -141,59 +143,96 @@ async def upload_lpo_pdf(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Upload an LPO PDF (generated on mobile) to Supabase Storage and save the URL on the LPO record.
-    No admin auth required — called directly from mobile after LPO creation.
+    Upload a signed LPO PDF (generated on mobile) to Supabase Storage.
+
+    This endpoint is intentionally accessible without an admin token because it is
+    called by the mobile app immediately after LPO creation, before the user logs
+    in as an admin. All other mutation endpoints are admin-protected.
     """
     result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
     lpo = result.scalar_one_or_none()
     if not lpo:
         raise HTTPException(status_code=404, detail="LPO not found")
 
+    # ── File validation ────────────────────────────────────────────────────────
+    content_type = (file.content_type or "").lower()
+    if content_type not in ALLOWED_DOCUMENT_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Unsupported file type '{content_type}'. Allowed: PDF, JPEG, PNG.",
+        )
+
     file_bytes = await file.read()
+    if len(file_bytes) > MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds maximum upload size of {settings.MAX_UPLOAD_SIZE_MB} MB.",
+        )
+
     filename = file.filename or f"lpo-{lpo.lpo_number}.pdf"
 
     try:
         from backend.services.storage_service import upload_to_supabase
-        # Detect content type from upload (supports PDF and images from camera)
-        content_type = file.content_type or "application/octet-stream"
         public_url = upload_to_supabase(
             file_bytes=file_bytes,
             original_filename=filename,
-            bucket="Customer Confirmation",
-            folder="Mobile-LPOs",
+            bucket=BUCKET_CUSTOMER_CONFIRMATION,
+            folder=FOLDER_MOBILE_LPOS,
             content_type=content_type,
         )
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+    except Exception as exc:
+        logger.exception("Upload failed for LPO %s: %s", lpo_id, exc)
+        raise HTTPException(status_code=500, detail="File upload failed. Please try again.")
 
     lpo.signed_lpo_url = public_url
     # Confirming the LPO — move from draft to pending so admin can see it
     if lpo.status == "draft":
         lpo.status = "pending"
+
     await db.commit()
     await db.refresh(lpo)
+    logger.info("LPO %s PDF uploaded successfully, status=%s", lpo_id, lpo.status)
     return {"url": public_url, "lpo_id": lpo_id, "status": lpo.status}
 
 
 @router.patch("/{lpo_id}/status", response_model=LpoOut)
-async def update_lpo_status(lpo_id: int, status_update: LpoUpdateStatus, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person)).filter(Lpo.id == lpo_id))
+async def update_lpo_status(
+    lpo_id: int,
+    status_update: LpoUpdateStatus,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin),  # ← ADMIN REQUIRED
+):
+    result = await db.execute(
+        select(Lpo)
+        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
+        .filter(Lpo.id == lpo_id)
+    )
     lpo = result.scalar_one_or_none()
     if not lpo:
         raise HTTPException(status_code=404, detail="LPO not found")
 
+    old_status = lpo.status
     lpo.status = status_update.status
     await db.commit()
     await db.refresh(lpo)
+    logger.info("LPO %s status changed %s → %s by admin=%s", lpo_id, old_status, lpo.status, current_user.id)
     return lpo
 
 
 @router.post("/{lpo_id}/disapprove", response_model=LpoOut)
-async def disapprove_lpo(lpo_id: int, db: AsyncSession = Depends(get_db)):
-    """Mark an LPO as disapproved by the warehouse manager."""
-    result = await db.execute(select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person)).filter(Lpo.id == lpo_id))
+async def disapprove_lpo(
+    lpo_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin),  # ← ADMIN REQUIRED
+):
+    """Mark an LPO as disapproved."""
+    result = await db.execute(
+        select(Lpo)
+        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
+        .filter(Lpo.id == lpo_id)
+    )
     lpo = result.scalar_one_or_none()
     if not lpo:
         raise HTTPException(status_code=404, detail="LPO not found")
@@ -203,6 +242,7 @@ async def disapprove_lpo(lpo_id: int, db: AsyncSession = Depends(get_db)):
     lpo.status = "disapproved"
     await db.commit()
     await db.refresh(lpo)
+    logger.info("LPO %s disapproved by admin=%s", lpo_id, current_user.id)
     return lpo
 
 
@@ -212,11 +252,13 @@ async def approve_lpo(
     req: ApproveRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin),  # ← ADMIN REQUIRED
 ):
     """
     Approve an LPO and immediately convert it into a picklist.
-    assign_mode = 'auto' → round-robin assign to least-loaded picker.
-    assign_mode = 'manual' → assign to specific picker_id.
+
+    assign_mode='auto'   → round-robin to the least-loaded available picker.
+    assign_mode='manual' → assign to the specified picker_id.
     """
     result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
     lpo = result.scalar_one_or_none()
@@ -258,32 +300,38 @@ async def approve_lpo(
     picker = None
     if req.assign_mode == "manual":
         if not req.picker_id:
-            raise HTTPException(status_code=400, detail="picker_id required for manual assign")
-        p_res = await db.execute(select(User).filter(User.id == req.picker_id, User.role == "picker"))
+            raise HTTPException(status_code=400, detail="picker_id required for manual assignment")
+        p_res = await db.execute(
+            select(User).filter(User.id == req.picker_id, User.role == "picker")
+        )
         picker = p_res.scalar_one_or_none()
         if not picker:
             raise HTTPException(status_code=404, detail="Picker not found")
         if not picker.is_available:
             raise HTTPException(status_code=400, detail="Picker is not available")
     else:
-        # Auto: find available picker with fewest active picklists
+        # Auto: least-loaded available picker
         from sqlalchemy import func as sa_func
         pickers_res = await db.execute(
-            select(User).filter(User.role == "picker", User.is_active == True, User.is_available == True)
+            select(User).filter(
+                User.role == "picker",
+                User.is_active == True,
+                User.is_available == True,
+            )
         )
         all_pickers = pickers_res.scalars().all()
         if not all_pickers:
             raise HTTPException(status_code=400, detail="No available pickers right now")
-        
+
         best = None
-        best_count = 999999
+        best_count = 999_999
         for p in all_pickers:
             cnt_res = await db.execute(
                 select(sa_func.count(PickAssignment.id))
                 .join(PickList, PickAssignment.pick_list_id == PickList.id)
                 .filter(
                     PickAssignment.picker_id == p.id,
-                    PickList.status.notin_(["completed", "cancelled"])
+                    PickList.status.notin_(["completed", "cancelled"]),
                 )
             )
             cnt = cnt_res.scalar() or 0
@@ -293,30 +341,37 @@ async def approve_lpo(
         picker = best
 
     if picker:
-        assignment = PickAssignment(pick_list_id=db_picklist.id, picker_id=picker.id)
+        assignment = PickAssignment(
+            pick_list_id=db_picklist.id,
+            picker_id=picker.id,
+            status="assigned",
+        )
         db.add(assignment)
         db_picklist.status = "assigned"
         picker.is_available = False
-        
-        # Notify picker
-        notif = Notification(
+
+        db.add(Notification(
             user_id=picker.id,
+            type="pick_assignment",
             title="New Picklist Assigned",
-            message=f"LPO #{lpo.lpo_number} for {lpo.customer_name} has been approved and assigned to you.",
+            message=f"LPO #{lpo.lpo_number} for {lpo.customer_name} has been assigned to you.",
+        ))
+        background_tasks.add_task(
+            send_push_notification,
+            picker.push_token or "",
+            "New Picklist Assigned",
+            f"LPO #{lpo.lpo_number} assigned to you.",
         )
-        db.add(notif)
-        if picker.push_token:
-            background_tasks.add_task(
-                _send_push_sync,
-                picker.push_token,
-                "New Picklist Assigned",
-                f"LPO #{lpo.lpo_number} assigned to you.",
-            )
 
     lpo.status = "processed"
     await db.commit()
     await db.refresh(db_picklist)
 
+    logger.info(
+        "LPO %s approved by admin=%s → picklist=%s assigned_to=%s",
+        lpo_id, current_user.id, db_picklist.id,
+        picker.full_name if picker else "unassigned",
+    )
     return {
         "message": "LPO approved and converted to picklist",
         "picklist_id": db_picklist.id,
@@ -326,7 +381,11 @@ async def approve_lpo(
 
 
 @router.delete("/{lpo_id}")
-async def delete_lpo(lpo_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_lpo(
+    lpo_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin),  # ← ADMIN REQUIRED
+):
     result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
     lpo = result.scalar_one_or_none()
     if not lpo:
@@ -334,17 +393,21 @@ async def delete_lpo(lpo_id: int, db: AsyncSession = Depends(get_db)):
 
     await db.delete(lpo)
     await db.commit()
+    logger.info("LPO %s deleted by admin=%s", lpo_id, current_user.id)
     return {"message": "LPO deleted successfully"}
 
 
-# Keep the old convert endpoint for backward compatibility
 @router.post("/{lpo_id}/convert")
-async def convert_lpo_to_picklist(lpo_id: int, db: AsyncSession = Depends(get_db)):
+async def convert_lpo_to_picklist(
+    lpo_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin),  # ← ADMIN REQUIRED
+):
+    """Legacy endpoint — converts LPO to pick list without picker assignment."""
     result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
     lpo = result.scalar_one_or_none()
     if not lpo:
         raise HTTPException(status_code=404, detail="LPO not found")
-
     if lpo.status == "processed":
         raise HTTPException(status_code=400, detail="LPO is already converted")
 
@@ -382,20 +445,31 @@ async def convert_lpo_to_picklist(lpo_id: int, db: AsyncSession = Depends(get_db
     await db.commit()
     await db.refresh(db_picklist)
 
+    logger.info("LPO %s converted to picklist %s by admin=%s", lpo_id, db_picklist.id, current_user.id)
     return {
         "message": "LPO converted to pick list successfully",
         "picklist_id": db_picklist.id,
         "items_count": verified_count,
     }
 
+
 @router.patch("/{lpo_id}/delivery-date", response_model=LpoOut)
-async def update_lpo_delivery_date(lpo_id: int, delivery_date: datetime, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person)).filter(Lpo.id == lpo_id))
+async def update_lpo_delivery_date(
+    lpo_id: int,
+    delivery_date: datetime,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_admin),  # ← ADMIN REQUIRED
+):
+    result = await db.execute(
+        select(Lpo)
+        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
+        .filter(Lpo.id == lpo_id)
+    )
     lpo = result.scalar_one_or_none()
     if not lpo:
         raise HTTPException(status_code=404, detail="LPO not found")
 
     lpo.delivery_date = delivery_date
     await db.commit()
-    # No need to refresh, the object in memory is updated.
+    logger.info("LPO %s delivery date updated by admin=%s", lpo_id, current_user.id)
     return lpo

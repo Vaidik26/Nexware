@@ -2,9 +2,12 @@
 Supabase Storage service for NexWare backend.
 Handles upload/delete of files to Supabase Storage buckets.
 """
+import logging
 import uuid
 from typing import Optional
 from backend.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Lazy import to avoid errors when SUPABASE_URL/KEY not configured
 _supabase_client = None
@@ -72,6 +75,8 @@ def upload_to_supabase(
 def delete_from_supabase(bucket: str, file_url: str) -> None:
     """
     Delete a file from Supabase Storage given its public URL.
+    Failure is non-critical and only logged — it must never raise an exception
+    that propagates to the API caller.
     """
     try:
         client = _get_client()
@@ -80,5 +85,6 @@ def delete_from_supabase(bucket: str, file_url: str) -> None:
         if marker in file_url:
             path = file_url.split(marker, 1)[1]
             client.storage.from_(bucket).remove([path])
-    except Exception:
-        pass  # Non-critical: log and continue
+            logger.info("Deleted from Supabase storage: bucket=%s path=%s", bucket, path)
+    except Exception as exc:
+        logger.exception("Failed to delete file from Supabase storage (non-fatal): %s", exc)

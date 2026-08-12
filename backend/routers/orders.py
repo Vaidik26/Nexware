@@ -1,15 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+import logging
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from typing import List
 import tempfile, uuid, os, re
+from backend.config import settings
+from backend.constants import (
+    ALLOWED_PDF_MIME_TYPES,
+    BARCODE_ITEM_NUMBER_PREFIX,
+    DEFAULT_SKU_SIZE_CATEGORY,
+    DEFAULT_UNIT,
+    MAX_UPLOAD_SIZE_BYTES,
+)
 from backend.database import get_db
 from backend.models.order import SalesOrder
 from backend.models.catalogue import SalesItem
 from backend.schemas.order import SalesOrderOut
 from backend.dependencies import get_current_admin
 from backend.services.pdf_parser import parse_lpo_pdf
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -58,11 +69,11 @@ async def _sync_lpo_items_to_db(items: list, db: AsyncSession):
             "item_number": item_number,
             "item_name": _clean_desc(item.get("description", "")),
             "barcode": bc,
-            "unit": item.get("uom", "PCS") or "PCS",
+            "unit": item.get("uom", DEFAULT_UNIT) or DEFAULT_UNIT,
             "bin_location": None,
             "standard_carton_quantity": 1,
             "packaging_weight": 0.0,
-            "sku_size_category": ">100g",
+            "sku_size_category": DEFAULT_SKU_SIZE_CATEGORY,
             "available_quantity": 0,
         })
         existing_set.add(bc)
@@ -90,27 +101,38 @@ async def get_orders(db: AsyncSession = Depends(get_db)):
 async def upload_lpo(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_current_admin)
+    current_user=Depends(get_current_admin),
 ):
     """Upload & parse an LPO PDF. New items are auto-synced to the catalogue DB."""
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+    # ── File validation ────────────────────────────────────────────────────────
+    content_type = (file.content_type or "").lower()
+    if content_type not in ALLOWED_PDF_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only PDF files are allowed. Received: " + (content_type or "unknown"),
+        )
 
     file_bytes = await file.read()
+    if len(file_bytes) > MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds maximum upload size of {settings.MAX_UPLOAD_SIZE_MB} MB.",
+        )
 
     tmp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4().hex}_{file.filename}")
     try:
         with open(tmp_path, "wb") as f:
             f.write(file_bytes)
         extracted_data = parse_lpo_pdf(tmp_path)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
+    except Exception as exc:
+        logger.exception("PDF parsing failed for file '%s': %s", file.filename, exc)
+        raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(exc)}")
     finally:
         if os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Could not delete temp file %s: %s", tmp_path, exc)
 
     if not extracted_data.get("items"):
         raise HTTPException(

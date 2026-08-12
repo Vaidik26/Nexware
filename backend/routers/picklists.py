@@ -1,25 +1,43 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+import logging
+import asyncio
+import io
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import delete, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import desc, delete
 from sqlalchemy.orm import selectinload
-from typing import List, Optional, Any, Dict
-from datetime import datetime, timezone
-import asyncio
-import httpx
-import io
 
+from backend.config import settings
+from backend.constants import ACTIVE_PICK_STATUSES, DEFAULT_UNIT, WEIGHT_TOLERANCE_FRACTION
 from backend.database import get_db
-from backend.models.picklist import PickList, PickListItem, PickAssignment, PickListBox
+from backend.dependencies import get_current_admin, get_current_picker, get_current_user
+from backend.models.catalogue import CartonType, SalesItem
 from backend.models.order import SalesOrder
+from backend.models.picklist import PickAssignment, PickList, PickListBox, PickListItem
+from backend.models.user import Notification, User
+from backend.schemas.picklist import PickListBoxCreate, PickListBoxOut, PickListOut
+from backend.services.excel_service import generate_branded_picklist_excel, generate_picklist_excel
+from backend.services.notification_service import send_push_notification
+from backend.services.pdf_generator import generate_picklist_pdf
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/picklists", tags=["picklists"])
+
+
+# ─── Inline schemas not yet in schemas package ────────────────────────────────
 
 class DirectAssignItem(BaseModel):
     barcode: str
     product_name: str
     quantity: float
-    unit: str = "PCS"
+    unit: str = DEFAULT_UNIT
+
 
 class DirectAssignRequest(BaseModel):
     order_number: str
@@ -29,44 +47,24 @@ class DirectAssignRequest(BaseModel):
     sales_person_id: Optional[int] = None
     delivery_date: Optional[datetime] = None
 
-from backend.models.user import User, Notification
-from backend.models.catalogue import SalesItem, CartonType
-from backend.schemas.picklist import PickListOut, PickListBoxCreate, PickListBoxOut
-from backend.dependencies import get_current_user, get_current_admin, get_current_picker
-from backend.config import settings
-from backend.services.pdf_generator import generate_picklist_pdf
-from backend.services.excel_service import generate_picklist_excel, generate_branded_picklist_excel
 
-router = APIRouter(prefix="/picklists", tags=["picklists"])
-
-
-def _send_push_sync(push_token: str, title: str, body: str):
-    if not push_token:
-        return
-    try:
-        with httpx.Client(timeout=1.0) as client:
-            client.post(
-                settings.EXPO_PUSH_URL,
-                json={"to": push_token, "title": title, "body": body},
-            )
-    except Exception:
-        pass
-
-
-def trigger_push(push_token: str, title: str, body: str, background_tasks: Optional[BackgroundTasks] = None):
+def trigger_push(
+    push_token: str,
+    title: str,
+    body: str,
+    background_tasks: Optional[BackgroundTasks] = None,
+) -> None:
+    """Schedule a push notification via BackgroundTasks (preferred) or thread executor."""
     if not push_token:
         return
     if background_tasks is not None:
-        background_tasks.add_task(_send_push_sync, push_token, title, body)
+        background_tasks.add_task(send_push_notification, push_token, title, body)
     else:
         try:
             loop = asyncio.get_running_loop()
-            loop.run_in_executor(None, _send_push_sync, push_token, title, body)
-        except Exception:
-            pass
-
-
-# ---------- List ----------
+            loop.run_in_executor(None, send_push_notification, push_token, title, body)
+        except Exception as exc:
+            logger.warning("Could not schedule push notification: %s", exc)
 
 @router.get("", response_model=List[PickListOut])
 @router.get("/", response_model=List[PickListOut])
@@ -751,10 +749,10 @@ async def create_box(
         if ci:
             expected_weight += (ci.packaging_weight * item.quantity)
             
-    # Allow a 5% tolerance
-    lower_bound = expected_weight * 0.95
-    upper_bound = expected_weight * 1.05
-    
+    # Allow configurable tolerance (default ±5%)
+    lower_bound = expected_weight * (1 - WEIGHT_TOLERANCE_FRACTION)
+    upper_bound = expected_weight * (1 + WEIGHT_TOLERANCE_FRACTION)
+
     if payload.entered_weight < lower_bound or payload.entered_weight > upper_bound:
         raise HTTPException(status_code=400, detail=f"Weight validation failed. Expected ~{expected_weight:.2f}kg, but got {payload.entered_weight:.2f}kg. Please reweigh and check missing items.")
         

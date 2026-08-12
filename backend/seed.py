@@ -1,9 +1,9 @@
 import asyncio
+import logging
 import sys
 import os
 import uuid
 import getpass
-from datetime import datetime
 
 # Add root directory to sys path so imports function directly inside backend/
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -12,22 +12,25 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.future import select
 
+from backend.core.logging_config import configure_logging
 from backend.models import Base
 from backend.models.user import User
-from backend.models.price_history import PriceHistory
 from backend.config import settings
 from backend.services.auth_service import hash_password
+
+configure_logging()
+logger = logging.getLogger(__name__)
 
 
 async def seed_db():
     print("==================================================")
-    print(" 🚀 NexWare Super Admin Interactive IDP Setup")
+    print(" NexWare Super Admin Interactive Setup")
     print("==================================================")
 
     try:
         db_url = settings.get_async_database_url()
     except ValueError as e:
-        print(f"\n❌ [Configuration Error]: {e}")
+        logger.error("[Configuration Error]: %s", e)
         return
 
     engine = create_async_engine(
@@ -40,13 +43,13 @@ async def seed_db():
         },
     )
 
-    print("\n📦 Verifying and creating table schema on Supabase if not already present...")
+    logger.info("Verifying and creating table schema if not already present...")
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        print("✅ Database tables confirmed/created successfully.")
+        logger.info("Database tables confirmed/created successfully.")
     except Exception as err:
-        print(f"\n❌ [Database Connection Error]: Could not connect to Supabase database.\nDetails: {err}")
+        logger.error("[Database Connection Error]: Could not connect: %s", err)
         return
 
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -164,12 +167,10 @@ async def seed_db():
                 )
                 db.add(new_picker)
                 await db.commit()
-                print(f"✅ Successfully created brand new Picker account: '{picker_email}'!")
+                logger.info(f"✅ Successfully created brand new Picker account: '{picker_email}'!")
 
     await engine.dispose()
-    print("\n==================================================")
-    print("🎉 Setup Complete! No hardcoded secrets in source code.")
-    print("==================================================")
+    logger.info("Setup complete.")
 
 
 if __name__ == "__main__":

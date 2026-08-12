@@ -75,8 +75,10 @@ class PickAssignment(Base):
     id = Column(Integer, primary_key=True, index=True)
     pick_list_id = Column(Integer, ForeignKey("pick_lists.id"), nullable=False)
     picker_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    status = Column(String, default="assigned", nullable=True)  # assigned | completed | cancelled
     assigned_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
     pick_list = relationship("PickList", back_populates="assignments")
     picker = relationship("User", lazy="selectin")
+

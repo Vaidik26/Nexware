@@ -1,13 +1,17 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List
+from backend.constants import ACTIVE_PICK_STATUSES
 from backend.database import get_db
 from backend.models.user import User
 from backend.models.picklist import PickAssignment, PickList
 from backend.schemas.auth import UserCreate, UserOut, UserUpdate
 from backend.dependencies import get_current_admin, get_current_user
 from backend.services.auth_service import hash_password
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -94,13 +98,13 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db), current_
         .join(PickList, PickAssignment.pick_list_id == PickList.id)
         .filter(
             PickAssignment.picker_id == user_id,
-            PickList.status.in_(["assigned", "picking", "waiting_verification"])
+            PickList.status.in_(ACTIVE_PICK_STATUSES)
         )
     )
     if ongoing_assignment.scalars().first():
         raise HTTPException(
             status_code=400,
-            detail="Cannot delete user: This picker currently has active or ongoing pick list assignments. Please reassign or finish their assigned tasks before deleting this account."
+            detail="Cannot delete user: This picker has active pick list assignments. Reassign or complete their tasks first."
         )
         
     await db.delete(user)
