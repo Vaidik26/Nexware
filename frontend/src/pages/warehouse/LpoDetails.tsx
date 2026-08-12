@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import {
   UploadCloud, ExternalLink, CheckCircle, XCircle,
   Users, Zap, Package2, RefreshCw, Trash2, ArrowLeft,
-  ChevronLeft, ChevronRight, FileText
+  ChevronLeft, ChevronRight, FileText, Pencil, Check, X
 } from 'lucide-react';
 
 interface LPOItem {
@@ -48,6 +48,8 @@ export default function LpoDetails() {
   const [pickers, setPickers] = useState<Picker[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [editingDate, setEditingDate] = useState(false);
+  const [tempDate, setTempDate] = useState('');
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -102,6 +104,18 @@ export default function LpoDetails() {
       toast.error(err.response?.data?.detail || 'Failed to upload signed LPO');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDateUpdate = async () => {
+    if (!lpo || !tempDate) return;
+    try {
+      await api.patch(`/lpos/${lpo.id}/delivery-date`, null, { params: { delivery_date: new Date(tempDate).toISOString() } });
+      toast.success('Delivery date updated');
+      setEditingDate(false);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to update delivery date');
     }
   };
 
@@ -263,9 +277,38 @@ export default function LpoDetails() {
               </div>
               <div>
                 <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Delivery Date</p>
-                <p className="font-semibold text-on-surface mt-1">
-                  {lpo.delivery_date ? new Date(lpo.delivery_date).toLocaleDateString() : 'N/A'}
-                </p>
+                {editingDate ? (
+                  <div className="flex items-center gap-2 mt-1">
+                    <input
+                      type="date"
+                      className="px-2 py-1 text-sm border border-outline-variant rounded-md bg-surface text-on-surface"
+                      value={tempDate}
+                      onChange={(e) => setTempDate(e.target.value)}
+                    />
+                    <button onClick={handleDateUpdate} className="text-emerald-600 hover:text-emerald-700">
+                      <Check className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => setEditingDate(false)} className="text-red-600 hover:text-red-700">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="font-semibold text-on-surface">
+                      {lpo.delivery_date ? new Date(lpo.delivery_date).toLocaleDateString() : 'N/A'}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setTempDate(lpo.delivery_date ? lpo.delivery_date.split('T')[0] : '');
+                        setEditingDate(true);
+                      }}
+                      className="text-primary/70 hover:text-primary transition-colors"
+                      title="Edit delivery date"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
               <div>
                 <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Created At</p>

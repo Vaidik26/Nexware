@@ -118,13 +118,13 @@ async def create_lpo(lpo: LpoCreate, db: AsyncSession = Depends(get_db), current
     )
     db.add(db_lpo)
     await db.commit()
-    await db.refresh(db_lpo)
-    return db_lpo
+    result = await db.execute(select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person)).filter(Lpo.id == db_lpo.id))
+    return result.scalar_one()
 
 
 @router.patch("/{lpo_id}/url", response_model=LpoOut)
 async def update_lpo_url(lpo_id: int, url: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
+    result = await db.execute(select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person)).filter(Lpo.id == lpo_id))
     lpo = result.scalar_one_or_none()
     if not lpo:
         raise HTTPException(status_code=404, detail="LPO not found")
@@ -180,7 +180,7 @@ async def upload_lpo_pdf(
 
 @router.patch("/{lpo_id}/status", response_model=LpoOut)
 async def update_lpo_status(lpo_id: int, status_update: LpoUpdateStatus, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
+    result = await db.execute(select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person)).filter(Lpo.id == lpo_id))
     lpo = result.scalar_one_or_none()
     if not lpo:
         raise HTTPException(status_code=404, detail="LPO not found")
@@ -194,7 +194,7 @@ async def update_lpo_status(lpo_id: int, status_update: LpoUpdateStatus, db: Asy
 @router.post("/{lpo_id}/disapprove", response_model=LpoOut)
 async def disapprove_lpo(lpo_id: int, db: AsyncSession = Depends(get_db)):
     """Mark an LPO as disapproved by the warehouse manager."""
-    result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
+    result = await db.execute(select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person)).filter(Lpo.id == lpo_id))
     lpo = result.scalar_one_or_none()
     if not lpo:
         raise HTTPException(status_code=404, detail="LPO not found")
@@ -388,3 +388,15 @@ async def convert_lpo_to_picklist(lpo_id: int, db: AsyncSession = Depends(get_db
         "picklist_id": db_picklist.id,
         "items_count": verified_count,
     }
+
+@router.patch("/{lpo_id}/delivery-date", response_model=LpoOut)
+async def update_lpo_delivery_date(lpo_id: int, delivery_date: datetime, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person)).filter(Lpo.id == lpo_id))
+    lpo = result.scalar_one_or_none()
+    if not lpo:
+        raise HTTPException(status_code=404, detail="LPO not found")
+
+    lpo.delivery_date = delivery_date
+    await db.commit()
+    # No need to refresh, the object in memory is updated.
+    return lpo
