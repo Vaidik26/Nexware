@@ -27,7 +27,18 @@ class Lpo(Base):
     delivery_date = Column(DateTime(timezone=True), nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     # Relationship to user
     sales_person = relationship("User", foreign_keys=[sales_person_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+    @property
+    def created_by_name(self):
+        if self.created_by:
+            return self.created_by.full_name or self.created_by.email
+        if self.sales_person:
+            return self.sales_person.full_name or self.sales_person.email
+        return None
 

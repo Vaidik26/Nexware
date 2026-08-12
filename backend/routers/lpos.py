@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy import func as sqlfunc
 from typing import List
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional, Any
 from backend.database import get_db
+from backend.dependencies import get_current_user_optional
 from backend.models.lpo import Lpo
 from backend.models.user import User, Notification
 from backend.models.picklist import PickList, PickListItem, PickAssignment
@@ -51,6 +53,7 @@ class LpoOut(BaseModel):
     source: Optional[str] = "upload"
     delivery_date: Optional[datetime] = None
     created_at: Optional[Any] = None
+    created_by_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -76,7 +79,7 @@ def _send_push_sync(push_token: str, title: str, body: str):
 @router.get("", response_model=List[LpoOut])
 @router.get("/", response_model=List[LpoOut])
 async def get_lpos(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Lpo).order_by(Lpo.created_at.desc()))
+    result = await db.execute(select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person)).order_by(Lpo.created_at.desc()))
     return result.scalars().all()
 
 
@@ -91,7 +94,7 @@ async def get_lpo_by_id(lpo_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("", response_model=LpoOut)
 @router.post("/", response_model=LpoOut)
-async def create_lpo(lpo: LpoCreate, db: AsyncSession = Depends(get_db)):
+async def create_lpo(lpo: LpoCreate, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user_optional)):
     # Auto-generate unique LPO number if duplicate exists
     lpo_number = lpo.lpo_number
     exists = await db.execute(select(Lpo).filter(Lpo.lpo_number == lpo_number))
@@ -111,6 +114,7 @@ async def create_lpo(lpo: LpoCreate, db: AsyncSession = Depends(get_db)):
         delivery_date=lpo.delivery_date,
         status=initial_status,
         source=source,
+        created_by_id=current_user.id if current_user else None,
     )
     db.add(db_lpo)
     await db.commit()

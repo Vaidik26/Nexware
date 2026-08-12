@@ -31,6 +31,23 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
         raise credentials_exception
     return user
 
+async def get_current_user_optional(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
+    if not token or not token.startswith("nexware_session_"):
+        return None
+    try:
+        parts = token.split("_")
+        if len(parts) < 4:
+            return None
+        user_id = int(parts[2])
+    except (IndexError, ValueError):
+        return None
+
+    result = await db.execute(select(User).filter(User.id == user_id))
+    user = result.scalars().first()
+    if user is None or not user.is_active:
+        return None
+    return user
+
 async def get_current_active_user(current_user: User = Depends(get_current_user)):
     return current_user
 

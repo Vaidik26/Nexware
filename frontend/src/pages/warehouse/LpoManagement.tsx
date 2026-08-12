@@ -95,6 +95,7 @@ export default function LpoManagement() {
                 <th className="p-4 font-semibold text-on-surface-variant">Order #</th>
                 <th className="p-4 font-semibold text-on-surface-variant">Customer</th>
                 <th className="p-4 font-semibold text-on-surface-variant">Source</th>
+                <th className="p-4 font-semibold text-on-surface-variant">Created By</th>
                 <th className="p-4 font-semibold text-on-surface-variant">Status</th>
                 <th className="p-4 font-semibold text-on-surface-variant">Date Created</th>
                 <th className="p-4 font-semibold text-on-surface-variant text-right">Actions</th>
@@ -118,6 +119,7 @@ export default function LpoManagement() {
                     </td>
                     <td className="p-4 text-on-surface">{lpo.customer_name}</td>
                     <td className="p-4 text-on-surface-variant capitalize">{lpo.source || 'upload'}</td>
+                    <td className="p-4 text-on-surface font-semibold">{lpo.created_by_name || 'System'}</td>
                     <td className="p-4">
                       <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${
                         lpo.status === 'approved' ? 'bg-emerald-100 text-emerald-700' :

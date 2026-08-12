@@ -196,7 +196,8 @@ export default function LpoDetails() {
               {lpo.status}
             </span>
           </div>
-          <p className="text-on-surface-variant mt-1 font-medium">Customer: {lpo.customer_name}</p>
+          <p className="text-on-surface-variant mt-1 font-medium">Customer: <span className="font-bold text-on-surface">{lpo.customer_name}</span></p>
+          <p className="text-on-surface-variant mt-0.5 text-sm">Created By: <span className="font-semibold text-slate-800">{lpo.created_by_name || 'System / Admin'}</span></p>
         </div>
         
         <div className="ml-auto flex items-center gap-2">
