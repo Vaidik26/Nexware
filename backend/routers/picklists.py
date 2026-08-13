@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from backend.config import settings
 from backend.constants import ACTIVE_PICK_STATUSES, DEFAULT_UNIT, WEIGHT_TOLERANCE_FRACTION
 from backend.database import get_db
-from backend.dependencies import get_current_admin, get_current_picker, get_current_user
+from backend.dependencies import get_current_admin, get_current_user
 from backend.models.catalogue import CartonType, SalesItem
 from backend.models.order import SalesOrder
 from backend.models.picklist import PickAssignment, PickList, PickListBox, PickListItem
@@ -93,7 +93,7 @@ async def list_picklists(
 @router.get("/my", response_model=List[PickListOut])
 async def my_picklists(
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_picker),
+    current_user=Depends(get_current_user),
 ):
     """Picker-facing: returns assigned pick lists for logged-in picker."""
     assignments = await db.execute(
@@ -635,7 +635,7 @@ async def audit_item(
 async def complete_picking(
     picklist_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_picker),
+    current_user=Depends(get_current_user),
 ):
     result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
     pl = result.scalars().first()
@@ -678,7 +678,7 @@ async def preview_box_weight(
     picklist_id: int,
     payload: PreviewWeightRequest,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_picker),
+    current_user=Depends(get_current_user),
 ):
     """Returns the expected weight for the selected items + carton type before the picker commits."""
     carton_res = await db.execute(select(CartonType).filter(CartonType.id == payload.carton_type_id))
@@ -715,7 +715,7 @@ async def create_box(
     picklist_id: int,
     payload: PickListBoxCreate,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_picker),
+    current_user=Depends(get_current_user),
 ):
     result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
     pl = result.scalars().first()
@@ -777,7 +777,7 @@ async def report_missing_item(
     picklist_id: int,
     item_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_picker),
+    current_user=Depends(get_current_user),
 ):
     result = await db.execute(
         select(PickListItem).filter(
