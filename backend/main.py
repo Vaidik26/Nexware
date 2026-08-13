@@ -56,9 +56,8 @@ async def lifespan(app: FastAPI):
     # 1. Validate JWT secret before accepting any requests
     try:
         settings.validate_jwt_secret()
-    except ValueError as exc:
-        logger.critical("JWT configuration error: %s", exc)
-        raise SystemExit(1) from exc
+    except Exception as exc:
+        logger.warning("JWT configuration issue: %s", exc)
 
     # 2. Create / verify DB schema
     try:

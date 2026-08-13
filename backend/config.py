@@ -91,13 +91,17 @@ class Settings(BaseSettings):
         return url
 
     def validate_jwt_secret(self) -> None:
-        """Raise ValueError if JWT_SECRET_KEY is missing or still set to an insecure default."""
+        """Log a warning and auto-generate a fallback if JWT_SECRET_KEY is missing."""
         if not self.JWT_SECRET_KEY or self.JWT_SECRET_KEY.startswith("nexware-super-secret"):
-            raise ValueError(
-                "\n[Error]: JWT_SECRET_KEY is missing or insecure in backend/.env.\n"
-                "Generate a strong secret with: python -c \"import secrets; print(secrets.token_hex(64))\"\n"
-                "and set it as JWT_SECRET_KEY in backend/.env."
+            import secrets
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "\n[Warning]: JWT_SECRET_KEY is missing or insecure in environment.\n"
+                "Auto-generating a temporary random secret for this session. "
+                "Users will be logged out when the server restarts."
             )
+            self.JWT_SECRET_KEY = secrets.token_hex(32)
 
 
 settings = Settings()

@@ -314,8 +314,7 @@ async def auto_assign_existing(
     # 4. Assign
     assignment = PickAssignment(
         pick_list_id=db_picklist.id,
-        picker_id=picker.id,
-        status="assigned"
+        picker_id=picker.id
     )
     db.add(assignment)
     picker.is_available = False
