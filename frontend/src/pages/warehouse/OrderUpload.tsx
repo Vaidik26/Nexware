@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FileUpload } from '@/components/ui/FileUpload';
 import { Button } from '@/components/ui/Button';
-import { CheckCircle2, AlertCircle, FileText, Sparkles, ArrowRight, RefreshCw } from 'lucide-react';
-import { toast } from '@/components/ui/Toast';
+import { Upload, FileText, CheckCircle2, AlertCircle, Trash2, Edit2, Play, RefreshCw, Layers } from 'lucide-react';
+import { CustomerDropdown } from '@/components/ui/CustomerDropdown';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { getErrorMessage } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import api from '@/lib/api';
+import { toast } from '@/components/ui/Toast';
 
 interface PickItem {
   si: number;
@@ -145,7 +146,7 @@ export default function OrderUpload() {
       setResults({
         orderId: data.id,
         orderNumber: extracted.order_number || data.order_number || `LPO-${Math.floor(1000 + Math.random() * 9000)}`,
-        customerName: extracted.customer_name || data.customer_name || '',
+        customerName: '', // User requested to manually type and select from dropdown
         items: combinedItems,
       });
 
@@ -254,18 +255,11 @@ export default function OrderUpload() {
                 
                 <div className="flex flex-col gap-1 max-w-xs">
                   <label className="text-xs font-bold text-on-surface uppercase tracking-wide">Assign Customer</label>
-                  <input
-                    list="customer-list"
-                    className="h-10 px-3 rounded-lg border border-outline-variant bg-white text-sm font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    placeholder="Search by name or code..."
+                  <CustomerDropdown
+                    customers={customers}
                     value={results.customerName}
-                    onChange={(e) => setResults({...results, customerName: e.target.value})}
+                    onChange={(val) => setResults({...results, customerName: val})}
                   />
-                  <datalist id="customer-list">
-                    {customers.map(c => (
-                      <option key={c.id} value={c.name}>{c.customer_code} - {c.name}</option>
-                    ))}
-                  </datalist>
                 </div>
               </div>
 
