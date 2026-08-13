@@ -5,4 +5,4 @@ from backend.models.order import SalesOrder
 from backend.models.picklist import PickList, PickListItem, PickAssignment
 from backend.models.market import RawMaterial, DubaiPrice, InternationalPrice
 from backend.models.lpo import Lpo
-
+from backend.models.customer import Customer

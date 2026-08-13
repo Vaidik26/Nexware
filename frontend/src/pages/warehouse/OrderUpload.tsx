@@ -23,6 +23,7 @@ export default function OrderUpload() {
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [catalogue, setCatalogue] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
   const [results, setResults] = useState<{
     orderId?: number;
     orderNumber: string;
@@ -41,6 +42,8 @@ export default function OrderUpload() {
       try {
         const catRes = await api.get('/catalogue').catch(() => ({ data: [] }));
         setCatalogue(catRes.data || []);
+        const custRes = await api.get('/customers').catch(() => ({ data: [] }));
+        setCustomers(custRes.data || []);
       } catch (e) {
         // Handle error quietly
       }
@@ -142,7 +145,7 @@ export default function OrderUpload() {
       setResults({
         orderId: data.id,
         orderNumber: extracted.order_number || data.order_number || `LPO-${Math.floor(1000 + Math.random() * 9000)}`,
-        customerName: extracted.customer_name || data.customer_name || 'General Order',
+        customerName: extracted.customer_name || data.customer_name || '',
         items: combinedItems,
       });
 
@@ -164,6 +167,10 @@ export default function OrderUpload() {
   const handleSubmitToLpoManagement = async () => {
     if (!results || results.items.length === 0) {
       toast.error('No extracted items available.');
+      return;
+    }
+    if (!results.customerName.trim()) {
+      toast.error('Please select a Partner Customer before submitting.');
       return;
     }
     const verifiedItems = results.items.filter((i) => i.inCatalogue);
@@ -245,7 +252,7 @@ export default function OrderUpload() {
                 </div>
                 <div>
                   <div className="font-extrabold text-white text-xl">Order #{results.orderNumber}</div>
-                  <div className="text-emerald-300/90 text-sm font-medium">Partner Customer: {results.customerName}</div>
+                  <div className="text-emerald-300/90 text-sm font-medium">Extracted Name: {results.customerName || 'N/A'}</div>
                 </div>
               </div>
               <div className="flex items-center gap-3 flex-wrap">
@@ -377,9 +384,25 @@ export default function OrderUpload() {
             <div className="bg-surface-container-low p-6 rounded-3xl border border-outline-variant shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-6">
               <div>
                 <h4 className="font-extrabold text-on-surface text-base">Warehouse Routing Control</h4>
-                <p className="text-xs text-on-surface-variant font-semibold mt-0.5">
-                  Submit this extracted LPO to LPO Management for review, or generate another order.
+                <p className="text-xs text-on-surface-variant font-semibold mt-0.5 mb-3">
+                  Assign a Partner Customer and submit this LPO to Management.
                 </p>
+                
+                <div className="flex flex-col gap-1 max-w-xs">
+                  <label className="text-xs font-bold text-on-surface uppercase tracking-wide">Assign Customer</label>
+                  <input
+                    list="customer-list"
+                    className="h-10 px-3 rounded-lg border border-outline-variant bg-white text-sm font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    placeholder="Search by name or code..."
+                    value={results.customerName}
+                    onChange={(e) => setResults({...results, customerName: e.target.value})}
+                  />
+                  <datalist id="customer-list">
+                    {customers.map(c => (
+                      <option key={c.id} value={c.name}>{c.customer_code} - {c.name}</option>
+                    ))}
+                  </datalist>
+                </div>
               </div>
 
               <div className="flex items-center gap-4 flex-wrap">

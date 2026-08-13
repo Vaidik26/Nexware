@@ -38,7 +38,7 @@ from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import settings
-from backend.routers import auth, users, catalogue, orders, picklists, market, notifications, lpos
+from backend.routers import auth, users, catalogue, orders, picklists, market, notifications, lpos, customers
 
 
 # ─── Startup / Shutdown ────────────────────────────────────────────────────────
@@ -116,6 +116,7 @@ _all_routers = [
     market.router,
     notifications.router,
     lpos.router,
+    customers.router,
 ]
 
 for _r in _all_routers:

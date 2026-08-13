@@ -37,13 +37,16 @@ export default function LpoCreateScreen() {
   const { logout, picker } = useAuthStore();
   const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [orderNumber, setOrderNumber] = useState(generateAutoLpoNumber());
   const [deliveryDate, setDeliveryDate] = useState<Date | undefined>(undefined);
   const [showDatePicker, setShowDatePicker] = useState(false);
   
   const [showItemModal, setShowItemModal] = useState(false);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [search, setSearch] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
   
   // SUCCESS MODAL STATE
   const [successModalVisible, setSuccessModalVisible] = useState(false);
@@ -60,6 +63,8 @@ export default function LpoCreateScreen() {
     try {
       const res = await api.get('/catalogue');
       setCatalogue(res.data || []);
+      const custRes = await api.get('/customers');
+      setCustomers(custRes.data || []);
     } catch (err) {
       // Handle error quietly
     }
@@ -320,6 +325,11 @@ export default function LpoCreateScreen() {
     c.barcode.toLowerCase().includes(search.toLowerCase()))
   );
 
+  const filteredCustomers = customers.filter(c => 
+    c.name.toLowerCase().includes(customerSearch.toLowerCase()) || 
+    c.customer_code.toLowerCase().includes(customerSearch.toLowerCase())
+  );
+
   return (
     <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
       {/* Header */}
@@ -337,12 +347,15 @@ export default function LpoCreateScreen() {
       <View className="flex-1 p-4">
         <View className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 mb-4">
           <Text className="text-[11px] font-bold text-gray-500 mb-1 font-inter uppercase tracking-wider">Customer Name</Text>
-          <TextInput
-            className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-3 font-inter text-base text-gray-800 font-semibold"
-            placeholder="e.g. Acme Corp"
-            value={customerName}
-            onChangeText={setCustomerName}
-          />
+          <TouchableOpacity 
+            className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-3 flex-row items-center justify-between"
+            onPress={() => setShowCustomerModal(true)}
+          >
+            <Text className={`font-inter text-base font-semibold flex-1 ${customerName ? 'text-gray-800' : 'text-gray-400'}`}>
+              {customerName || 'Select Customer'}
+            </Text>
+            <Search size={16} color="#9ca3af" />
+          </TouchableOpacity>
           <Text className="text-[11px] font-bold text-gray-500 mb-1 font-inter uppercase tracking-wider">Delivery Date (Optional)</Text>
           <TouchableOpacity 
             className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-3"
@@ -489,6 +502,57 @@ export default function LpoCreateScreen() {
                 </View>
               </TouchableOpacity>
             )}
+          />
+        </SafeAreaView>
+      </Modal>
+
+      {/* Customer Selection Modal */}
+      <Modal visible={showCustomerModal} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView className="flex-1 bg-white">
+          <View className="p-4 border-b border-gray-200 flex-row justify-between items-center">
+            <Text className="text-lg font-black text-gray-800">Select Customer</Text>
+            <TouchableOpacity onPress={() => setShowCustomerModal(false)} className="px-2 py-1">
+              <Text className="text-primary font-bold text-base">Close</Text>
+            </TouchableOpacity>
+          </View>
+          <View className="p-4 border-b border-gray-100 bg-gray-50">
+            <View className="flex-row items-center bg-white border border-gray-200 rounded-xl px-4">
+              <Search size={18} color="#9ca3af" />
+              <TextInput
+                className="flex-1 py-3 px-2 font-inter text-base font-semibold text-gray-800"
+                placeholder="Search by name or code..."
+                value={customerSearch}
+                onChangeText={setCustomerSearch}
+                autoFocus
+              />
+            </View>
+          </View>
+          <FlatList
+            data={filteredCustomers}
+            keyExtractor={item => item.id.toString()}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                className="px-4 py-4 border-b border-gray-100 flex-row justify-between items-center hover:bg-gray-50"
+                onPress={() => {
+                  setCustomerName(item.name);
+                  setShowCustomerModal(false);
+                  setCustomerSearch('');
+                }}
+              >
+                <View className="flex-1 pr-4">
+                  <Text className="font-bold text-gray-800 text-base mb-1">{item.name}</Text>
+                  <Text className="text-xs text-gray-500 font-semibold">{item.customer_code}</Text>
+                </View>
+                <View className="w-8 h-8 rounded-full bg-emerald-50 items-center justify-center border border-emerald-200">
+                  <Plus size={16} color="#059669" />
+                </View>
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={
+              <View className="p-8 items-center justify-center">
+                <Text className="text-gray-400 font-inter text-sm font-semibold text-center">No customers found.</Text>
+              </View>
+            }
           />
         </SafeAreaView>
       </Modal>

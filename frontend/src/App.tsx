@@ -8,7 +8,6 @@ import LoginPage from '@/pages/auth/LoginPage';
 import MarketDashboard from '@/pages/dashboard/MarketDashboard';
 import SalesCatalogue from '@/pages/warehouse/SalesCatalogue';
 import OrderUpload from '@/pages/warehouse/OrderUpload';
-import CreateOrder from '@/pages/warehouse/CreateOrder';
 import PickLists from '@/pages/warehouse/PickLists';
 import LpoManagement from '@/pages/warehouse/LpoManagement';
 import LpoDetails from '@/pages/warehouse/LpoDetails';
@@ -16,6 +15,7 @@ import RawMaterials from '@/pages/market/RawMaterials';
 import PriceManagement from '@/pages/market/PriceManagement';
 import MarketOverview from '@/pages/market/MarketOverview';
 import UserManagement from '@/pages/admin/UserManagement';
+import CustomerMaster from '@/pages/admin/CustomerMaster';
 
 interface Props {
   children?: ReactNode;
@@ -112,7 +112,6 @@ export default function App() {
             <Route path="warehouse/lpos" element={<LpoManagement />} />
             <Route path="warehouse/lpos/:id" element={<LpoDetails />} />
             <Route path="warehouse/upload" element={<OrderUpload />} />
-            <Route path="warehouse/create-order" element={<CreateOrder />} />
             <Route path="warehouse/picking" element={<Navigate to="/warehouse/picklists" replace />} />
             <Route path="warehouse/picklists" element={<PickLists />} />
             <Route path="warehouse/verification" element={<Navigate to="/warehouse/picklists" replace />} />
@@ -123,6 +122,7 @@ export default function App() {
             <Route path="market/international" element={<Navigate to="/market/prices" replace />} />
             <Route path="market/history" element={<Navigate to="/market/overview" replace />} />
             <Route path="admin/users" element={<UserManagement />} />
+            <Route path="admin/customers" element={<CustomerMaster />} />
           </Route>
         </Routes>
       </BrowserRouter>
