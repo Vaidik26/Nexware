@@ -27,7 +27,13 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.setItem('nexware_user', JSON.stringify(user));
       set({ user, token });
     },
-    logout: () => {
+    logout: async () => {
+      try {
+        const { default: api } = await import('../lib/api');
+        await api.post('/auth/logout');
+      } catch (err) {
+        console.error('Logout API failed:', err);
+      }
       localStorage.removeItem('nexware_token');
       localStorage.removeItem('nexware_user');
       set({ user: null, token: null });

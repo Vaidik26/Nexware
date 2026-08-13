@@ -146,15 +146,6 @@ export default function JobDetailScreen() {
     }
   };
 
-  const handleToggleCarton = async (itemId: string, isFullCarton: boolean) => {
-    if (isSubmitted) return;
-    setItems(prev => prev.map(i => i.id === itemId ? { ...i, is_full_carton: isFullCarton } : i));
-    try {
-      await api.patch(`/picklists/${id}/items/${itemId}/toggle-carton`, { is_full_carton: isFullCarton });
-    } catch (err) {
-      setItems(prev => prev.map(i => i.id === itemId ? { ...i, is_full_carton: !isFullCarton } : i));
-    }
-  };
 
   const handleComplete = () => {
     setSubmitError('');
@@ -265,7 +256,6 @@ export default function JobDetailScreen() {
                 setScanModalVisible(true);
               }} 
               onMissing={() => handleMissing(item.id)}
-              onToggleCarton={(isFull: boolean) => handleToggleCarton(item.id, isFull)}
               disabled={isSubmitted} 
             />
           )}
@@ -291,16 +281,29 @@ export default function JobDetailScreen() {
             </Text>
           </View>
         ) : (
-          <TouchableOpacity
-            className={`px-6 py-3 rounded-xl flex-row items-center ${isComplete ? 'bg-[#003527]' : 'bg-gray-200'}`}
-            disabled={!isComplete || isSubmitting}
-            onPress={() => openBoxModal()}
-          >
-            {isComplete && <Box size={20} color="white" />}
-            <Text className={`font-bold ml-2 font-inter ${isComplete ? 'text-white' : 'text-gray-400'}`}>
-              Box & Complete
-            </Text>
-          </TouchableOpacity>
+          <View className="flex-row gap-2">
+            {unboxedPickedCount > 0 && (
+              <TouchableOpacity
+                className="px-4 py-3 rounded-xl flex-row items-center bg-blue-100 border border-blue-200"
+                onPress={() => openBoxModal()}
+              >
+                <Box size={20} color="#1d4ed8" />
+                <Text className="font-bold ml-2 font-inter text-blue-700">
+                  Pack Box ({unboxedPickedCount})
+                </Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              className={`px-6 py-3 rounded-xl flex-row items-center ${isComplete ? 'bg-[#003527]' : 'bg-gray-200'}`}
+              disabled={!isComplete || isSubmitting}
+              onPress={handleComplete}
+            >
+              {isComplete && <CheckCircle2 size={20} color="white" />}
+              <Text className={`font-bold ml-2 font-inter ${isComplete ? 'text-white' : 'text-gray-400'}`}>
+                Complete Job
+              </Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 

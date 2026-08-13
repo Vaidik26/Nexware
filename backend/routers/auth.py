@@ -75,9 +75,14 @@ async def login(login_data: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/logout")
-async def logout():
-    # JWT is stateless — client simply discards the token.
-    # For server-side revocation, add token to a denylist (future enhancement).
+async def logout(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Clear the push token so the device stops receiving push notifications after logout
+    if current_user.push_token:
+        current_user.push_token = None
+        await db.commit()
     return {"message": "Logged out successfully"}
 
 

@@ -25,6 +25,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   setPicker: (picker) => set({ picker }),
   setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
   logout: async () => {
+    try {
+      const { default: api } = await import('../lib/api');
+      await api.post('/auth/logout');
+    } catch (err) {
+      console.warn('Logout API failed:', err);
+    }
     await clearSession();
     set({ picker: null, isAuthenticated: false });
   },

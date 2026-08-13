@@ -4,7 +4,8 @@ from typing import Optional
 class SalesItemBase(BaseModel):
     item_number: str
     item_name: str
-    barcode: str
+    primary_barcode: str
+    secondary_barcode: Optional[str] = None
     unit: str
     bin_location: Optional[str] = None
     standard_carton_quantity: int = 1

@@ -45,21 +45,6 @@ export default function PickItemRow({ item, onScanStart, onMissing, onToggleCart
           <Text className={`text-base font-inter mt-1 ${item.picked ? 'line-through text-gray-500 font-medium' : 'font-bold text-onSurface'}`}>
             {item.name}
           </Text>
-          {onToggleCarton && !disabled && !item.picked && !isMissing && (
-            <View className="flex-row items-center mt-2.5">
-              <View className={`flex-row items-center px-3 py-1.5 rounded-lg border ${item.is_full_carton ? 'bg-primary/10 border-primary' : 'bg-gray-50 border-gray-200'}`}>
-                <Box size={14} color={item.is_full_carton ? '#006c49' : '#6b7280'} />
-                <Text className={`text-xs font-bold ml-1.5 mr-3 ${item.is_full_carton ? 'text-primary' : 'text-gray-600'}`}>Full Carton Pick</Text>
-                <Switch 
-                  value={item.is_full_carton || false} 
-                  onValueChange={(val) => onToggleCarton(val)} 
-                  trackColor={{ false: '#d1d5db', true: '#a7f3d0' }}
-                  thumbColor={item.is_full_carton ? '#006c49' : '#f3f4f6'}
-                  style={{ transform: [{ scaleX: 0.75 }, { scaleY: 0.75 }] }}
-                />
-              </View>
-            </View>
-          )}
         </View>
         <View className="items-end ml-3 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
           <Text className={`text-lg font-extrabold font-inter ${item.picked ? 'text-primary' : 'text-onSurface'}`}>

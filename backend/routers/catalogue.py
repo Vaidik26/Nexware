@@ -25,7 +25,9 @@ async def get_items(db: AsyncSession = Depends(get_db)):
 @router.post("/", response_model=SalesItemOut)
 async def create_item(item: SalesItemCreate, db: AsyncSession = Depends(get_db), current_user = Depends(get_current_admin)):
     existing_item = await db.execute(select(SalesItem).filter(
-        (SalesItem.item_number == item.item_number) | (SalesItem.barcode == item.barcode)
+        (SalesItem.item_number == item.item_number) | 
+        (SalesItem.primary_barcode == item.primary_barcode) |
+        (SalesItem.secondary_barcode == item.primary_barcode)
     ))
     if existing_item.scalars().first():
         raise HTTPException(status_code=400, detail="Item number or barcode already exists")
@@ -46,9 +48,11 @@ async def import_catalogue(file: UploadFile = File(...), db: AsyncSession = Depe
         # Check if exists
         existing = await db.execute(select(SalesItem).filter(
             (SalesItem.item_number == item_data["item_number"]) | 
-            (SalesItem.barcode == item_data["barcode"])
+            (SalesItem.primary_barcode == item_data.get("barcode", item_data.get("primary_barcode")))
         ))
         if not existing.scalars().first():
+            if "barcode" in item_data:
+                item_data["primary_barcode"] = item_data.pop("barcode")
             db_item = SalesItem(**item_data)
             db.add(db_item)
             created_count += 1
@@ -67,18 +71,22 @@ async def update_item(item_id: int, item: SalesItemCreate, db: AsyncSession = De
     duplicate = await db.execute(
         select(SalesItem).filter(
             (SalesItem.id != item_id) & 
-            ((SalesItem.item_number == item.item_number) | (SalesItem.barcode == item.barcode))
+            (
+                (SalesItem.item_number == item.item_number) | 
+                (SalesItem.primary_barcode == item.primary_barcode)
+            )
         )
     )
     if duplicate.scalars().first():
         raise HTTPException(status_code=400, detail="Item number or barcode already exists on another SKU")
 
-    old_barcode = db_item.barcode
+    old_barcode = db_item.primary_barcode
     
     # Update item master details
     db_item.item_number = item.item_number
     db_item.item_name = item.item_name
-    db_item.barcode = item.barcode
+    db_item.primary_barcode = item.primary_barcode
+    db_item.secondary_barcode = item.secondary_barcode
     db_item.unit = item.unit
     db_item.bin_location = item.bin_location
     db_item.standard_carton_quantity = item.standard_carton_quantity
@@ -89,7 +97,7 @@ async def update_item(item_id: int, item: SalesItemCreate, db: AsyncSession = De
     # Real-time reflection: propagate changes to active pick list records on the floor
     linked_records = await db.execute(select(PickListItem).filter(PickListItem.barcode == old_barcode))
     for rec in linked_records.scalars().all():
-        rec.barcode = item.barcode
+        rec.barcode = item.primary_barcode
         rec.product_name = item.item_name
         rec.unit = item.unit
 
@@ -105,7 +113,10 @@ async def delete_catalogue_item(item_id: int, db: AsyncSession = Depends(get_db)
         raise HTTPException(status_code=404, detail="Catalogue item not found")
         
     # Safeguard: Prevent deletion if this item's barcode exists in warehouse records (PickListItem)
-    linked_records = await db.execute(select(PickListItem).filter(PickListItem.barcode == item.barcode))
+    linked_records = await db.execute(select(PickListItem).filter(
+        (PickListItem.barcode == item.primary_barcode) | 
+        (PickListItem.barcode == item.secondary_barcode)
+    ))
     if linked_records.scalars().first():
         raise HTTPException(
             status_code=400, 

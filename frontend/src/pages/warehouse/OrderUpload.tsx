@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FileUpload } from '@/components/ui/FileUpload';
 import { Button } from '@/components/ui/Button';
-import { Upload, FileText, CheckCircle2, AlertCircle, Trash2, Edit2, Play, RefreshCw, Layers } from 'lucide-react';
+import { FileText, CheckCircle2, AlertCircle, RefreshCw, ArrowRight, Sparkles } from 'lucide-react';
 import { CustomerDropdown } from '@/components/ui/CustomerDropdown';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { getErrorMessage } from '@/lib/utils';

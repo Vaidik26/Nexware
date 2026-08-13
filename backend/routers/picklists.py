@@ -155,13 +155,19 @@ async def generate_picklist(
     unmatched_items = []
 
     for item in data.get("items", []):
-        barcode = item.get("barcode", "N/A") or "N/A"
+        extracted_bc = item.get("barcode", "N/A") or "N/A"
         cat_result = await db.execute(
-            select(SalesItem).filter(SalesItem.barcode == barcode)
+            select(SalesItem).filter(
+                (SalesItem.primary_barcode == extracted_bc) | 
+                (SalesItem.secondary_barcode == extracted_bc)
+            )
         )
         cat_item = cat_result.scalars().first()
         matched_items.append({
-            "barcode": barcode,
+            "barcode": extracted_bc,
+            "primary_barcode": cat_item.primary_barcode if cat_item else extracted_bc,
+            "secondary_barcode": cat_item.secondary_barcode if cat_item else extracted_bc,
+            "standard_carton_quantity": cat_item.standard_carton_quantity if cat_item else 1,
             "product_name": cat_item.item_name if cat_item else item.get("product_name", "Item"),
             "quantity": item.get("quantity", 1),
             "unit": item.get("uom", "EA"),
@@ -200,14 +206,33 @@ async def generate_picklist(
     await db.flush()
 
     for mi in matched_items:
-        db.add(PickListItem(
-            pick_list_id=db_picklist.id,
-            barcode=mi["barcode"],
-            product_name=mi["product_name"],
-            quantity=mi["quantity"],
-            unit=mi["unit"],
-            bin_location=mi.get("bin_location"),
-        ))
+        qty = mi["quantity"]
+        scq = mi["standard_carton_quantity"]
+        
+        full_cartons = int(qty // scq) if scq > 0 else 0
+        loose_pieces = qty % scq if scq > 0 else qty
+
+        if full_cartons > 0:
+            db.add(PickListItem(
+                pick_list_id=db_picklist.id,
+                barcode=mi["primary_barcode"],
+                product_name=mi["product_name"],
+                quantity=full_cartons,
+                unit="Carton",
+                is_full_carton=True,
+                bin_location=mi.get("bin_location"),
+            ))
+            
+        if loose_pieces > 0 or full_cartons == 0:
+            db.add(PickListItem(
+                pick_list_id=db_picklist.id,
+                barcode=mi["secondary_barcode"] or mi["barcode"],
+                product_name=mi["product_name"],
+                quantity=loose_pieces,
+                unit=mi["unit"],
+                is_full_carton=False,
+                bin_location=mi.get("bin_location"),
+            ))
 
     order.status = "picklist_generated"
     await db.commit()
@@ -289,6 +314,8 @@ async def auto_assign_existing(
     if db_picklist.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft pick lists can be assigned")
 
+    import random
+    
     # 2. Find available picker
     users_res = await db.execute(
         select(User).filter(User.role == "picker", User.is_active == True, User.is_available == True)
@@ -296,7 +323,20 @@ async def auto_assign_existing(
     pickers = users_res.scalars().all()
     if not pickers:
         raise HTTPException(status_code=400, detail="No available pickers right now")
-    picker = pickers[0]
+        
+    picker_loads = []
+    active_statuses = ["assigned", "picking", "waiting_verification"]
+    for p in pickers:
+        count_res = await db.execute(
+            select(sqlfunc.count(PickAssignment.id))
+            .join(PickList)
+            .filter(PickAssignment.picker_id == p.id, PickList.status.in_(active_statuses))
+        )
+        picker_loads.append((count_res.scalar() or 0, p))
+        
+    min_load = min(load for load, p in picker_loads)
+    tied_pickers = [p for load, p in picker_loads if load == min_load]
+    picker = random.choice(tied_pickers)
 
     # 3. Calculate sequence number
     active_statuses = ["assigned", "picking", "waiting_verification"]
@@ -378,8 +418,16 @@ async def direct_assign_picklist(
 
     # Bulk fetch all matching catalogue items to avoid N+1 database queries
     all_barcodes = [item.barcode or "N/A" for item in payload.items]
-    cat_res = await db.execute(select(SalesItem).filter(SalesItem.barcode.in_(all_barcodes)))
-    cat_map = {ci.barcode: ci for ci in cat_res.scalars().all()}
+    cat_res = await db.execute(select(SalesItem).filter(
+        (SalesItem.primary_barcode.in_(all_barcodes)) | 
+        (SalesItem.secondary_barcode.in_(all_barcodes))
+    ))
+    # Map both primary and secondary barcodes to the cat item
+    cat_map = {}
+    for ci in cat_res.scalars().all():
+        cat_map[ci.primary_barcode] = ci
+        if ci.secondary_barcode:
+            cat_map[ci.secondary_barcode] = ci
 
     validation_errors = []
     for item in payload.items:
@@ -404,15 +452,35 @@ async def direct_assign_picklist(
         bc = item.barcode or "N/A"
         cat_item = cat_map.get(bc)
 
-        db.add(PickListItem(
-            pick_list_id=db_picklist.id,
-            barcode=bc,
-            product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
-            quantity=item.quantity or 1,
-            unit=item.unit or "EA",
-            bin_location=cat_item.bin_location if cat_item else None,
-        ))
-        verified_count += 1
+        qty = item.quantity or 1
+        scq = cat_item.standard_carton_quantity if cat_item else 1
+        
+        full_cartons = int(qty // scq) if scq > 0 else 0
+        loose_pieces = qty % scq if scq > 0 else qty
+
+        if full_cartons > 0:
+            db.add(PickListItem(
+                pick_list_id=db_picklist.id,
+                barcode=cat_item.primary_barcode if cat_item else bc,
+                product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
+                quantity=full_cartons,
+                unit="Carton",
+                is_full_carton=True,
+                bin_location=cat_item.bin_location if cat_item else None,
+            ))
+            verified_count += 1
+            
+        if loose_pieces > 0 or full_cartons == 0:
+            db.add(PickListItem(
+                pick_list_id=db_picklist.id,
+                barcode=cat_item.secondary_barcode if (cat_item and cat_item.secondary_barcode) else bc,
+                product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
+                quantity=loose_pieces,
+                unit=item.unit or "EA",
+                is_full_carton=False,
+                bin_location=cat_item.bin_location if cat_item else None,
+            ))
+            verified_count += 1
 
     if verified_count == 0:
         await db.rollback()
@@ -459,6 +527,7 @@ async def direct_assign_auto(
     next_job_number = None
 
     if payload.auto_assign:
+        import random
         # Find all available pickers
         users_res = await db.execute(
             select(User).filter(User.role == "picker", User.is_active == True, User.is_available == True)
@@ -467,7 +536,19 @@ async def direct_assign_auto(
         if not pickers:
             raise HTTPException(status_code=400, detail="No available pickers right now. Please try again later.")
             
-        picker = pickers[0]
+        active_statuses = ["assigned", "picking", "waiting_verification"]
+        picker_loads = []
+        for p in pickers:
+            count_res = await db.execute(
+                select(sqlfunc.count(PickAssignment.id))
+                .join(PickList)
+                .filter(PickAssignment.picker_id == p.id, PickList.status.in_(active_statuses))
+            )
+            picker_loads.append((count_res.scalar() or 0, p))
+            
+        min_load = min(load for load, p in picker_loads)
+        tied_pickers = [p for load, p in picker_loads if load == min_load]
+        picker = random.choice(tied_pickers)
 
         active_statuses = ["assigned", "picking", "waiting_verification"]
         max_res = await db.execute(
@@ -495,8 +576,15 @@ async def direct_assign_auto(
 
     # Bulk fetch all matching catalogue items
     all_barcodes = [item.barcode or "N/A" for item in payload.items]
-    cat_res = await db.execute(select(SalesItem).filter(SalesItem.barcode.in_(all_barcodes)))
-    cat_map = {ci.barcode: ci for ci in cat_res.scalars().all()}
+    cat_res = await db.execute(select(SalesItem).filter(
+        (SalesItem.primary_barcode.in_(all_barcodes)) | 
+        (SalesItem.secondary_barcode.in_(all_barcodes))
+    ))
+    cat_map = {}
+    for ci in cat_res.scalars().all():
+        cat_map[ci.primary_barcode] = ci
+        if ci.secondary_barcode:
+            cat_map[ci.secondary_barcode] = ci
 
     validation_errors = []
     for item in payload.items:
@@ -521,15 +609,35 @@ async def direct_assign_auto(
         bc = item.barcode or "N/A"
         cat_item = cat_map.get(bc)
 
-        db.add(PickListItem(
-            pick_list_id=db_picklist.id,
-            barcode=bc,
-            product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
-            quantity=item.quantity or 1,
-            unit=item.unit or "EA",
-            bin_location=cat_item.bin_location if cat_item else None,
-        ))
-        verified_count += 1
+        qty = item.quantity or 1
+        scq = cat_item.standard_carton_quantity if cat_item else 1
+        
+        full_cartons = int(qty // scq) if scq > 0 else 0
+        loose_pieces = qty % scq if scq > 0 else qty
+
+        if full_cartons > 0:
+            db.add(PickListItem(
+                pick_list_id=db_picklist.id,
+                barcode=cat_item.primary_barcode if cat_item else bc,
+                product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
+                quantity=full_cartons,
+                unit="Carton",
+                is_full_carton=True,
+                bin_location=cat_item.bin_location if cat_item else None,
+            ))
+            verified_count += 1
+            
+        if loose_pieces > 0 or full_cartons == 0:
+            db.add(PickListItem(
+                pick_list_id=db_picklist.id,
+                barcode=cat_item.secondary_barcode if (cat_item and cat_item.secondary_barcode) else bc,
+                product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
+                quantity=loose_pieces,
+                unit=item.unit or "EA",
+                is_full_carton=False,
+                bin_location=cat_item.bin_location if cat_item else None,
+            ))
+            verified_count += 1
 
     if verified_count == 0:
         await db.rollback()
