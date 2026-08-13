@@ -16,7 +16,8 @@ import api from '@/lib/api';
 const itemSchema = z.object({
   item_number: z.string().min(1, 'Item number is required'),
   item_name: z.string().min(1, 'Item name is required'),
-  barcode: z.string().min(1, 'Barcode is required'),
+  primary_barcode: z.string().min(1, 'Primary barcode is required'),
+  secondary_barcode: z.string().optional(),
   bin_location: z.string().optional(),
   standard_carton_quantity: z.coerce.number().min(1),
   packaging_weight: z.coerce.number().min(0),
@@ -79,14 +80,16 @@ export default function SalesCatalogue() {
   const filteredItems = items.filter(item => 
     (item.item_name || item.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
     (item.item_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (item.barcode || '').toLowerCase().includes(searchTerm.toLowerCase())
+    (item.primary_barcode || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (item.secondary_barcode || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const openEditModal = (item: any) => {
     setEditingItem(item);
     setValue('item_number', item.item_number);
     setValue('item_name', item.item_name || item.name || '');
-    setValue('barcode', item.barcode);
+    setValue('primary_barcode', item.primary_barcode || '');
+    setValue('secondary_barcode', item.secondary_barcode || '');
     setValue('bin_location', item.bin_location || '');
     setValue('standard_carton_quantity', item.standard_carton_quantity || 1);
     setValue('packaging_weight', item.packaging_weight || 0);
@@ -98,7 +101,7 @@ export default function SalesCatalogue() {
     setIsAddModalOpen(false);
     setIsEditModalOpen(false);
     setEditingItem(null);
-    reset({ standard_carton_quantity: 1, packaging_weight: 0, sku_size_category: '>100g', item_name: '', item_number: '', barcode: '', bin_location: '' });
+    reset({ standard_carton_quantity: 1, packaging_weight: 0, sku_size_category: '>100g', item_name: '', item_number: '', primary_barcode: '', secondary_barcode: '', bin_location: '' });
     resetCarton();
   };
 
@@ -108,7 +111,8 @@ export default function SalesCatalogue() {
       const payload = {
         item_number: data.item_number,
         item_name: data.item_name,
-        barcode: data.barcode,
+        primary_barcode: data.primary_barcode,
+        secondary_barcode: data.secondary_barcode,
         unit: editingItem?.unit || 'PCS',
         bin_location: data.bin_location || null,
         standard_carton_quantity: data.standard_carton_quantity,
@@ -199,7 +203,8 @@ export default function SalesCatalogue() {
   const columns = [
     { header: 'Item Number / SKU', accessor: 'item_number' as const, className: 'font-semibold text-primary' },
     { header: 'Item Name / Product', accessor: (r: any) => r.item_name || r.name || '-' },
-    { header: 'Barcode', accessor: 'barcode' as const, className: 'font-mono text-xs font-semibold bg-slate-100 px-2 py-1 rounded w-fit' },
+    { header: 'Barcode (Carton)', accessor: 'primary_barcode' as const, className: 'font-mono text-xs font-semibold bg-slate-100 px-2 py-1 rounded w-fit' },
+    { header: 'Barcode (Loose)', accessor: (r: any) => r.secondary_barcode ? <span className="font-mono text-xs font-semibold bg-slate-100 px-2 py-1 rounded">{r.secondary_barcode}</span> : '-' },
     { header: 'Bin Location', accessor: (r: any) => r.bin_location || '-' },
     { header: 'SKU Size', accessor: (r: any) => r.sku_size_category || '-' },
     { header: 'Available Qty', accessor: (r: any) => (
@@ -309,7 +314,11 @@ export default function SalesCatalogue() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <Input label="Item Number / SKU Code" placeholder="e.g. ITM-1001" {...register('item_number')} error={errors.item_number?.message} />
             <Input label="Item Name / Title" placeholder="e.g. Premium Steel Wire" {...register('item_name')} error={errors.item_name?.message} />
-            <Input label="Barcode / UPC Identifier" placeholder="e.g. 6294003002695" {...register('barcode')} error={errors.barcode?.message} />
+            
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Primary Barcode (Carton)" placeholder="e.g. 629400..." {...register('primary_barcode')} error={errors.primary_barcode?.message} />
+              <Input label="Secondary Barcode (Loose)" placeholder="Optional" {...register('secondary_barcode')} error={errors.secondary_barcode?.message} />
+            </div>
             
             <div className="grid grid-cols-2 gap-4">
               <Input label="Bin Location" placeholder="e.g. A1-B2-C3" {...register('bin_location')} error={errors.bin_location?.message} />
