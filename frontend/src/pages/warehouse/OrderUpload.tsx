@@ -244,6 +244,54 @@ export default function OrderUpload() {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-6"
           >
+            {/* User Choice Routing Controls */}
+            <div className="bg-surface-container-low p-6 rounded-3xl border border-outline-variant shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+              <div>
+                <h4 className="font-extrabold text-on-surface text-base">Warehouse Routing Control</h4>
+                <p className="text-xs text-on-surface-variant font-semibold mt-0.5 mb-3">
+                  Assign a Partner Customer and submit this LPO to Management.
+                </p>
+                
+                <div className="flex flex-col gap-1 max-w-xs">
+                  <label className="text-xs font-bold text-on-surface uppercase tracking-wide">Assign Customer</label>
+                  <input
+                    list="customer-list"
+                    className="h-10 px-3 rounded-lg border border-outline-variant bg-white text-sm font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    placeholder="Search by name or code..."
+                    value={results.customerName}
+                    onChange={(e) => setResults({...results, customerName: e.target.value})}
+                  />
+                  <datalist id="customer-list">
+                    {customers.map(c => (
+                      <option key={c.id} value={c.name}>{c.customer_code} - {c.name}</option>
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 flex-wrap">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={handleProcessAnother}
+                  className="font-extrabold text-sm bg-white hover:bg-slate-100 border-slate-300 text-slate-800 shadow-2xs"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2 text-primary" />
+                  <span>Process Another LPO</span>
+                </Button>
+
+                <Button
+                  size="lg"
+                  onClick={handleSubmitToLpoManagement}
+                  disabled={isProcessing || results.items.filter(i => i.inCatalogue).length === 0}
+                  className="bg-primary hover:bg-primary/90 text-white font-black text-sm px-6 shadow-md"
+                >
+                  <ArrowRight className="w-4 h-4 mr-2" />
+                  <span>{isProcessing ? 'Submitting...' : 'Submit to LPO Management'}</span>
+                </Button>
+              </div>
+            </div>
+
             {/* Executive Status Bar with SINGLE Set of Download Buttons (Excel & PDF) */}
             <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950 text-white p-6 rounded-3xl border border-slate-700 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-md">
               <div className="flex items-center gap-4">
@@ -380,53 +428,6 @@ export default function OrderUpload() {
               </div>
             )}
 
-            {/* User Choice Routing Controls */}
-            <div className="bg-surface-container-low p-6 rounded-3xl border border-outline-variant shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-              <div>
-                <h4 className="font-extrabold text-on-surface text-base">Warehouse Routing Control</h4>
-                <p className="text-xs text-on-surface-variant font-semibold mt-0.5 mb-3">
-                  Assign a Partner Customer and submit this LPO to Management.
-                </p>
-                
-                <div className="flex flex-col gap-1 max-w-xs">
-                  <label className="text-xs font-bold text-on-surface uppercase tracking-wide">Assign Customer</label>
-                  <input
-                    list="customer-list"
-                    className="h-10 px-3 rounded-lg border border-outline-variant bg-white text-sm font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    placeholder="Search by name or code..."
-                    value={results.customerName}
-                    onChange={(e) => setResults({...results, customerName: e.target.value})}
-                  />
-                  <datalist id="customer-list">
-                    {customers.map(c => (
-                      <option key={c.id} value={c.name}>{c.customer_code} - {c.name}</option>
-                    ))}
-                  </datalist>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4 flex-wrap">
-                <Button
-                  variant="outline"
-                  size="lg"
-                  onClick={handleProcessAnother}
-                  className="font-extrabold text-sm bg-white hover:bg-slate-100 border-slate-300 text-slate-800 shadow-2xs"
-                >
-                  <RefreshCw className="w-4 h-4 mr-2 text-primary" />
-                  <span>Process Another LPO</span>
-                </Button>
-
-                <Button
-                  size="lg"
-                  onClick={handleSubmitToLpoManagement}
-                  disabled={isProcessing || results.items.filter(i => i.inCatalogue).length === 0}
-                  className="bg-primary hover:bg-primary/90 text-white font-black text-sm px-6 shadow-md"
-                >
-                  <ArrowRight className="w-4 h-4 mr-2" />
-                  <span>{isProcessing ? 'Submitting...' : 'Submit to LPO Management'}</span>
-                </Button>
-              </div>
-            </div>
           </motion.div>
         )}
       </AnimatePresence>
