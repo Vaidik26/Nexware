@@ -345,7 +345,6 @@ async def approve_lpo(
         assignment = PickAssignment(
             pick_list_id=db_picklist.id,
             picker_id=picker.id,
-            status="assigned",
         )
         db.add(assignment)
         db_picklist.status = "assigned"
