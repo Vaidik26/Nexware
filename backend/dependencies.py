@@ -10,7 +10,7 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -54,7 +54,7 @@ async def _decode_and_fetch_user(
         if user_id_str is None:
             return None
         user_id = int(user_id_str)
-    except (JWTError, ValueError):
+    except (jwt.InvalidTokenError, ValueError):
         return None
 
     result = await db.execute(select(User).filter(User.id == user_id))
