@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LogOut, Plus, Trash2, QrCode, Share, Search } from 'lucide-react-native';
 import { useAuthStore } from '../../store/authStore';
@@ -11,12 +11,14 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 
 interface CatalogueItem {
-  barcode: string;
+  id: number;
+  primary_barcode: string;
   item_name: string;
   available_quantity: number;
 }
 
 interface CartItem {
+  id: number;
   barcode: string;
   product_name: string;
   quantity: number;
@@ -54,20 +56,35 @@ export default function LpoCreateScreen() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isPdfUploaded, setIsPdfUploaded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetchCatalogue();
+    fetchCustomers();
   }, []);
 
   const fetchCatalogue = async () => {
     try {
       const res = await api.get('/catalogue');
       setCatalogue(res.data || []);
-      const custRes = await api.get('/customers');
-      setCustomers(custRes.data || []);
     } catch (err) {
       // Handle error quietly
     }
+  };
+
+  const fetchCustomers = async () => {
+    try {
+      const custRes = await api.get('/customers');
+      setCustomers(custRes.data || []);
+    } catch (err) {
+      console.log('Error fetching customers:', err);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([fetchCatalogue(), fetchCustomers()]);
+    setRefreshing(false);
   };
 
   const handleLogout = async () => {
@@ -79,50 +96,53 @@ export default function LpoCreateScreen() {
       Alert.alert('Out of Stock', 'This item is out of stock and cannot be added.');
       return;
     }
-    const existing = cart.find(c => c.barcode === item.barcode);
+    const existing = cart.find(c => 
+      (c.id && item.id && c.id === item.id) || 
+      (c.barcode && item.primary_barcode && c.barcode === item.primary_barcode)
+    );
     if (existing) {
       Alert.alert('Already Added', 'This item is already in the LPO. You can adjust its quantity from the list.');
       return;
     } else {
-      setCart([...cart, { barcode: item.barcode, product_name: item.item_name, quantity: 1, available_quantity: item.available_quantity, unit: 'PCS' }]);
+      setCart([...cart, { id: item.id, barcode: item.primary_barcode || '', product_name: item.item_name, quantity: 1, available_quantity: item.available_quantity, unit: 'PCS' }]);
     }
     setShowItemModal(false);
     setSearch('');
   };
 
-  const updateQuantity = (barcode: string, qtyStr: string) => {
+  const updateQuantity = (id: number, qtyStr: string) => {
     let qty = parseInt(qtyStr) || 0;
-    const item = cart.find(c => c.barcode === barcode);
+    const item = cart.find(c => c.id === id);
     if (item) {
       if (qty > item.available_quantity) {
         Alert.alert('Stock Limit Exceeded', `Only ${item.available_quantity} available in stock.`);
         qty = item.available_quantity;
       }
       if (qty < 1) qty = 1;
-      setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: qty } : c));
+      setCart(cart.map(c => c.id === id ? { ...c, quantity: qty } : c));
     }
   };
 
-  const incrementQuantity = (barcode: string) => {
-    const item = cart.find(c => c.barcode === barcode);
+  const incrementQuantity = (id: number) => {
+    const item = cart.find(c => c.id === id);
     if (item) {
       if (item.quantity + 1 > item.available_quantity) {
         Alert.alert('Stock Limit Exceeded', `Only ${item.available_quantity} available in stock.`);
       } else {
-        setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: c.quantity + 1 } : c));
+        setCart(cart.map(c => c.id === id ? { ...c, quantity: c.quantity + 1 } : c));
       }
     }
   };
 
-  const decrementQuantity = (barcode: string) => {
-    const item = cart.find(c => c.barcode === barcode);
+  const decrementQuantity = (id: number) => {
+    const item = cart.find(c => c.id === id);
     if (item && item.quantity > 1) {
-      setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: c.quantity - 1 } : c));
+      setCart(cart.map(c => c.id === id ? { ...c, quantity: c.quantity - 1 } : c));
     }
   };
 
-  const removeItem = (barcode: string) => {
-    setCart(cart.filter(c => c.barcode !== barcode));
+  const removeItem = (id: number) => {
+    setCart(cart.filter(c => c.id !== id));
   };
 
   const generateLPO = async () => {
@@ -290,6 +310,7 @@ export default function LpoCreateScreen() {
         <div class="field-row"><span class="field-label">LPO Ref:</span><span>${orderNumber}</span></div>
         <div class="field-row"><span class="field-label">Date:</span><span>${dateStr} ${timeStr}</span></div>
         <div class="field-row"><span class="field-label">Customer:</span><span>${customerName}</span></div>
+        <div class="field-row"><span class="field-label">Sales Rep:</span><span>${picker?.full_name || 'System User'}</span></div>
         ${deliveryDate ? `<div class="field-row"><span class="field-label">Delivery:</span><span>${deliveryDate.toISOString().split('T')[0]}</span></div>` : ''}
         <div class="field-row"><span class="field-label">Status:</span><span>${successLpoData?.picker_name ? 'Assigned' : 'PENDING'}</span></div>
         ${successLpoData?.picker_name ? `<div class="field-row"><span class="field-label">Picker:</span><span>${successLpoData.picker_name}</span></div>` : ''}
@@ -320,9 +341,12 @@ export default function LpoCreateScreen() {
   };
 
   const filteredCatalogue = catalogue.filter(c => 
-    !cart.some(cartItem => cartItem.barcode === c.barcode) &&
+    !cart.some(cartItem => 
+      (cartItem.id && c.id && cartItem.id === c.id) || 
+      (cartItem.barcode && c.primary_barcode && cartItem.barcode === c.primary_barcode)
+    ) &&
     (c.item_name.toLowerCase().includes(search.toLowerCase()) || 
-    c.barcode.toLowerCase().includes(search.toLowerCase()))
+    (c.primary_barcode || '').toLowerCase().includes(search.toLowerCase()))
   );
 
   const filteredCustomers = customers.filter(c => 
@@ -394,9 +418,10 @@ export default function LpoCreateScreen() {
 
         <FlatList
           data={cart}
-          keyExtractor={(item) => item.barcode}
+          keyExtractor={(item, index) => item.id ? item.id.toString() : (item.barcode || `temp-${index}`)}
           className="flex-1"
           showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#003527"]} tintColor="#006c49" />}
           renderItem={({ item }) => (
             <View className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm mb-3 flex-col">
               <View className="flex-row justify-between items-start mb-3">
@@ -404,7 +429,7 @@ export default function LpoCreateScreen() {
                   <Text className="font-bold text-gray-800 text-sm mb-1">{item.product_name}</Text>
                   <Text className="text-xs text-gray-500 font-semibold bg-gray-100 self-start px-2 py-0.5 rounded-md">{item.barcode}</Text>
                 </View>
-                <TouchableOpacity onPress={() => removeItem(item.barcode)} className="p-2 bg-rose-50 rounded-lg">
+                <TouchableOpacity onPress={() => removeItem(item.id)} className="p-2 bg-rose-50 rounded-lg">
                   <Trash2 size={16} color="#ef4444" />
                 </TouchableOpacity>
               </View>
@@ -412,16 +437,16 @@ export default function LpoCreateScreen() {
               <View className="flex-row items-center justify-between border-t border-gray-100 pt-3">
                 <Text className="text-xs font-bold text-emerald-600">Stock: {item.available_quantity}</Text>
                 <View className="flex-row items-center border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-                  <TouchableOpacity onPress={() => decrementQuantity(item.barcode)} className="px-3 py-2 bg-white">
+                  <TouchableOpacity onPress={() => decrementQuantity(item.id)} className="px-3 py-2 bg-white">
                     <Text className="font-black text-gray-600 text-lg leading-5">-</Text>
                   </TouchableOpacity>
                   <TextInput
                     className="w-12 text-center font-black text-sm bg-white h-full border-x border-gray-200"
                     keyboardType="number-pad"
                     value={String(item.quantity)}
-                    onChangeText={(val) => updateQuantity(item.barcode, val)}
+                    onChangeText={(val) => updateQuantity(item.id, val)}
                   />
-                  <TouchableOpacity onPress={() => incrementQuantity(item.barcode)} className="px-3 py-2 bg-white">
+                  <TouchableOpacity onPress={() => incrementQuantity(item.id)} className="px-3 py-2 bg-white">
                     <Text className="font-black text-gray-600 text-lg leading-5">+</Text>
                   </TouchableOpacity>
                 </View>
@@ -485,7 +510,7 @@ export default function LpoCreateScreen() {
           </View>
           <FlatList
             data={filteredCatalogue}
-            keyExtractor={item => item.barcode}
+            keyExtractor={(item, index) => item.id ? item.id.toString() : (item.primary_barcode || `cat-${index}`)}
             renderItem={({ item }) => (
               <TouchableOpacity
                 className="px-4 py-4 border-b border-gray-100 flex-row justify-between items-center hover:bg-gray-50"
@@ -493,7 +518,7 @@ export default function LpoCreateScreen() {
               >
                 <View className="flex-1 pr-4">
                   <Text className="font-bold text-gray-800 text-base mb-1">{item.item_name}</Text>
-                  <Text className="text-xs text-gray-500 font-semibold">{item.barcode}</Text>
+                  <Text className="text-xs text-gray-500 font-semibold">{item.primary_barcode}</Text>
                 </View>
                 <View className={`px-3 py-1.5 rounded-lg border ${item.available_quantity > 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
                   <Text className={`text-xs font-black ${item.available_quantity > 0 ? 'text-emerald-700' : 'text-rose-700'}`}>

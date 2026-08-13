@@ -3,7 +3,14 @@ import { Platform } from 'react-native';
 import { getToken, clearSession } from './session';
 import { useAuthStore } from '../store/authStore';
 
-let baseURL = process.env.EXPO_PUBLIC_API_URL || 'https://nexware.vercel.app/api';
+const getBaseUrl = () => {
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+  return 'http://localhost:8000/api';
+};
+
+let baseURL = getBaseUrl();
 if (Platform.OS === 'android' && (baseURL.includes('localhost') || baseURL.includes('127.0.0.1'))) {
   baseURL = baseURL.replace('localhost', '10.0.2.2').replace('127.0.0.1', '10.0.2.2');
 }

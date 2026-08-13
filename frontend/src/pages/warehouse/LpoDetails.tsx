@@ -107,15 +107,11 @@ export default function LpoDetails() {
 
   const handleApprove = async () => {
     if (!lpo) return;
-    if (assignMode === 'manual' && !selectedPickerId) {
-      toast.error('Please select a picker');
-      return;
-    }
     setIsApproving(true);
     try {
       const res = await api.post(`/lpos/${lpo.id}/approve`, {
-        assign_mode: assignMode,
-        picker_id: assignMode === 'manual' ? selectedPickerId : null,
+        assign_mode: 'auto',
+        picker_id: null,
       });
       toast.success(`LPO approved! Assigned to ${res.data.assigned_to || 'picker'}.`);
       setApproveModalOpen(false);
@@ -426,47 +422,12 @@ export default function LpoDetails() {
       <Modal isOpen={approveModalOpen} onClose={() => setApproveModalOpen(false)} title={`Approve LPO #${lpo.lpo_number}`}>
         <div className="space-y-5">
           <p className="text-sm text-on-surface-variant font-medium">
-            Approving this LPO will convert it to a picklist and assign it to a warehouse picker immediately.
+            Approving this LPO will convert it to a picklist and automatically assign it to the least loaded available warehouse picker.
           </p>
-          <div>
-            <label className="block text-sm font-bold text-on-surface mb-3">Picker Assignment</label>
-            <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => setAssignMode('auto')} className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${assignMode === 'auto' ? 'border-primary bg-primary/5' : 'border-outline-variant hover:border-primary/30'}`}>
-                <Zap className={`w-6 h-6 ${assignMode === 'auto' ? 'text-primary' : 'text-slate-400'}`} />
-                <span className="text-sm font-bold">Auto Assign</span>
-                <span className="text-xs text-on-surface-variant text-center">Round-robin to least loaded</span>
-              </button>
-              <button onClick={() => setAssignMode('manual')} className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${assignMode === 'manual' ? 'border-primary bg-primary/5' : 'border-outline-variant hover:border-primary/30'}`}>
-                <Users className={`w-6 h-6 ${assignMode === 'manual' ? 'text-primary' : 'text-slate-400'}`} />
-                <span className="text-sm font-bold">Manual Assign</span>
-                <span className="text-xs text-on-surface-variant text-center">Choose a specific picker</span>
-              </button>
-            </div>
-          </div>
-          {assignMode === 'manual' && (
-            <div>
-              <label className="block text-sm font-bold text-on-surface mb-2">Select Picker</label>
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                {pickers.length === 0 ? (
-                  <div className="text-sm text-amber-700 bg-amber-50 rounded-xl p-4 font-medium text-center">No active pickers available</div>
-                ) : (
-                  pickers.map((p) => (
-                    <button key={p.id} onClick={() => setSelectedPickerId(p.id)} className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${selectedPickerId === p.id ? 'border-primary bg-primary/5' : 'border-outline-variant hover:border-primary/40'}`}>
-                      <div className="w-9 h-9 rounded-lg bg-primary-container flex items-center justify-center"><Users className="w-4 h-4 text-white" /></div>
-                      <div>
-                        <div className="text-sm font-bold text-on-surface">{p.full_name || p.email}</div>
-                        <div className="text-xs text-on-surface-variant capitalize">{p.role}</div>
-                      </div>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
           <div className="flex justify-end gap-3 pt-2 border-t border-outline-variant">
             <Button variant="secondary" onClick={() => setApproveModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleApprove} disabled={isApproving || (assignMode === 'manual' && !selectedPickerId)} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
-              {isApproving ? 'Approving...' : 'Approve & Assign'}
+            <Button onClick={handleApprove} disabled={isApproving} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
+              {isApproving ? 'Approving...' : 'Approve & Auto-Assign'}
             </Button>
           </div>
         </div>

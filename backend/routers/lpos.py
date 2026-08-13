@@ -310,22 +310,21 @@ async def approve_lpo(
         if not picker.is_available:
             raise HTTPException(status_code=400, detail="Picker is not available")
     else:
-        # Auto: least-loaded available picker
+        import random
+        # Auto: least-loaded active picker
         from sqlalchemy import func as sa_func
-        # Lock available pickers to serialize concurrent assignments and prevent dogpiling
+        # Lock active pickers to serialize concurrent assignments and prevent dogpiling
         pickers_res = await db.execute(
             select(User).filter(
                 User.role == "picker",
                 User.is_active == True,
-                User.is_available == True,
             ).with_for_update()
         )
         all_pickers = pickers_res.scalars().all()
         if not all_pickers:
-            raise HTTPException(status_code=400, detail="No available pickers right now")
+            raise HTTPException(status_code=400, detail="No active pickers right now")
 
-        best = None
-        best_count = 999_999
+        picker_counts = []
         for p in all_pickers:
             cnt_res = await db.execute(
                 select(sa_func.count(PickAssignment.id))
@@ -336,10 +335,11 @@ async def approve_lpo(
                 )
             )
             cnt = cnt_res.scalar() or 0
-            if cnt < best_count:
-                best_count = cnt
-                best = p
-        picker = best
+            picker_counts.append((p, cnt))
+            
+        min_count = min(cnt for _, cnt in picker_counts)
+        best_pickers = [p for p, cnt in picker_counts if cnt == min_count]
+        picker = random.choice(best_pickers)
 
     if picker:
         assignment = PickAssignment(
@@ -349,7 +349,6 @@ async def approve_lpo(
         )
         db.add(assignment)
         db_picklist.status = "assigned"
-        picker.is_available = False
 
         db.add(Notification(
             user_id=picker.id,

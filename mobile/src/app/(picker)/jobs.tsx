@@ -63,11 +63,11 @@ export default function JobsScreen() {
     }, [])
   );
 
-  const onRefresh = useCallback(async () => {
+  const onRefresh = async () => {
     setRefreshing(true);
     await fetchAssignedJobs();
     setRefreshing(false);
-  }, []);
+  };
 
   const displayedJobs = jobs.filter(j =>
     j.orderId.toLowerCase().includes(searchQuery.toLowerCase()) ||

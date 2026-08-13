@@ -34,11 +34,11 @@ export default function AlertsScreen() {
     fetchNotifications();
   }, []);
 
-  const onRefresh = useCallback(async () => {
+  const onRefresh = async () => {
     setRefreshing(true);
     await fetchNotifications();
     setRefreshing(false);
-  }, []);
+  };
 
   const handleSimulateAlert = async () => {
     setIsRinging(true);

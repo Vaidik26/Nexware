@@ -1,6 +1,6 @@
 import '../../global.css';
 import { useEffect, useState } from 'react';
-import { Slot, useRouter, useSegments } from 'expo-router';
+import { Slot, useRouter, useSegments, SplashScreen } from 'expo-router';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { View, ActivityIndicator } from 'react-native';
 import { getToken, getPickerInfo } from '../lib/session';
@@ -8,6 +8,9 @@ import { useAuthStore } from '../store/authStore';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const queryClient = new QueryClient();
+
+// Keep the splash screen visible while we fetch resources
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -19,19 +22,13 @@ export default function RootLayout() {
   });
 
   const [isReady, setIsReady] = useState(false);
-  const [forceRender, setForceRender] = useState(false);
   const router = useRouter();
   const segments = useSegments();
   const { isAuthenticated, setAuthenticated, setPicker } = useAuthStore();
 
-  // Safety valve: prevent infinite loading spinner if font downloading or SecureStore stalls
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      setForceRender(true);
-      setIsReady(true);
-    }, 1500);
-    return () => clearTimeout(timeout);
-  }, []);
+  // We only use the safety valve for the session restore, not for fonts.
+  // We MUST wait for fontsLoaded to be true before rendering to avoid font warnings.
+  const canRender = (fontsLoaded || fontError) && isReady;
 
   useEffect(() => {
     let isMounted = true;
@@ -62,8 +59,6 @@ export default function RootLayout() {
     return () => { isMounted = false; };
   }, []);
 
-  const canRender = (fontsLoaded || fontError || forceRender) && isReady;
-
   useEffect(() => {
     if (!canRender) return;
 
@@ -84,12 +79,14 @@ export default function RootLayout() {
     }
   }, [isAuthenticated, canRender, segments]);
 
+  useEffect(() => {
+    if (canRender) {
+      SplashScreen.hideAsync();
+    }
+  }, [canRender]);
+
   if (!canRender) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000806' }}>
-        <ActivityIndicator size="large" color="#10b981" />
-      </View>
-    );
+    return null; // Return null to keep splash screen visible, instead of ActivityIndicator
   }
 
   return (
