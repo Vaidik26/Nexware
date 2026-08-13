@@ -203,8 +203,8 @@ export default function SalesCatalogue() {
   const columns = [
     { header: 'Item Number / SKU', accessor: 'item_number' as const, className: 'font-semibold text-primary' },
     { header: 'Item Name / Product', accessor: (r: any) => r.item_name || r.name || '-' },
-    { header: 'Barcode (Carton)', accessor: 'primary_barcode' as const, className: 'font-mono text-xs font-semibold bg-slate-100 px-2 py-1 rounded w-fit' },
-    { header: 'Barcode (Loose)', accessor: (r: any) => r.secondary_barcode ? <span className="font-mono text-xs font-semibold bg-slate-100 px-2 py-1 rounded">{r.secondary_barcode}</span> : '-' },
+    { header: 'Primary Barcode', accessor: 'primary_barcode' as const, className: 'font-mono text-xs font-semibold bg-slate-100 px-2 py-1 rounded w-fit' },
+    { header: 'Secondary Barcode', accessor: (r: any) => r.secondary_barcode ? <span className="font-mono text-xs font-semibold bg-slate-100 px-2 py-1 rounded">{r.secondary_barcode}</span> : '-' },
     { header: 'Bin Location', accessor: (r: any) => r.bin_location || '-' },
     { header: 'SKU Size', accessor: (r: any) => r.sku_size_category || '-' },
     { header: 'Available Qty', accessor: (r: any) => (
@@ -316,8 +316,8 @@ export default function SalesCatalogue() {
             <Input label="Item Name / Title" placeholder="e.g. Premium Steel Wire" {...register('item_name')} error={errors.item_name?.message} />
             
             <div className="grid grid-cols-2 gap-4">
-              <Input label="Primary Barcode (Carton)" placeholder="e.g. 629400..." {...register('primary_barcode')} error={errors.primary_barcode?.message} />
-              <Input label="Secondary Barcode (Loose)" placeholder="Optional" {...register('secondary_barcode')} error={errors.secondary_barcode?.message} />
+              <Input label="Primary Barcode" placeholder="e.g. 629400..." {...register('primary_barcode')} error={errors.primary_barcode?.message} />
+              <Input label="Secondary Barcode" placeholder="Optional" {...register('secondary_barcode')} error={errors.secondary_barcode?.message} />
             </div>
             
             <div className="grid grid-cols-2 gap-4">
