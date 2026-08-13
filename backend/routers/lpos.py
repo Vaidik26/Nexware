@@ -281,8 +281,8 @@ async def approve_lpo(
     await db.flush()
 
     all_barcodes = [item.get("barcode", "N/A") for item in lpo.items]
-    cat_res = await db.execute(select(SalesItem).filter(SalesItem.barcode.in_(all_barcodes)))
-    cat_map = {ci.barcode: ci for ci in cat_res.scalars().all()}
+    cat_res = await db.execute(select(SalesItem).filter(SalesItem.primary_barcode.in_(all_barcodes)))
+    cat_map = {ci.primary_barcode: ci for ci in cat_res.scalars().all()}
 
     for item in lpo.items:
         bc = item.get("barcode", "N/A")

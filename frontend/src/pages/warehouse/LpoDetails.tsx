@@ -409,7 +409,7 @@ export default function LpoDetails() {
           <div className="flex justify-end gap-3 pt-2 border-t border-outline-variant">
             <Button variant="secondary" onClick={() => setApproveModalOpen(false)}>Cancel</Button>
             <Button onClick={handleApprove} disabled={isApproving} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
-              {isApproving ? 'Approving...' : 'Approve & Auto-Assign'}
+              {isApproving ? 'Approving...' : 'Approve'}
             </Button>
           </div>
         </div>
