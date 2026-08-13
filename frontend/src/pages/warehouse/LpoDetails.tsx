@@ -6,7 +6,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import {
   UploadCloud, ExternalLink, CheckCircle, XCircle,
-  Users, Zap, Package2, RefreshCw, Trash2, ArrowLeft,
+  Package2, RefreshCw, Trash2, ArrowLeft,
   ChevronLeft, ChevronRight, FileText
 } from 'lucide-react';
 
@@ -31,13 +31,6 @@ interface LPO {
   created_at: string | null;
 }
 
-interface Picker {
-  id: number;
-  full_name: string;
-  email: string;
-  role: string;
-}
-
 const ITEMS_PER_PAGE = 10;
 
 export default function LpoDetails() {
@@ -45,7 +38,6 @@ export default function LpoDetails() {
   const navigate = useNavigate();
   
   const [lpo, setLpo] = useState<LPO | null>(null);
-  const [pickers, setPickers] = useState<Picker[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
 
@@ -54,8 +46,6 @@ export default function LpoDetails() {
 
   // Modals
   const [approveModalOpen, setApproveModalOpen] = useState(false);
-  const [assignMode, setAssignMode] = useState<'auto' | 'manual'>('auto');
-  const [selectedPickerId, setSelectedPickerId] = useState<number | null>(null);
   const [isApproving, setIsApproving] = useState(false);
 
   const [disapproveModalOpen, setDisapproveModalOpen] = useState(false);
@@ -72,12 +62,8 @@ export default function LpoDetails() {
     if (!id) return;
     try {
       setLoading(true);
-      const [lpoRes, usersRes] = await Promise.all([
-        api.get(`/lpos/${id}`),
-        api.get('/users').catch(() => ({ data: [] })),
-      ]);
+      const lpoRes = await api.get(`/lpos/${id}`);
       setLpo(lpoRes.data);
-      setPickers((usersRes.data || []).filter((u: any) => u.role === 'picker'));
     } catch (err: any) {
       toast.error('Failed to load LPO details');
       navigate('/warehouse/lpos');
@@ -214,8 +200,6 @@ export default function LpoDetails() {
             <>
               <button
                 onClick={() => {
-                  setAssignMode('auto');
-                  setSelectedPickerId(pickers[0]?.id || null);
                   setApproveModalOpen(true);
                 }}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors shadow-sm"
@@ -234,8 +218,6 @@ export default function LpoDetails() {
           {lpo.status === 'disapproved' && (
             <button
               onClick={() => {
-                setAssignMode('auto');
-                setSelectedPickerId(pickers[0]?.id || null);
                 setApproveModalOpen(true);
               }}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors"
