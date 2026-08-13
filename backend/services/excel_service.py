@@ -86,8 +86,9 @@ def generate_branded_picklist_excel(items_list: Any) -> bytes:
     
     # Row 2: Date Generated Tag (Merged A2:F2)
     ws.merge_cells("A2:F2")
+    customer_name = getattr(items_list, 'customer_name', '') if not isinstance(items_list, (dict, list)) else (items_list.get('customer_name', '') if isinstance(items_list, dict) else '')
     date_cell = ws["A2"]
-    date_cell.value = f"Date Generated: {datetime.now().strftime('%B %d, %Y')}"
+    date_cell.value = f"Customer: {customer_name or 'N/A'} | Date Generated: {datetime.now().strftime('%B %d, %Y')}"
     date_cell.font = Font(name="Arial", size=11, bold=True, italic=True, color="333333")
     date_cell.fill = PatternFill(start_color="E8F2EC", end_color="E8F2EC", fill_type="solid")
     date_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)

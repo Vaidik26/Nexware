@@ -12,8 +12,14 @@ def generate_picklist_pdf(picklist_data, items_data=None):
     elements = []
     styles = getSampleStyleSheet()
     
-    # Header without Order Reference or Partner Customer details
+    # Header with Partner Customer details
     elements.append(Paragraph("<b>NEXWARE WAREHOUSE FLOOR PICK LIST</b>", styles['Title']))
+    
+    customer = getattr(picklist_data, 'customer_name', '') if not isinstance(picklist_data, dict) else picklist_data.get('customer_name', '')
+    if customer:
+        elements.append(Spacer(1, 8))
+        elements.append(Paragraph(f"<b>Customer:</b> {customer}", styles['Normal']))
+        
     elements.append(Spacer(1, 15))
     
     pl_status = getattr(picklist_data, 'status', '') if not isinstance(picklist_data, dict) else picklist_data.get('status', '')
