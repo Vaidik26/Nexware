@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # CORS — comma-separated list of allowed origins (no wildcards in production)
     # -------------------------------------------------------------------------
-    ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000,http://localhost:8081"
+    ALLOWED_ORIGINS: str = "https://nexware.vercel.app,http://localhost:5173,http://localhost:3000,http://localhost:8081"
 
     # -------------------------------------------------------------------------
     # Push Notifications (Expo)
