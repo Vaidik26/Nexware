@@ -37,11 +37,19 @@ export default function JobsScreen() {
       const picked = items.filter((i: any) => i.is_picked).length || 0;
       const jobNum = p.picker_job_number;
       const label = jobNum ? `P-${String(jobNum).padStart(3, '0')}` : `P-${String(p.id).padStart(3, '0')}`;
+      const bins = items.map((i: any) => i.bin_location).filter(Boolean).sort();
+      const startBin = bins.length > 0 ? bins[0] : 'N/A';
+      const endBin = bins.length > 0 ? bins[bins.length - 1] : startBin;
+
       return {
        id: String(p.id),
        orderId: label,
+       orderNumber: p.order_number,
+       customerName: p.customer_name,
        priority: p.priority || 'ACTIVE',
        zone: p.zone || 'Warehouse Floor',
+       startBin,
+       endBin,
        totalItems: total,
        pickedItems: picked,
        status: p.status === 'picking' ? 'in_progress' : 'pending'

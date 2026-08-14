@@ -225,7 +225,7 @@ async def create_lpo(
     db_lpo = Lpo(
         lpo_number=lpo_number,
         customer_name=lpo.customer_name,
-        sales_person_id=lpo.sales_person_id,
+        sales_person_id=lpo.sales_person_id or (current_user.id if current_user else None),
         items=[item.model_dump() for item in lpo.items],
         delivery_date=lpo.delivery_date,
         status=initial_status,

@@ -210,6 +210,11 @@ export default function LpoCreateScreen() {
     });
    }
 
+   if (selectedLpoFile) {
+    Alert.alert('✅ Success', 'LPO Document uploaded successfully!');
+   } else {
+    Alert.alert('✅ Success', 'Order saved successfully!');
+   }
    setIsConfirmed(true);
    
   } catch (err: any) {
@@ -663,7 +668,10 @@ export default function LpoCreateScreen() {
           className="w-full p-4 rounded-xl bg-[#003527] items-center justify-center flex-row gap-2"
          >
           {isGenerating ? (
-           <ActivityIndicator color="white" />
+           <>
+            <ActivityIndicator color="white" />
+            <Text className="font-bold text-white text-base ml-2">{selectedLpoFile ? 'Uploading...' : 'Saving...'}</Text>
+           </>
           ) : (
             <Text className="font-bold text-white text-base">
               {selectedLpoFile ? '✅ Confirm Order' : '💾 Save Order'}

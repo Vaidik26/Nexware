@@ -225,9 +225,10 @@ export default function JobDetailScreen() {
      <ArrowLeft size={24} color="#0b1c30" />
     </TouchableOpacity>
     <View className="flex-1">
-     <Text className="text-lg font-bold text-onSurface ">{jobLabel}</Text>
+     <Text className="text-lg font-bold text-onSurface mb-0.5">{picklistInfo?.order_number || jobLabel}</Text>
+     <Text className="text-sm text-gray-700 font-medium mb-1" numberOfLines={1}>{picklistInfo?.customer_name || 'Loading Customer...'}</Text>
      <Text className="text-xs text-gray-500 ">
-      {items.length} Items • {pickedCount} Picked
+      {items.length} Items • {pickedCount} Picked • Seq: {jobLabel}
      </Text>
     </View>
    </View>

@@ -42,11 +42,13 @@ export default function JobCard({ job, index }: { job: any, index: number }) {
         {job.priority}
        </Text>
       </View>
-      <Text className="text-sm font-medium text-gray-500 ">{job.zone}</Text>
+      <Text className="text-sm font-medium text-gray-500 max-w-[60%]" numberOfLines={1}>{job.customerName}</Text>
      </View>
      
-     <Text className="text-lg font-bold text-onSurface mb-1">{job.orderId}</Text>
-     <Text className="text-sm text-gray-600 mb-4">{job.totalItems} Items • Aisle 4-6</Text>
+     <Text className="text-lg font-bold text-onSurface mb-1">{job.orderNumber} (Seq: {job.orderId})</Text>
+     <Text className="text-sm text-gray-600 mb-4">
+       {job.totalItems} Items • Bin: {job.startBin === job.endBin ? job.startBin : `${job.startBin} ➔ ${job.endBin}`}
+     </Text>
      
      <View className="flex-row items-center justify-between">
       <View className="flex-1 mr-4">

@@ -43,6 +43,7 @@ class PickListBoxOut(PickListBoxBase):
 class PickListOut(PickListBase):
     id: int
     sales_order_id: Optional[int]
+    sales_person_id: Optional[int] = None
     picker_job_number: Optional[int] = None
     assigned_picker_id: Optional[int] = None
     assigned_picker_name: Optional[str] = None

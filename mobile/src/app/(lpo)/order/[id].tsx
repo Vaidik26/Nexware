@@ -236,14 +236,7 @@ export default function LpoOrderDetailsScreen() {
  };
 
  const handleUploadClick = () => {
-  Alert.alert(
-   'Confirm Upload',
-   'Are you sure you want to attach the signed LPO? Once attached, the order will be confirmed and cannot be edited further.',
-   [
-    { text: 'Cancel', style: 'cancel' },
-    { text: 'Proceed', style: 'destructive', onPress: () => showUploadOptions() }
-   ]
-  );
+  showUploadOptions();
  };
 
  const showUploadOptions = () => {
@@ -430,10 +423,20 @@ export default function LpoOrderDetailsScreen() {
          
          <TouchableOpacity 
           onPress={handleUploadClick}
-          className="bg-[#003527] py-4 rounded-2xl flex-row items-center justify-center shadow-sm"
+          disabled={isUploading}
+          className={`bg-[#003527] py-4 rounded-2xl flex-row items-center justify-center shadow-sm ${isUploading ? 'opacity-75' : ''}`}
          >
-          <UploadCloud size={18} color="#fff" />
-          <Text className="text-white font-black text-base ml-2">Upload Signed PDF</Text>
+          {isUploading ? (
+           <>
+            <ActivityIndicator color="#fff" />
+            <Text className="text-white font-black text-base ml-2">Uploading...</Text>
+           </>
+          ) : (
+           <>
+            <UploadCloud size={18} color="#fff" />
+            <Text className="text-white font-black text-base ml-2">Upload Signed PDF</Text>
+           </>
+          )}
          </TouchableOpacity>
         </View>
        )}
