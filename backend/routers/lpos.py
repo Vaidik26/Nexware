@@ -126,14 +126,33 @@ async def process_lpo_auto_assign(db: AsyncSession, lpo: Lpo, background_tasks: 
     for item in lpo.items:
         bc = item.get("barcode", "N/A")
         cat_item = cat_map.get(bc)
-        db.add(PickListItem(
-            pick_list_id=db_picklist.id,
-            barcode=bc,
-            product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
-            quantity=item.get("quantity", 1),
-            unit=item.get("unit", "PCS"),
-            bin_location=cat_item.bin_location if cat_item else None,
-        ))
+        qty = item.get("quantity", 1)
+        scq = cat_item.standard_carton_quantity if cat_item and cat_item.standard_carton_quantity else 1
+        
+        full_cartons = int(qty // scq) if scq > 0 else 0
+        loose_pieces = qty % scq if scq > 0 else qty
+
+        if full_cartons > 0:
+            db.add(PickListItem(
+                pick_list_id=db_picklist.id,
+                barcode=bc,
+                product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
+                quantity=full_cartons,
+                unit="Carton",
+                is_full_carton=True,
+                bin_location=cat_item.bin_location if cat_item else None,
+            ))
+            
+        if loose_pieces > 0 or full_cartons == 0:
+            db.add(PickListItem(
+                pick_list_id=db_picklist.id,
+                barcode=bc,
+                product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
+                quantity=loose_pieces,
+                unit=item.get("unit", "PCS") if item.get("unit", "PCS") != "Carton" else "PCS",
+                is_full_carton=False,
+                bin_location=cat_item.bin_location if cat_item else None,
+            ))
 
     # Auto: least-loaded active picker
     pickers_res = await db.execute(
@@ -435,14 +454,33 @@ async def approve_lpo(
     for item in lpo.items:
         bc = item.get("barcode", "N/A")
         cat_item = cat_map.get(bc)
-        db.add(PickListItem(
-            pick_list_id=db_picklist.id,
-            barcode=bc,
-            product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
-            quantity=item.get("quantity", 1),
-            unit=item.get("unit", "PCS"),
-            bin_location=cat_item.bin_location if cat_item else None,
-        ))
+        qty = item.get("quantity", 1)
+        scq = cat_item.standard_carton_quantity if cat_item and cat_item.standard_carton_quantity else 1
+        
+        full_cartons = int(qty // scq) if scq > 0 else 0
+        loose_pieces = qty % scq if scq > 0 else qty
+
+        if full_cartons > 0:
+            db.add(PickListItem(
+                pick_list_id=db_picklist.id,
+                barcode=bc,
+                product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
+                quantity=full_cartons,
+                unit="Carton",
+                is_full_carton=True,
+                bin_location=cat_item.bin_location if cat_item else None,
+            ))
+            
+        if loose_pieces > 0 or full_cartons == 0:
+            db.add(PickListItem(
+                pick_list_id=db_picklist.id,
+                barcode=bc,
+                product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
+                quantity=loose_pieces,
+                unit=item.get("unit", "PCS") if item.get("unit", "PCS") != "Carton" else "PCS",
+                is_full_carton=False,
+                bin_location=cat_item.bin_location if cat_item else None,
+            ))
 
     # ── Assign picker ────────────────────────────────────────────────────────
     picker = None
@@ -578,15 +616,35 @@ async def convert_lpo_to_picklist(
     for item in lpo.items:
         bc = item.get("barcode", "N/A")
         cat_item = cat_map.get(bc)
-        db.add(PickListItem(
-            pick_list_id=db_picklist.id,
-            barcode=bc,
-            product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
-            quantity=item.get("quantity", 1),
-            unit=item.get("unit", "EA"),
-            bin_location=cat_item.bin_location if cat_item else None,
-        ))
-        verified_count += 1
+        qty = item.get("quantity", 1)
+        scq = cat_item.standard_carton_quantity if cat_item and cat_item.standard_carton_quantity else 1
+        
+        full_cartons = int(qty // scq) if scq > 0 else 0
+        loose_pieces = qty % scq if scq > 0 else qty
+
+        if full_cartons > 0:
+            db.add(PickListItem(
+                pick_list_id=db_picklist.id,
+                barcode=bc,
+                product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
+                quantity=full_cartons,
+                unit="Carton",
+                is_full_carton=True,
+                bin_location=cat_item.bin_location if cat_item else None,
+            ))
+            verified_count += 1
+            
+        if loose_pieces > 0 or full_cartons == 0:
+            db.add(PickListItem(
+                pick_list_id=db_picklist.id,
+                barcode=bc,
+                product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
+                quantity=loose_pieces,
+                unit=item.get("unit", "EA") if item.get("unit", "EA") != "Carton" else "PCS",
+                is_full_carton=False,
+                bin_location=cat_item.bin_location if cat_item else None,
+            ))
+            verified_count += 1
 
     lpo.status = "processed"
     await db.commit()
