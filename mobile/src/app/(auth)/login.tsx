@@ -74,18 +74,18 @@ export default function LoginScreen() {
                 </Svg>
               </View>
               <View>
-                <Text className="text-4xl font-extrabold text-white tracking-tight font-inter">
+                <Text className="text-4xl font-extrabold text-white tracking-tight font-sans">
                   NexWare
                 </Text>
                 <View className="bg-emerald-500/20 border border-emerald-400/30 px-2.5 py-0.5 rounded-full self-start mt-1">
-                  <Text className="text-[11px] font-bold text-emerald-300 uppercase tracking-widest font-inter">
+                  <Text className="text-[11px] font-bold text-emerald-300 uppercase tracking-widest font-sans">
                     Mobile Terminal
                   </Text>
                 </View>
               </View>
             </View>
 
-            <Text className="text-sm text-emerald-100/70 text-center max-w-xs font-inter leading-relaxed">
+            <Text className="text-sm text-emerald-100/70 text-center max-w-xs font-sans leading-relaxed">
               Next-Gen Supply & Warehouse Intelligence. Fast touch-tick picking & live synchronization.
             </Text>
           </View>
@@ -94,49 +94,49 @@ export default function LoginScreen() {
           <View className="flex-row justify-between mb-8 px-1">
             <View className="flex-1 bg-[#001712] border border-emerald-500/20 rounded-2xl p-3 mr-2 items-center shadow-sm">
               <Box color="#34d399" size={20} className="mb-1" />
-              <Text className="text-[11px] font-bold text-slate-200 font-inter">Smart Paths</Text>
-              <Text className="text-[9px] text-slate-400 text-center font-inter mt-0.5">Optimized routing</Text>
+              <Text className="text-[11px] font-bold text-slate-200 font-sans">Smart Paths</Text>
+              <Text className="text-[9px] text-slate-400 text-center font-sans mt-0.5">Optimized routing</Text>
             </View>
 
             <View className="flex-1 bg-[#001712] border border-emerald-500/20 rounded-2xl p-3 mx-1 items-center shadow-sm">
               <Bell color="#10b981" size={20} className="mb-1" />
-              <Text className="text-[11px] font-bold text-slate-200 font-inter">Live Bells</Text>
-              <Text className="text-[9px] text-slate-400 text-center font-inter mt-0.5">Instant alarm feed</Text>
+              <Text className="text-[11px] font-bold text-slate-200 font-sans">Live Bells</Text>
+              <Text className="text-[9px] text-slate-400 text-center font-sans mt-0.5">Instant alarm feed</Text>
             </View>
 
             <View className="flex-1 bg-[#001712] border border-emerald-500/20 rounded-2xl p-3 ml-2 items-center shadow-sm">
               <ShieldCheck color="#6ee7b7" size={20} className="mb-1" />
-              <Text className="text-[11px] font-bold text-slate-200 font-inter">Touch Tick</Text>
-              <Text className="text-[9px] text-slate-400 text-center font-inter mt-0.5">Zero scan variance</Text>
+              <Text className="text-[11px] font-bold text-slate-200 font-sans">Touch Tick</Text>
+              <Text className="text-[9px] text-slate-400 text-center font-sans mt-0.5">Zero scan variance</Text>
             </View>
           </View>
 
           {/* Sexy Glassmorphic Login Card */}
           <View className="bg-[#001712]/95 border border-emerald-500/30 rounded-[28px] p-7 shadow-2xl">
             <View className="mb-6">
-              <Text className="text-2xl font-extrabold text-white tracking-tight font-inter">
+              <Text className="text-2xl font-extrabold text-white tracking-tight font-sans">
                 Welcome back
               </Text>
-              <Text className="text-xs text-slate-300 font-inter mt-1">
+              <Text className="text-xs text-slate-300 font-sans mt-1">
                 Sign in with your enterprise credentials to unlock floor tasks.
               </Text>
             </View>
 
             {error ? (
               <View className="bg-red-950/60 p-3.5 rounded-2xl mb-5 border border-red-500/40 flex-row items-center">
-                <Text className="text-red-300 text-xs font-semibold font-inter flex-1">{error}</Text>
+                <Text className="text-red-300 text-xs font-semibold font-sans flex-1">{error}</Text>
               </View>
             ) : null}
 
             <View className="space-y-4 mb-6">
               <View>
-                <Text className="text-xs font-bold text-emerald-300/90 uppercase tracking-wider mb-2 font-inter">
+                <Text className="text-xs font-bold text-emerald-300/90 uppercase tracking-wider mb-2 font-sans">
                   Email or Username
                 </Text>
                 <View className="flex-row items-center bg-[#000d0a] border border-emerald-500/40 rounded-2xl px-4 h-14 shadow-inner">
                   <User color="#10b981" size={19} />
                   <TextInput
-                    className="flex-1 ml-3.5 font-inter text-sm font-semibold text-white"
+                    className="flex-1 ml-3.5 font-sans text-sm font-semibold text-white"
                     placeholder="picker@nexware.com"
                     placeholderTextColor="#475569"
                     autoCapitalize="none"
@@ -148,13 +148,13 @@ export default function LoginScreen() {
               </View>
 
               <View className="mt-4">
-                <Text className="text-xs font-bold text-emerald-300/90 uppercase tracking-wider mb-2 font-inter">
+                <Text className="text-xs font-bold text-emerald-300/90 uppercase tracking-wider mb-2 font-sans">
                   Password
                 </Text>
                 <View className="flex-row items-center bg-[#000d0a] border border-emerald-500/40 rounded-2xl px-4 h-14 shadow-inner">
                   <Lock color="#10b981" size={19} />
                   <TextInput
-                    className="flex-1 ml-3.5 font-inter text-sm font-semibold text-white"
+                    className="flex-1 ml-3.5 font-sans text-sm font-semibold text-white"
                     placeholder="••••••••"
                     placeholderTextColor="#475569"
                     secureTextEntry={!showPassword}
@@ -177,7 +177,7 @@ export default function LoginScreen() {
                 <ActivityIndicator color="#ffffff" />
               ) : (
                 <>
-                  <Text className="text-white font-extrabold text-base font-inter mr-2">Sign In to Terminal</Text>
+                  <Text className="text-white font-extrabold text-base font-sans mr-2">Sign In to Terminal</Text>
                   <ArrowRight color="#ffffff" size={18} />
                 </>
               )}
@@ -186,10 +186,10 @@ export default function LoginScreen() {
 
           {/* Footer */}
           <View className="mt-8 items-center justify-center">
-            <Text className="text-[11px] font-medium text-emerald-400/60 font-inter">
+            <Text className="text-[11px] font-medium text-emerald-400/60 font-sans">
               © 2026 NexWare Enterprise • Secure Operations
             </Text>
-            <Text className="text-[10px] font-normal text-slate-500 font-inter mt-1">
+            <Text className="text-[10px] font-normal text-slate-500 font-sans mt-1">
               v1.0.0 (Touch-Tick Certified)
             </Text>
           </View>

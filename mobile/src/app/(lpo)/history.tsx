@@ -117,7 +117,7 @@ export default function LpoHistoryScreen() {
           <ChevronLeft size={20} color="#374151" />
         </TouchableOpacity>
         <View className="flex-1">
-          <Text className="text-xl font-black text-gray-800 font-inter">My Orders</Text>
+          <Text className="text-xl font-black text-gray-800 font-sans">My Orders</Text>
         </View>
         <TouchableOpacity onPress={() => setShowDatePicker(true)} className="p-2 bg-emerald-50 rounded-xl border border-emerald-100 flex-row items-center">
           <CalendarIcon size={16} color="#059669" />
@@ -202,7 +202,7 @@ export default function LpoHistoryScreen() {
             )}
             ListEmptyComponent={
               <View className="items-center justify-center py-12">
-                <Text className="text-gray-400 font-inter text-sm font-semibold">No orders found for this date.</Text>
+                <Text className="text-gray-400 font-sans text-sm font-semibold">No orders found for this date.</Text>
               </View>
             }
           />

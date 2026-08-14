@@ -87,8 +87,8 @@ export default function JobsScreen() {
             </Svg>
           </View>
           <View>
-            <Text className="text-xl font-inter font-extrabold text-[#003527] tracking-tight">NexWare</Text>
-            <Text className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest font-inter">Floor Terminal</Text>
+            <Text className="text-xl font-sans font-extrabold text-[#003527] tracking-tight">NexWare</Text>
+            <Text className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest font-sans">Floor Terminal</Text>
           </View>
         </View>
         <TouchableOpacity className="w-10 h-10 bg-[#003527] border border-emerald-400/30 rounded-full items-center justify-center shadow-sm">
@@ -101,7 +101,7 @@ export default function JobsScreen() {
         <View className="flex-1 flex-row items-center bg-white rounded-xl px-3.5 py-2 border border-gray-200 shadow-2xs">
           <Search size={18} color="#6b7280" />
           <TextInput
-            className="flex-1 ml-2.5 font-inter text-sm text-onSurface"
+            className="flex-1 ml-2.5 font-sans text-sm text-onSurface"
             placeholder="Search assigned picklists..."
             placeholderTextColor="#94a3b8"
             value={searchQuery}
@@ -118,10 +118,10 @@ export default function JobsScreen() {
         <View>
           <View className="flex-row items-center mb-1">
             <View className="w-2 h-2 rounded-full bg-emerald-500 mr-1.5" />
-            <Text className="text-[11px] font-bold text-emerald-700 font-inter tracking-wider uppercase">Live Floor Sync</Text>
+            <Text className="text-[11px] font-bold text-emerald-700 font-sans tracking-wider uppercase">Live Floor Sync</Text>
           </View>
-          <Text className="text-sm text-gray-500 font-inter">Active Assignment Completion</Text>
-          <Text className="text-xl font-extrabold text-[#0b1c30] mt-0.5 font-inter">
+          <Text className="text-sm text-gray-500 font-sans">Active Assignment Completion</Text>
+          <Text className="text-xl font-extrabold text-[#0b1c30] mt-0.5 font-sans">
             {jobs.filter(j => j.pickedItems > 0 && j.pickedItems === j.totalItems).length} / {jobs.length} Orders
           </Text>
         </View>
@@ -147,7 +147,7 @@ export default function JobsScreen() {
         )}
         ListEmptyComponent={
           <View className="items-center justify-center py-12">
-            <Text className="text-gray-500 font-inter text-sm">No active tasks assigned to this terminal.</Text>
+            <Text className="text-gray-500 font-sans text-sm">No active tasks assigned to this terminal.</Text>
           </View>
         }
       />

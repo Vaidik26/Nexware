@@ -26,41 +26,41 @@ export default function PickItemRow({ item, onScanStart, onMissing, onToggleCart
         
         <View className="flex-1">
           <View className="flex-row items-center mb-1 flex-wrap gap-y-1">
-            <Text className="text-xs font-semibold text-gray-500 font-inter bg-gray-100 px-2 py-0.5 rounded mr-2">
+            <Text className="text-xs font-semibold text-gray-500 font-sans bg-gray-100 px-2 py-0.5 rounded mr-2">
               SKU: {item.barcode}
             </Text>
             {item.bin_location && (
-              <Text className="text-xs font-bold text-amber-700 font-inter bg-amber-50 border border-amber-200 px-2 py-0.5 rounded mr-2 shadow-sm">
+              <Text className="text-xs font-bold text-amber-700 font-sans bg-amber-50 border border-amber-200 px-2 py-0.5 rounded mr-2 shadow-sm">
                 Bin: {item.bin_location}
               </Text>
             )}
             {item.is_full_carton ? (
               <View className="bg-purple-100 border border-purple-200 px-2 py-0.5 rounded mr-2 flex-row items-center shadow-sm">
                 <Box size={10} color="#7e22ce" style={{marginRight: 4}} />
-                <Text className="text-xs font-bold text-purple-700 font-inter">CARTON</Text>
+                <Text className="text-xs font-bold text-purple-700 font-sans">CARTON</Text>
               </View>
             ) : (
               <View className="bg-blue-50 border border-blue-200 px-2 py-0.5 rounded mr-2 flex-row items-center shadow-sm">
-                <Text className="text-xs font-bold text-blue-700 font-inter">LOOSE</Text>
+                <Text className="text-xs font-bold text-blue-700 font-sans">LOOSE</Text>
               </View>
             )}
             {item.picked ? (
-              <Text className="text-xs font-bold text-primary font-inter">✓ Picked</Text>
+              <Text className="text-xs font-bold text-primary font-sans">✓ Picked</Text>
             ) : isMissing ? (
-              <Text className="text-xs font-bold text-red-600 font-inter">Reported Missing</Text>
+              <Text className="text-xs font-bold text-red-600 font-sans">Reported Missing</Text>
             ) : (
-              <Text className="text-xs font-medium text-gray-500 font-inter">Pending Scan</Text>
+              <Text className="text-xs font-medium text-gray-500 font-sans">Pending Scan</Text>
             )}
           </View>
-          <Text className={`text-base font-inter mt-1 ${item.picked ? 'line-through text-gray-500 font-medium' : 'font-bold text-onSurface'}`}>
+          <Text className={`text-base font-sans mt-1 ${item.picked ? 'line-through text-gray-500 font-medium' : 'font-bold text-onSurface'}`}>
             {item.name}
           </Text>
         </View>
         <View className="items-end ml-3 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
-          <Text className={`text-lg font-extrabold font-inter ${item.picked ? 'text-primary' : 'text-onSurface'}`}>
+          <Text className={`text-lg font-extrabold font-sans ${item.picked ? 'text-primary' : 'text-onSurface'}`}>
             {item.picked ? `${item.picked_qty} / ${item.qty}` : item.qty}
           </Text>
-          <Text className="text-xs font-bold text-gray-500 font-inter">{item.uom}</Text>
+          <Text className="text-xs font-bold text-gray-500 font-sans">{item.uom}</Text>
         </View>
       </View>
       {!item.picked && !isMissing && !disabled && (

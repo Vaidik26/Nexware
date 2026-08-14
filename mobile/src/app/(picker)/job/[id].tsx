@@ -225,8 +225,8 @@ export default function JobDetailScreen() {
           <ArrowLeft size={24} color="#0b1c30" />
         </TouchableOpacity>
         <View className="flex-1">
-          <Text className="text-lg font-bold text-onSurface font-inter">{jobLabel}</Text>
-          <Text className="text-xs text-gray-500 font-inter">
+          <Text className="text-lg font-bold text-onSurface font-sans">{jobLabel}</Text>
+          <Text className="text-xs text-gray-500 font-sans">
             {items.length} Items • {pickedCount} Picked
           </Text>
         </View>
@@ -238,7 +238,7 @@ export default function JobDetailScreen() {
       {isLoading ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="#006c49" />
-          <Text className="text-gray-500 font-inter text-sm mt-3">Loading items...</Text>
+          <Text className="text-gray-500 font-sans text-sm mt-3">Loading items...</Text>
         </View>
       ) : (
         <FlatList
@@ -261,7 +261,7 @@ export default function JobDetailScreen() {
           )}
           ListEmptyComponent={
             <View className="items-center justify-center py-12">
-              <Text className="text-gray-500 font-inter text-sm">No items found for this job.</Text>
+              <Text className="text-gray-500 font-sans text-sm">No items found for this job.</Text>
             </View>
           }
         />
@@ -270,13 +270,13 @@ export default function JobDetailScreen() {
       {/* Bottom Bar */}
       <View className="absolute bottom-0 left-0 right-0 bg-white p-4 border-t border-gray-200 shadow-lg flex-row items-center justify-between">
         <View>
-          <Text className="text-sm text-gray-500 font-inter">Progress</Text>
-          <Text className="text-lg font-bold text-onSurface font-inter">{pickedCount} / {items.length} Picked</Text>
+          <Text className="text-sm text-gray-500 font-sans">Progress</Text>
+          <Text className="text-lg font-bold text-onSurface font-sans">{pickedCount} / {items.length} Picked</Text>
         </View>
         {isSubmitted ? (
           <View className="bg-emerald-100 border border-emerald-300 px-4 py-3 rounded-xl flex-row items-center">
             <CheckCircle size={18} color="#006c49" />
-            <Text className="font-extrabold text-[#006c49] ml-2 font-inter text-xs uppercase tracking-wide">
+            <Text className="font-extrabold text-[#006c49] ml-2 font-sans text-xs uppercase tracking-wide">
               Submitted • In Audit
             </Text>
           </View>
@@ -288,7 +288,7 @@ export default function JobDetailScreen() {
                 onPress={() => openBoxModal()}
               >
                 <Box size={20} color="#1d4ed8" />
-                <Text className="font-bold ml-2 font-inter text-blue-700">
+                <Text className="font-bold ml-2 font-sans text-blue-700">
                   Pack Box ({unboxedPickedCount})
                 </Text>
               </TouchableOpacity>
@@ -299,7 +299,7 @@ export default function JobDetailScreen() {
               onPress={handleComplete}
             >
               {isComplete && <CheckCircle2 size={20} color="white" />}
-              <Text className={`font-bold ml-2 font-inter ${isComplete ? 'text-white' : 'text-gray-400'}`}>
+              <Text className={`font-bold ml-2 font-sans ${isComplete ? 'text-white' : 'text-gray-400'}`}>
                 Complete Job
               </Text>
             </TouchableOpacity>
@@ -318,15 +318,15 @@ export default function JobDetailScreen() {
               </View>
             </View>
 
-            <Text className="text-lg font-extrabold text-[#003527] font-inter text-center mb-1">
+            <Text className="text-lg font-extrabold text-[#003527] font-sans text-center mb-1">
               Submit {jobLabel}?
             </Text>
-            <Text className="text-sm text-gray-500 font-inter text-center mb-5 leading-5">
+            <Text className="text-sm text-gray-500 font-sans text-center mb-5 leading-5">
               Confirm that all {items.length} items have been physically collected and verified from the warehouse floor.
             </Text>
 
             {submitError ? (
-              <Text className="text-xs text-red-600 font-inter text-center mb-3 bg-red-50 p-2 rounded-xl">
+              <Text className="text-xs text-red-600 font-sans text-center mb-3 bg-red-50 p-2 rounded-xl">
                 {submitError}
               </Text>
             ) : null}
@@ -339,7 +339,7 @@ export default function JobDetailScreen() {
               {isSubmitting ? (
                 <ActivityIndicator color="white" />
               ) : (
-                <Text className="text-white font-extrabold font-inter text-base">
+                <Text className="text-white font-extrabold font-sans text-base">
                   ✓ Confirm & Submit to Admin
                 </Text>
               )}
@@ -350,7 +350,7 @@ export default function JobDetailScreen() {
               onPress={() => { setShowConfirm(false); setSubmitError(''); }}
               disabled={isSubmitting}
             >
-              <Text className="text-gray-600 font-semibold font-inter">Go Back</Text>
+              <Text className="text-gray-600 font-semibold font-sans">Go Back</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -360,7 +360,7 @@ export default function JobDetailScreen() {
       <Modal visible={showBoxModal} transparent animationType="slide">
         <View className="flex-1 bg-black/50 justify-end">
           <View className="bg-white rounded-3xl p-6 w-full shadow-2xl">
-            <Text className="text-xl font-bold text-gray-800 mb-4 font-inter">Pack Loose Items</Text>
+            <Text className="text-xl font-bold text-gray-800 mb-4 font-sans">Pack Loose Items</Text>
             
             <View className="bg-emerald-50 rounded-xl p-4 mb-4 border border-emerald-100">
               <Text className="text-xs font-bold text-emerald-800 tracking-wider mb-1">WEIGHT GUIDELINES</Text>
@@ -384,7 +384,7 @@ export default function JobDetailScreen() {
 
             <Text className="text-sm font-semibold text-gray-500 mb-2">Measured Weight (kg)</Text>
             <TextInput
-              className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-6 font-inter text-base"
+              className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-6 font-sans text-base"
               placeholder="e.g. 5.5"
               keyboardType="decimal-pad"
               value={boxWeight}
@@ -416,10 +416,10 @@ export default function JobDetailScreen() {
             <View className="w-16 h-16 rounded-full bg-emerald-50 mb-4 items-center justify-center">
               <CheckCircle2 size={32} color="#10b981" />
             </View>
-            <Text className="text-xl font-extrabold text-onSurface mb-2 font-inter text-center">
+            <Text className="text-xl font-extrabold text-onSurface mb-2 font-sans text-center">
               Carton Label Generated
             </Text>
-            <Text className="text-sm text-gray-500 font-inter text-center mb-6">
+            <Text className="text-sm text-gray-500 font-sans text-center mb-6">
               Weight successfully verified. Print this label and apply it to the carton.
             </Text>
             
@@ -435,7 +435,7 @@ export default function JobDetailScreen() {
             </View>
 
             <View className="w-full bg-gray-50 p-4 rounded-xl mb-6">
-              <Text className="text-xs text-gray-500 font-inter text-center mb-1">DATA PAYLOAD</Text>
+              <Text className="text-xs text-gray-500 font-sans text-center mb-1">DATA PAYLOAD</Text>
               <Text className="text-xs text-gray-700 text-center" numberOfLines={3}>
                 {generatedQRData}
               </Text>
@@ -446,7 +446,7 @@ export default function JobDetailScreen() {
                 className="bg-gray-100 flex-1 py-3 rounded-xl border border-gray-200 items-center"
                 onPress={() => Share.share({ message: `Carton QR Data: ${generatedQRData}` })}
               >
-                <Text className="text-gray-700 font-bold font-inter text-sm">Share</Text>
+                <Text className="text-gray-700 font-bold font-sans text-sm">Share</Text>
               </TouchableOpacity>
             </View>
 
@@ -460,7 +460,7 @@ export default function JobDetailScreen() {
               {isSubmitting ? <ActivityIndicator color="white" /> : (
                 <>
                   <CheckCircle size={18} color="white" />
-                  <Text className="text-white font-bold text-base font-inter ml-2">Submit Order to Admin</Text>
+                  <Text className="text-white font-bold text-base font-sans ml-2">Submit Order to Admin</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -501,7 +501,7 @@ export default function JobDetailScreen() {
                 <View className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-6 flex-row items-center">
                   <Scan size={18} color="#6b7280" className="mr-2" />
                   <TextInput
-                    className="flex-1 font-inter text-base text-gray-800"
+                    className="flex-1 font-sans text-base text-gray-800"
                     placeholder="Enter barcode..."
                     value={scanInput}
                     onChangeText={setScanInput}
@@ -582,17 +582,17 @@ export default function JobDetailScreen() {
               <View className="w-16 h-16 bg-blue-100 rounded-full items-center justify-center mb-4">
                 <Box size={28} color="#2563eb" />
               </View>
-              <Text className="text-xl font-bold text-gray-900 font-inter text-center mb-1">
+              <Text className="text-xl font-bold text-gray-900 font-sans text-center mb-1">
                 Enter Picked Quantity
               </Text>
-              <Text className="text-sm text-gray-500 font-inter text-center">
+              <Text className="text-sm text-gray-500 font-sans text-center">
                 Requested: {qtyTargetItem?.qty} {qtyTargetItem?.uom}
               </Text>
             </View>
 
             <View className="flex-row items-center bg-gray-50 rounded-2xl border border-gray-200 px-4 py-3 mb-6">
               <TextInput
-                className="flex-1 font-inter text-lg text-center font-bold text-gray-800"
+                className="flex-1 font-sans text-lg text-center font-bold text-gray-800"
                 keyboardType="numeric"
                 value={qtyInput}
                 onChangeText={setQtyInput}

@@ -60,10 +60,13 @@ export default function LpoCreateScreen() {
   const [selectedLpoFile, setSelectedLpoFile] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Debounce search input
   useEffect(() => {
-    fetchCatalogue();
-    fetchCustomers();
-  }, []);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(customerSearch);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [customerSearch]);
 
   const fetchCatalogue = async () => {
     try {
@@ -74,18 +77,27 @@ export default function LpoCreateScreen() {
     }
   };
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = async (searchQuery: string = '') => {
     try {
-      const custRes = await api.get('/customers');
+      const endpoint = searchQuery ? `/customers?q=${encodeURIComponent(searchQuery)}` : '/customers';
+      const custRes = await api.get(endpoint);
       setCustomers(custRes.data || []);
     } catch (err) {
       console.log('Error fetching customers:', err);
     }
   };
 
+  useEffect(() => {
+    fetchCatalogue();
+  }, []);
+
+  useEffect(() => {
+    fetchCustomers(debouncedSearch);
+  }, [debouncedSearch]);
+
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchCatalogue(), fetchCustomers()]);
+    await Promise.all([fetchCatalogue(), fetchCustomers(debouncedSearch)]);
     setRefreshing(false);
   };
 
@@ -369,8 +381,8 @@ export default function LpoCreateScreen() {
       {/* Header */}
       <View className="px-4 py-3 bg-white border-b border-gray-200 flex-row justify-between items-center shadow-sm z-10">
         <View>
-          <Text className="text-xl font-black text-onSurface font-inter">Create Order</Text>
-          <Text className="text-xs text-primary font-bold font-inter mt-0.5">Welcome, {picker?.full_name}</Text>
+          <Text className="text-xl font-black text-onSurface font-sans">Create Order</Text>
+          <Text className="text-xs text-primary font-bold font-sans mt-0.5">Welcome, {picker?.full_name}</Text>
         </View>
         <View className="flex-row gap-2">
           <TouchableOpacity onPress={() => router.push('/history')} className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-100">
@@ -385,22 +397,22 @@ export default function LpoCreateScreen() {
       {/* Main Form */}
       <View className="flex-1 p-4">
         <View className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 mb-4">
-          <Text className="text-[11px] font-bold text-gray-500 mb-1 font-inter uppercase tracking-wider">Customer Name</Text>
+          <Text className="text-[11px] font-bold text-gray-500 mb-1 font-sans uppercase tracking-wider">Customer Name</Text>
           <TouchableOpacity 
             className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-3 flex-row items-center justify-between"
             onPress={() => setShowCustomerModal(true)}
           >
-            <Text className={`font-inter text-base font-semibold flex-1 ${customerName ? 'text-gray-800' : 'text-gray-400'}`}>
+            <Text className={`font-sans text-base font-semibold flex-1 ${customerName ? 'text-gray-800' : 'text-gray-400'}`}>
               {customerName || 'Select Customer'}
             </Text>
             <Search size={16} color="#9ca3af" />
           </TouchableOpacity>
-          <Text className="text-[11px] font-bold text-gray-500 mb-1 font-inter uppercase tracking-wider">Delivery Date (Optional)</Text>
+          <Text className="text-[11px] font-bold text-gray-500 mb-1 font-sans uppercase tracking-wider">Delivery Date (Optional)</Text>
           <TouchableOpacity 
             className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-3"
             onPress={() => setShowDatePicker(true)}
           >
-            <Text className={`font-inter text-base font-semibold ${deliveryDate ? 'text-gray-800' : 'text-gray-400'}`}>
+            <Text className={`font-sans text-base font-semibold ${deliveryDate ? 'text-gray-800' : 'text-gray-400'}`}>
               {deliveryDate ? deliveryDate.toISOString().split('T')[0] : 'Select Date'}
             </Text>
           </TouchableOpacity>
@@ -417,9 +429,9 @@ export default function LpoCreateScreen() {
               }}
             />
           )}
-          <Text className="text-[11px] font-bold text-gray-500 mb-1 font-inter uppercase tracking-wider">LPO Number (Auto-Generated)</Text>
+          <Text className="text-[11px] font-bold text-gray-500 mb-1 font-sans uppercase tracking-wider">LPO Number (Auto-Generated)</Text>
           <TextInput
-            className="bg-gray-100 border border-gray-200 rounded-xl px-4 py-3 font-inter text-base text-gray-800 font-semibold"
+            className="bg-gray-100 border border-gray-200 rounded-xl px-4 py-3 font-sans text-base text-gray-800 font-semibold"
             placeholder="LPO-XXXXX"
             value={orderNumber}
             onChangeText={setOrderNumber}
@@ -428,7 +440,7 @@ export default function LpoCreateScreen() {
         </View>
 
         <View className="flex-row justify-between items-center mb-3 px-1">
-          <Text className="text-sm font-black text-gray-800 font-inter uppercase tracking-wide">Line Items ({cart.length})</Text>
+          <Text className="text-sm font-black text-gray-800 font-sans uppercase tracking-wide">Line Items ({cart.length})</Text>
         </View>
 
         <FlatList
@@ -470,7 +482,7 @@ export default function LpoCreateScreen() {
           )}
           ListEmptyComponent={
             <View className="items-center justify-center py-12 bg-white rounded-2xl border border-dashed border-gray-300">
-              <Text className="text-gray-400 font-inter text-sm font-semibold">No items added to LPO yet.</Text>
+              <Text className="text-gray-400 font-sans text-sm font-semibold">No items added to LPO yet.</Text>
             </View>
           }
           ListFooterComponent={
@@ -491,7 +503,7 @@ export default function LpoCreateScreen() {
           className="bg-[#003527] py-4 rounded-2xl flex-row items-center justify-center shadow-md"
           onPress={reviewOrder}
         >
-          <Text className="text-white font-black text-base font-inter uppercase tracking-widest">Review Order</Text>
+          <Text className="text-white font-black text-base font-sans uppercase tracking-widest">Review Order</Text>
         </TouchableOpacity>
       </View>
 
@@ -508,7 +520,7 @@ export default function LpoCreateScreen() {
             <View className="flex-row items-center bg-white border border-gray-200 rounded-xl px-4">
               <Search size={18} color="#9ca3af" />
               <TextInput
-                className="flex-1 py-3 px-2 font-inter text-base font-semibold text-gray-800"
+                className="flex-1 py-3 px-2 font-sans text-base font-semibold text-gray-800"
                 placeholder="Search by name or barcode..."
                 value={search}
                 onChangeText={setSearch}
@@ -552,7 +564,7 @@ export default function LpoCreateScreen() {
             <View className="flex-row items-center bg-white border border-gray-200 rounded-xl px-4">
               <Search size={18} color="#9ca3af" />
               <TextInput
-                className="flex-1 py-3 px-2 font-inter text-base font-semibold text-gray-800"
+                className="flex-1 py-3 px-2 font-sans text-base font-semibold text-gray-800"
                 placeholder="Search by name or code..."
                 value={customerSearch}
                 onChangeText={setCustomerSearch}
@@ -583,7 +595,7 @@ export default function LpoCreateScreen() {
             )}
             ListEmptyComponent={
               <View className="p-8 items-center justify-center">
-                <Text className="text-gray-400 font-inter text-sm font-semibold text-center">No customers found.</Text>
+                <Text className="text-gray-400 font-sans text-sm font-semibold text-center">No customers found.</Text>
               </View>
             }
           />

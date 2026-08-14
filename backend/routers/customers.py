@@ -28,6 +28,7 @@ async def get_customers(
         stmt = stmt.filter(
             (Customer.name.ilike(search)) | (Customer.customer_code.ilike(search))
         )
+    stmt = stmt.limit(50)
     result = await db.execute(stmt)
     return result.scalars().all()
 

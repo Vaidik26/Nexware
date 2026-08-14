@@ -14,7 +14,6 @@ module.exports = {
         error: "#ba1a1a",
       },
     },
-    },
   },
   plugins: [],
 }

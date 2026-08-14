@@ -38,15 +38,15 @@ export default function JobCard({ job, index }: { job: any, index: number }) {
         <View className="flex-1 p-4">
           <View className="flex-row justify-between items-center mb-2">
             <View className={`px-2 py-1 rounded ${PriorityBgColors[job.priority]}`}>
-              <Text className={`text-xs font-bold font-inter ${PriorityTextColors[job.priority]}`}>
+              <Text className={`text-xs font-bold font-sans ${PriorityTextColors[job.priority]}`}>
                 {job.priority}
               </Text>
             </View>
-            <Text className="text-sm font-medium text-gray-500 font-inter">{job.zone}</Text>
+            <Text className="text-sm font-medium text-gray-500 font-sans">{job.zone}</Text>
           </View>
           
-          <Text className="text-lg font-bold text-onSurface font-inter mb-1">{job.orderId}</Text>
-          <Text className="text-sm text-gray-600 font-inter mb-4">{job.totalItems} Items • Aisle 4-6</Text>
+          <Text className="text-lg font-bold text-onSurface font-sans mb-1">{job.orderId}</Text>
+          <Text className="text-sm text-gray-600 font-sans mb-4">{job.totalItems} Items • Aisle 4-6</Text>
           
           <View className="flex-row items-center justify-between">
             <View className="flex-1 mr-4">
@@ -56,7 +56,7 @@ export default function JobCard({ job, index }: { job: any, index: number }) {
                   style={{ width: `${progress}%` }} 
                 />
               </View>
-              <Text className="text-xs text-gray-500 mt-1 font-inter">{job.pickedItems} / {job.totalItems} Picked</Text>
+              <Text className="text-xs text-gray-500 mt-1 font-sans">{job.pickedItems} / {job.totalItems} Picked</Text>
             </View>
             <ChevronRight size={20} color="#9ca3af" />
           </View>

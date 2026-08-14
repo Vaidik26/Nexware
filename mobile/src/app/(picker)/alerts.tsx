@@ -90,17 +90,17 @@ export default function AlertsScreen() {
         </View>
         <View className="flex-1 justify-center">
           <View className="flex-row items-center justify-between mb-1">
-            <Text className={`font-inter text-sm ${!item.read ? 'font-extrabold text-[#0b1c30]' : 'font-semibold text-gray-700'}`}>{item.title}</Text>
+            <Text className={`font-sans text-sm ${!item.read ? 'font-extrabold text-[#0b1c30]' : 'font-semibold text-gray-700'}`}>{item.title}</Text>
             {!item.read && (
               <View className="bg-[#003527] px-2 py-0.5 rounded-full border border-emerald-400/30">
-                <Text className="text-[9px] text-emerald-300 font-extrabold font-inter tracking-wider uppercase">NEW</Text>
+                <Text className="text-[9px] text-emerald-300 font-extrabold font-sans tracking-wider uppercase">NEW</Text>
               </View>
             )}
           </View>
-          <Text className={`text-xs ${isCancelled ? 'text-red-900 font-medium' : 'text-gray-600'} font-inter leading-4`}>{item.message}</Text>
+          <Text className={`text-xs ${isCancelled ? 'text-red-900 font-medium' : 'text-gray-600'} font-sans leading-4`}>{item.message}</Text>
           <View className="flex-row items-center justify-between mt-2 pt-2 border-t border-gray-100">
-            <Text className="text-[11px] text-gray-400 font-inter">{item.time}</Text>
-            <Text className={`text-[11px] ${isCancelled ? 'text-red-700' : 'text-[#006c49]'} font-inter font-bold`}>
+            <Text className="text-[11px] text-gray-400 font-sans">{item.time}</Text>
+            <Text className={`text-[11px] ${isCancelled ? 'text-red-700' : 'text-[#006c49]'} font-sans font-bold`}>
               {isCancelled ? 'Job cancelled by Admin' : 'Tap to review & play alarm'}
             </Text>
           </View>
@@ -120,11 +120,11 @@ export default function AlertsScreen() {
               <Path d="M14 12L20 24L26 12M14 28V12M26 12V28" stroke="#80bea6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
           </View>
-          <Text className="text-xl font-extrabold text-[#003527] font-inter">Floor Notifications</Text>
+          <Text className="text-xl font-extrabold text-[#003527] font-sans">Floor Notifications</Text>
         </View>
         <View className="bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full flex-row items-center">
           <Volume2 size={13} color="#006c49" className="mr-1" />
-          <Text className="text-[11px] font-extrabold text-[#006c49] font-inter">4.5s Bell Ready</Text>
+          <Text className="text-[11px] font-extrabold text-[#006c49] font-sans">4.5s Bell Ready</Text>
         </View>
       </View>
 
@@ -132,19 +132,19 @@ export default function AlertsScreen() {
       <View className="mx-4 mb-4 bg-[#001712] rounded-[24px] p-5 border border-emerald-500/30 shadow-lg">
         <View className="flex-row items-center justify-between mb-2">
           <View className="flex-row items-center">
-            <Text className="text-white font-extrabold text-base font-inter mr-2">🔔 Warehouse Alert Engine</Text>
+            <Text className="text-white font-extrabold text-base font-sans mr-2">🔔 Warehouse Alert Engine</Text>
           </View>
           {isRinging ? (
             <View className="bg-red-500 px-2.5 py-0.5 rounded-full border border-red-300">
-              <Text className="text-white text-[10px] font-extrabold font-inter tracking-wider uppercase">🔊 RINGING (4.5S)...</Text>
+              <Text className="text-white text-[10px] font-extrabold font-sans tracking-wider uppercase">🔊 RINGING (4.5S)...</Text>
             </View>
           ) : (
             <View className="bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-400/30">
-              <Text className="text-emerald-300 text-[10px] font-bold font-inter">TESTER</Text>
+              <Text className="text-emerald-300 text-[10px] font-bold font-sans">TESTER</Text>
             </View>
           )}
         </View>
-        <Text className="text-emerald-100/80 text-xs font-inter leading-4 mb-4">
+        <Text className="text-emerald-100/80 text-xs font-sans leading-4 mb-4">
           Simulate real-time task dispatch from the NexWare Admin dashboard. Plays the 4-5s shop-floor alarm bell and injects an assignment.
         </Text>
         <TouchableOpacity 
@@ -154,7 +154,7 @@ export default function AlertsScreen() {
           activeOpacity={0.85}
         >
           <Volume2 size={17} color="white" className="mr-2" />
-          <Text className="text-white font-extrabold text-sm font-inter">
+          <Text className="text-white font-extrabold text-sm font-sans">
             {isRinging ? 'Playing Alert Bell Sound (4.5s)...' : 'Simulate New Job Alert & Ring Bell'}
           </Text>
         </TouchableOpacity>
@@ -168,7 +168,7 @@ export default function AlertsScreen() {
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 28 }}
         ListEmptyComponent={
           <View className="items-center justify-center py-12">
-            <Text className="text-gray-500 font-inter text-sm">No recent alerts or notifications.</Text>
+            <Text className="text-gray-500 font-sans text-sm">No recent alerts or notifications.</Text>
           </View>
         }
       />
