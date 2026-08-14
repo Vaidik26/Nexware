@@ -28,7 +28,13 @@ from backend.models.catalogue import SalesItem
 from backend.models.lpo import Lpo
 from backend.models.picklist import PickAssignment, PickList, PickListItem
 from backend.models.user import Notification, User
-from backend.schemas.lpo import ApproveRequest, LpoCreate, LpoOut, LpoUpdateStatus
+from backend.schemas.lpo import (
+    ApproveRequest,
+    LpoCreate,
+    LpoOut,
+    LpoUpdate,
+    LpoUpdateStatus,
+)
 from backend.services.notification_service import send_push_notification
 
 logger = logging.getLogger(__name__)
@@ -216,6 +222,40 @@ async def create_lpo(
         .filter(Lpo.id == db_lpo.id)
     )
     logger.info("LPO created: lpo_number=%s status=%s source=%s", lpo_number, initial_status, source)
+    return result.scalar_one()
+
+@router.put("/{lpo_id}", response_model=LpoOut)
+async def update_lpo(
+    lpo_id: int,
+    lpo_update: LpoUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    """Update a pending LPO (only items and delivery date)."""
+    result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
+    db_lpo = result.scalar_one_or_none()
+    
+    if not db_lpo:
+        raise HTTPException(status_code=404, detail="LPO not found")
+        
+    if db_lpo.signed_lpo_url:
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot edit LPO because it already has a signed document attached (Order is locked)."
+        )
+
+    db_lpo.items = [item.model_dump() for item in lpo_update.items]
+    if lpo_update.delivery_date is not None:
+        db_lpo.delivery_date = lpo_update.delivery_date
+
+    await db.commit()
+
+    result = await db.execute(
+        select(Lpo)
+        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
+        .filter(Lpo.id == lpo_id)
+    )
+    logger.info("LPO updated: id=%s", lpo_id)
     return result.scalar_one()
 
 

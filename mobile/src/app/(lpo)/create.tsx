@@ -60,6 +60,7 @@ export default function LpoCreateScreen() {
  const [isConfirmed, setIsConfirmed] = useState(false);
  const [selectedLpoFile, setSelectedLpoFile] = useState<any>(null);
  const [refreshing, setRefreshing] = useState(false);
+ const [isSharing, setIsSharing] = useState(false);
 
  // Debounce search input
  useEffect(() => {
@@ -292,7 +293,9 @@ export default function LpoCreateScreen() {
  };
 
   const handleDownloadPDF = async (share: boolean = false) => {
+  if (isSharing) return;
   try {
+   setIsSharing(true);
    const d = new Date();
    const dateStr = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
    const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -357,9 +360,14 @@ export default function LpoCreateScreen() {
    } else {
     await Print.printAsync({ html: htmlContent });
    }
-  } catch (err) {
+  } catch (err: any) {
    console.error(err);
+   if (err.message && err.message.includes('Another share request')) {
+     return; // Silently ignore consecutive share taps
+   }
    Alert.alert('Error', 'Failed to generate LPO PDF.');
+  } finally {
+   setIsSharing(false);
   }
  };
 
@@ -632,9 +640,10 @@ export default function LpoCreateScreen() {
       <View className="gap-3">
        <TouchableOpacity 
         onPress={() => handleDownloadPDF(true)} 
-        className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row gap-2"
+        disabled={isSharing}
+        className={`w-full p-4 rounded-xl items-center justify-center flex-row gap-2 ${isSharing ? 'bg-slate-200' : 'bg-slate-100'}`}
        >
-        <Text className="font-bold text-slate-700 text-base">⬇ Download LPO</Text>
+        {isSharing ? <ActivityIndicator color="#334155" /> : <Text className="font-bold text-slate-700 text-base">⬇ Download LPO</Text>}
        </TouchableOpacity>
 
        {!isConfirmed && (

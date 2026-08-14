@@ -3,11 +3,9 @@ import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, Alert, Modal
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Calendar as CalendarIcon, UploadCloud, FileText } from 'lucide-react-native';
+import { ChevronLeft, Calendar as CalendarIcon, FileText } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import api from '../../lib/api';
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
 
 export default function LpoHistoryScreen() {
  const router = useRouter();
@@ -15,10 +13,6 @@ export default function LpoHistoryScreen() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [filter, setFilter] = useState<'ALL' | 'UPLOADED' | 'PENDING'>('ALL');
-  
-  // Upload modal state
-  const [selectedLpoForUpload, setSelectedLpoForUpload] = useState<any>(null);
-  const [isUploading, setIsUploading] = useState(false);
 
   // Use React Query for caching and auto-syncing
   const dateStr = selectedDate.toISOString().split('T')[0];
@@ -29,70 +23,6 @@ export default function LpoHistoryScreen() {
       return res.data || [];
     }
   });
-
- const handleUploadLpoPdf = async (lpo: any) => {
-  Alert.alert(
-   'Attach Signed LPO',
-   'Choose how to attach the document:',
-   [
-    {
-     text: '📷 Take Photo',
-     onPress: async () => {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-       Alert.alert('Permission Denied', 'Camera permission is required.');
-       return;
-      }
-      const result = await ImagePicker.launchCameraAsync({
-       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-       quality: 0.8,
-       allowsEditing: false,
-      });
-      if (!result.canceled && result.assets[0]) {
-       await executeUpload(lpo, result.assets[0].uri, result.assets[0].mimeType || 'image/jpeg', `lpo-${lpo.lpo_number}.jpg`);
-      }
-     },
-    },
-    {
-     text: '📎 Attach File',
-     onPress: async () => {
-      const result = await DocumentPicker.getDocumentAsync({
-       type: ['application/pdf', 'image/*'],
-       copyToCacheDirectory: true,
-      });
-      if (!result.canceled && result.assets[0]) {
-       await executeUpload(lpo, result.assets[0].uri, result.assets[0].mimeType || 'application/pdf', result.assets[0].name);
-      }
-     },
-    },
-    { text: 'Cancel', style: 'cancel' },
-   ]
-  );
- };
-
- const executeUpload = async (lpo: any, uri: string, mimeType: string, filename: string) => {
-  try {
-   setIsUploading(true);
-   const formData = new FormData();
-   formData.append('file', {
-    uri,
-    name: filename,
-    type: mimeType,
-   } as any);
-
-   await api.post(`/lpos/${lpo.id}/upload-pdf`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-   });
-
-   Alert.alert('✅ Success', 'LPO Document uploaded successfully!');
-   refetch(); // refresh list
-  } catch (err: any) {
-   Alert.alert('Upload Failed', err.response?.data?.detail || err.message || 'Could not upload document.');
-  } finally {
-   setIsUploading(false);
-   setSelectedLpoForUpload(null);
-  }
- };
 
  const filteredLpos = lpos.filter((lpo) => {
   if (filter === 'ALL') return true;
@@ -184,16 +114,7 @@ export default function LpoHistoryScreen() {
          <Text className="text-gray-500 text-xs ml-1 font-medium">{item.items?.length || 0} Line Items</Text>
         </View>
 
-        {!item.signed_lpo_url && (
-         <TouchableOpacity 
-          onPress={(e) => { e.stopPropagation(); handleUploadLpoPdf(item); }}
-          className="bg-blue-50 border border-blue-200 py-3 rounded-xl flex-row items-center justify-center mt-2"
-         >
-          <UploadCloud size={16} color="#2563eb" />
-          <Text className="font-bold text-blue-700 text-sm ml-2">Upload Signed LPO</Text>
-         </TouchableOpacity>
-        )}
-       </TouchableOpacity>
+        </TouchableOpacity>
       )}
       ListEmptyComponent={
        <View className="items-center justify-center py-12">
@@ -204,15 +125,7 @@ export default function LpoHistoryScreen() {
     )}
    </View>
 
-   {/* Loading Overlay */}
-   {isUploading && (
-    <View className="absolute inset-0 bg-black/50 items-center justify-center z-50">
-     <View className="bg-white p-6 rounded-2xl items-center">
-      <ActivityIndicator size="large" color="#059669" />
-      <Text className="mt-4 font-bold text-gray-800">Uploading LPO...</Text>
-     </View>
-    </View>
-   )}
+
   </SafeAreaView>
  );
 }

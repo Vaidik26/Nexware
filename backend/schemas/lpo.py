@@ -22,6 +22,10 @@ class LpoCreate(BaseModel):
     source: Optional[str] = "upload"       # 'upload' | 'manual' | 'mobile'
 
 
+class LpoUpdate(BaseModel):
+    items: List[LpoItemSchema]
+    delivery_date: Optional[datetime] = None
+
 class LpoUpdateStatus(BaseModel):
     status: str
 
