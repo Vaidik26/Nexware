@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, Calendar as CalendarIcon, UploadCloud, FileText } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import api from '../../lib/api';
@@ -10,33 +11,24 @@ import * as ImagePicker from 'expo-image-picker';
 
 export default function LpoHistoryScreen() {
  const router = useRouter();
- const [selectedDate, setSelectedDate] = useState<Date>(new Date());
- const [showDatePicker, setShowDatePicker] = useState(false);
- const [lpos, setLpos] = useState<any[]>([]);
- const [isLoading, setIsLoading] = useState(false);
- const [filter, setFilter] = useState<'ALL' | 'UPLOADED' | 'PENDING'>('ALL');
- 
- // Upload modal state
- const [selectedLpoForUpload, setSelectedLpoForUpload] = useState<any>(null);
- const [isUploading, setIsUploading] = useState(false);
+  const queryClient = useQueryClient();
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [filter, setFilter] = useState<'ALL' | 'UPLOADED' | 'PENDING'>('ALL');
+  
+  // Upload modal state
+  const [selectedLpoForUpload, setSelectedLpoForUpload] = useState<any>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
- useEffect(() => {
-  fetchHistory();
- }, [selectedDate]);
-
- const fetchHistory = async () => {
-  try {
-   setIsLoading(true);
-   const dateStr = selectedDate.toISOString().split('T')[0];
-   const res = await api.get(`/lpos/my-history?date=${dateStr}`);
-   setLpos(res.data || []);
-  } catch (err) {
-   console.error(err);
-   Alert.alert('Error', 'Failed to load LPO history.');
-  } finally {
-   setIsLoading(false);
-  }
- };
+  // Use React Query for caching and auto-syncing
+  const dateStr = selectedDate.toISOString().split('T')[0];
+  const { data: lpos = [], isLoading, refetch } = useQuery<any[]>({
+    queryKey: ['history', dateStr],
+    queryFn: async () => {
+      const res = await api.get(`/lpos/my-history?date=${dateStr}`);
+      return res.data || [];
+    }
+  });
 
  const handleUploadLpoPdf = async (lpo: any) => {
   Alert.alert(
@@ -93,7 +85,7 @@ export default function LpoHistoryScreen() {
    });
 
    Alert.alert('✅ Success', 'LPO Document uploaded successfully!');
-   fetchHistory(); // refresh list
+   refetch(); // refresh list
   } catch (err: any) {
    Alert.alert('Upload Failed', err.response?.data?.detail || err.message || 'Could not upload document.');
   } finally {

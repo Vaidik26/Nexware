@@ -1,21 +1,33 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { Component, ErrorInfo, ReactNode, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { Toaster } from 'react-hot-toast';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppLayout from '@/components/layout/AppLayout';
 
-import LoginPage from '@/pages/auth/LoginPage';
-import MarketDashboard from '@/pages/dashboard/MarketDashboard';
-import SalesCatalogue from '@/pages/warehouse/SalesCatalogue';
-import OrderUpload from '@/pages/warehouse/OrderUpload';
-import PickLists from '@/pages/warehouse/PickLists';
-import LpoManagement from '@/pages/warehouse/LpoManagement';
-import LpoDetails from '@/pages/warehouse/LpoDetails';
-import RawMaterials from '@/pages/market/RawMaterials';
-import PriceManagement from '@/pages/market/PriceManagement';
-import MarketOverview from '@/pages/market/MarketOverview';
-import UserManagement from '@/pages/admin/UserManagement';
-import CustomerMaster from '@/pages/admin/CustomerMaster';
+// Create a client
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: true,
+      staleTime: 1000 * 60 * 5, // 5 minutes
+    },
+  },
+});
+
+// Lazy loaded routes for Code Splitting
+const LoginPage = React.lazy(() => import('@/pages/auth/LoginPage'));
+const MarketDashboard = React.lazy(() => import('@/pages/dashboard/MarketDashboard'));
+const SalesCatalogue = React.lazy(() => import('@/pages/warehouse/SalesCatalogue'));
+const OrderUpload = React.lazy(() => import('@/pages/warehouse/OrderUpload'));
+const PickLists = React.lazy(() => import('@/pages/warehouse/PickLists'));
+const LpoManagement = React.lazy(() => import('@/pages/warehouse/LpoManagement'));
+const LpoDetails = React.lazy(() => import('@/pages/warehouse/LpoDetails'));
+const RawMaterials = React.lazy(() => import('@/pages/market/RawMaterials'));
+const PriceManagement = React.lazy(() => import('@/pages/market/PriceManagement'));
+const MarketOverview = React.lazy(() => import('@/pages/market/MarketOverview'));
+const UserManagement = React.lazy(() => import('@/pages/admin/UserManagement'));
+const CustomerMaster = React.lazy(() => import('@/pages/admin/CustomerMaster'));
 
 interface Props {
   children?: ReactNode;
@@ -91,41 +103,55 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return token ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
+// Global suspense fallback loader
+const PageLoader = () => (
+  <div className="flex h-screen items-center justify-center bg-slate-50">
+    <div className="flex flex-col items-center gap-4">
+      <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-emerald-600"></div>
+      <p className="text-sm font-semibold text-slate-500">Loading module...</p>
+    </div>
+  </div>
+);
+
 export default function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
-        <Toaster position="top-right" />
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <AppLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<MarketDashboard />} />
-            <Route path="warehouse/catalogue" element={<SalesCatalogue />} />
-            <Route path="warehouse/lpos" element={<LpoManagement />} />
-            <Route path="warehouse/lpos/:id" element={<LpoDetails />} />
-            <Route path="warehouse/upload" element={<OrderUpload />} />
-            <Route path="warehouse/picking" element={<Navigate to="/warehouse/picklists" replace />} />
-            <Route path="warehouse/picklists" element={<PickLists />} />
-            <Route path="warehouse/verification" element={<Navigate to="/warehouse/picklists" replace />} />
-            <Route path="market/materials" element={<RawMaterials />} />
-            <Route path="market/prices" element={<PriceManagement />} />
-            <Route path="market/overview" element={<MarketOverview />} />
-            <Route path="market/dubai" element={<Navigate to="/market/prices" replace />} />
-            <Route path="market/international" element={<Navigate to="/market/prices" replace />} />
-            <Route path="market/history" element={<Navigate to="/market/overview" replace />} />
-            <Route path="admin/users" element={<UserManagement />} />
-            <Route path="admin/customers" element={<CustomerMaster />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <Toaster position="top-right" />
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<Navigate to="/dashboard" replace />} />
+                <Route path="dashboard" element={<MarketDashboard />} />
+                <Route path="warehouse/catalogue" element={<SalesCatalogue />} />
+                <Route path="warehouse/lpos" element={<LpoManagement />} />
+                <Route path="warehouse/lpos/:id" element={<LpoDetails />} />
+                <Route path="warehouse/upload" element={<OrderUpload />} />
+                <Route path="warehouse/picking" element={<Navigate to="/warehouse/picklists" replace />} />
+                <Route path="warehouse/picklists" element={<PickLists />} />
+                <Route path="warehouse/verification" element={<Navigate to="/warehouse/picklists" replace />} />
+                <Route path="market/materials" element={<RawMaterials />} />
+                <Route path="market/prices" element={<PriceManagement />} />
+                <Route path="market/overview" element={<MarketOverview />} />
+                <Route path="market/dubai" element={<Navigate to="/market/prices" replace />} />
+                <Route path="market/international" element={<Navigate to="/market/prices" replace />} />
+                <Route path="market/history" element={<Navigate to="/market/overview" replace />} />
+                <Route path="admin/users" element={<UserManagement />} />
+                <Route path="admin/customers" element={<CustomerMaster />} />
+              </Route>
+            </Routes>
+          </Suspense>
+        </BrowserRouter>
+      </QueryClientProvider>
     </ErrorBoundary>
   );
 }

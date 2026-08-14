@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 import { toast } from '@/components/ui/Toast';
 import { RefreshCw, Search, FileText, ArrowRight } from 'lucide-react';
@@ -26,24 +27,20 @@ interface LPO {
 
 export default function LpoManagement() {
   const navigate = useNavigate();
-  const [lpos, setLpos] = useState<LPO[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    fetchLpos();
-  }, []);
-
-  const fetchLpos = async () => {
-    try {
-      setLoading(true);
+  // Use React Query for caching, background syncing, and instant reloads
+  const { data: lpos = [], isLoading, isFetching } = useQuery<LPO[]>({
+    queryKey: ['lpos'],
+    queryFn: async () => {
       const { data } = await api.get('/lpos');
-      setLpos(data);
-    } catch (err: any) {
-      toast.error('Failed to load LPOs');
-    } finally {
-      setLoading(false);
-    }
+      return data;
+    },
+  });
+
+  const handleManualRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['lpos'] });
   };
 
   const filteredLpos = lpos.filter((lpo) => {
@@ -65,10 +62,10 @@ export default function LpoManagement() {
           </p>
         </div>
         <button
-          onClick={fetchLpos}
+          onClick={handleManualRefresh}
           className="p-2 rounded-lg bg-surface-variant text-on-surface-variant hover:bg-surface-variant/80 transition-colors"
         >
-          <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-5 h-5 ${isFetching ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
