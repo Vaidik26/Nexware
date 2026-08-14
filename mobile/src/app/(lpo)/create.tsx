@@ -360,8 +360,8 @@ export default function LpoCreateScreen() {
   );
 
   const filteredCustomers = customers.filter(c => 
-    c.name.toLowerCase().includes(customerSearch.toLowerCase()) || 
-    c.customer_code.toLowerCase().includes(customerSearch.toLowerCase())
+    (c?.name || '').toLowerCase().includes(customerSearch.toLowerCase()) || 
+    (c?.customer_code || '').toLowerCase().includes(customerSearch.toLowerCase())
   );
 
   return (

@@ -13,9 +13,7 @@ module.exports = {
         onSurface: "#0b1c30",
         error: "#ba1a1a",
       },
-      fontFamily: {
-        inter: ["Inter", "sans-serif"],
-      },
+    },
     },
   },
   plugins: [],
