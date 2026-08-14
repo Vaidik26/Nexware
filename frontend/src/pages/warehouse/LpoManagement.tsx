@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
-import { toast } from '@/components/ui/Toast';
 import { RefreshCw, Search, FileText, ArrowRight } from 'lucide-react';
 
 interface LPOItem {
@@ -31,7 +30,7 @@ export default function LpoManagement() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Use React Query for caching, background syncing, and instant reloads
-  const { data: lpos = [], isLoading, isFetching } = useQuery<LPO[]>({
+  const { data: lpos = [], isFetching } = useQuery<LPO[]>({
     queryKey: ['lpos'],
     queryFn: async () => {
       const { data } = await api.get('/lpos');
