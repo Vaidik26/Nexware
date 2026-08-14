@@ -55,6 +55,30 @@ async def get_lpos(
     return lpos
 
 
+@router.get("/my-history", response_model=List[LpoOut])
+async def get_my_lpo_history(
+    date: str = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List LPOs created by the current user, optionally filtered by date (YYYY-MM-DD)."""
+    query = select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
+    query = query.filter(Lpo.created_by_id == current_user.id)
+    
+    if date:
+        try:
+            target_date = datetime.strptime(date, "%Y-%m-%d").date()
+            # PostgreSQL cast to date
+            query = query.filter(sqlfunc.date(Lpo.created_at) == target_date)
+        except ValueError:
+            pass # Ignore invalid date format and return all
+
+    query = query.order_by(Lpo.created_at.desc())
+    result = await db.execute(query)
+    lpos = result.scalars().all()
+    return lpos
+
+
 @router.get("/{lpo_id}", response_model=LpoOut)
 async def get_lpo_by_id(
     lpo_id: int,

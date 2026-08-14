@@ -9,6 +9,7 @@ import * as Sharing from 'expo-sharing';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
 
 interface CatalogueItem {
   id: number;
@@ -37,6 +38,7 @@ const generateAutoLpoNumber = () => {
 
 export default function LpoCreateScreen() {
   const { logout, picker } = useAuthStore();
+  const router = useRouter();
   const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
@@ -52,10 +54,10 @@ export default function LpoCreateScreen() {
   
   // SUCCESS MODAL STATE
   const [successModalVisible, setSuccessModalVisible] = useState(false);
-  const [successLpoData, setSuccessLpoData] = useState<any>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [isPdfUploaded, setIsPdfUploaded] = useState(false);
+  const [isConfirmed, setIsConfirmed] = useState(false);
+  const [selectedLpoFile, setSelectedLpoFile] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -145,7 +147,7 @@ export default function LpoCreateScreen() {
     setCart(cart.filter(c => c.id !== id));
   };
 
-  const generateLPO = async () => {
+  const reviewOrder = () => {
     if (!customerName.trim() || !orderNumber.trim()) {
       Alert.alert('Validation Error', 'Please enter a customer name and LPO number.');
       return;
@@ -155,6 +157,12 @@ export default function LpoCreateScreen() {
       return;
     }
     
+    setSuccessModalVisible(true);
+    setIsConfirmed(false);
+    setSelectedLpoFile(null);
+  };
+
+  const handleConfirmOrder = async () => {
     try {
       setIsGenerating(true);
       const payload: any = {
@@ -173,13 +181,25 @@ export default function LpoCreateScreen() {
       }
 
       const res = await api.post('/lpos', payload);
+      const createdLpo = res.data;
       
-      const lpoData = res.data;
-      setSuccessLpoData(lpoData);
-      setSuccessModalVisible(true);
+      if (selectedLpoFile) {
+        const formData = new FormData();
+        formData.append('file', {
+          uri: selectedLpoFile.uri,
+          name: selectedLpoFile.filename,
+          type: selectedLpoFile.mimeType,
+        } as any);
+
+        await api.post(`/lpos/${createdLpo.id}/upload-pdf`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      }
+
+      setIsConfirmed(true);
       
     } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.detail?.message || err.response?.data?.detail || 'Failed to generate LPO.');
+      Alert.alert('Error', err.response?.data?.detail?.message || err.response?.data?.detail || 'Failed to confirm LPO.');
     } finally {
       setIsGenerating(false);
     }
@@ -187,26 +207,32 @@ export default function LpoCreateScreen() {
 
   const handleCloseSuccess = () => {
     setSuccessModalVisible(false);
-    setSuccessLpoData(null);
+    if (isConfirmed) {
+      setCart([]);
+      setCustomerName('');
+      setDeliveryDate(undefined);
+      setOrderNumber(generateAutoLpoNumber());
+      setSelectedLpoFile(null);
+      setIsConfirmed(false);
+    }
+  };
+
+  const resetFormExplicitly = () => {
+    setSuccessModalVisible(false);
     setCart([]);
     setCustomerName('');
     setDeliveryDate(undefined);
     setOrderNumber(generateAutoLpoNumber());
-    setIsPdfUploaded(false);
+    setSelectedLpoFile(null);
+    setIsConfirmed(false);
   };
 
 
 
 
   const handleUploadLpoPdf = async () => {
-    if (!successLpoData?.id) {
-      Alert.alert('Error', 'LPO ID not found.');
-      return;
-    }
-
-    // Ask user: Camera or File?
     Alert.alert(
-      'Upload LPO Document',
+      'Attach Signed LPO',
       'Choose how to attach the signed LPO:',
       [
         {
@@ -223,7 +249,11 @@ export default function LpoCreateScreen() {
               allowsEditing: false,
             });
             if (!result.canceled && result.assets[0]) {
-              await uploadFile(result.assets[0].uri, result.assets[0].mimeType || 'image/jpeg', `lpo-${orderNumber}.jpg`);
+              setSelectedLpoFile({
+                uri: result.assets[0].uri,
+                mimeType: result.assets[0].mimeType || 'image/jpeg',
+                filename: `lpo-${orderNumber}.jpg`
+              });
             }
           },
         },
@@ -235,36 +265,17 @@ export default function LpoCreateScreen() {
               copyToCacheDirectory: true,
             });
             if (!result.canceled && result.assets[0]) {
-              await uploadFile(result.assets[0].uri, result.assets[0].mimeType || 'application/pdf', result.assets[0].name);
+              setSelectedLpoFile({
+                uri: result.assets[0].uri,
+                mimeType: result.assets[0].mimeType || 'application/pdf',
+                filename: result.assets[0].name
+              });
             }
           },
         },
         { text: 'Cancel', style: 'cancel' },
       ]
     );
-  };
-
-  const uploadFile = async (uri: string, mimeType: string, filename: string) => {
-    try {
-      setIsUploading(true);
-      const formData = new FormData();
-      formData.append('file', {
-        uri,
-        name: filename,
-        type: mimeType,
-      } as any);
-
-      await api.post(`/lpos/${successLpoData.id}/upload-pdf`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      setIsPdfUploaded(true);
-      Alert.alert('✅ LPO Confirmed!', 'Document uploaded. Your LPO is now submitted to the admin portal.');
-    } catch (err: any) {
-      Alert.alert('Upload Failed', err.response?.data?.detail || err.message || 'Could not upload document.');
-    } finally {
-      setIsUploading(false);
-    }
   };
 
     const handleDownloadPDF = async (share: boolean = false) => {
@@ -312,8 +323,7 @@ export default function LpoCreateScreen() {
         <div class="field-row"><span class="field-label">Customer:</span><span>${customerName}</span></div>
         <div class="field-row"><span class="field-label">Sales Rep:</span><span>${picker?.full_name || 'System User'}</span></div>
         ${deliveryDate ? `<div class="field-row"><span class="field-label">Delivery:</span><span>${deliveryDate.toISOString().split('T')[0]}</span></div>` : ''}
-        <div class="field-row"><span class="field-label">Status:</span><span>${successLpoData?.picker_name ? 'Assigned' : 'PENDING'}</span></div>
-        ${successLpoData?.picker_name ? `<div class="field-row"><span class="field-label">Picker:</span><span>${successLpoData.picker_name}</span></div>` : ''}
+        <div class="field-row"><span class="field-label">Status:</span><span>PENDING</span></div>
         <div class="thick-div"></div>
         <div class="section-title">Line Items (${cart.length})</div>
         <div class="divider"></div>
@@ -362,9 +372,14 @@ export default function LpoCreateScreen() {
           <Text className="text-xl font-black text-onSurface font-inter">Create Order</Text>
           <Text className="text-xs text-primary font-bold font-inter mt-0.5">Welcome, {picker?.full_name}</Text>
         </View>
-        <TouchableOpacity onPress={handleLogout} className="bg-rose-50 p-2.5 rounded-xl border border-rose-100">
-          <LogOut size={18} color="#e11d48" />
-        </TouchableOpacity>
+        <View className="flex-row gap-2">
+          <TouchableOpacity onPress={() => router.push('/history')} className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-100">
+            <Text className="font-bold text-emerald-700 text-xs">History</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleLogout} className="bg-rose-50 p-2.5 rounded-xl border border-rose-100">
+            <LogOut size={18} color="#e11d48" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Main Form */}
@@ -474,16 +489,9 @@ export default function LpoCreateScreen() {
       <View className="p-4 bg-white border-t border-gray-200">
         <TouchableOpacity
           className="bg-[#003527] py-4 rounded-2xl flex-row items-center justify-center shadow-md"
-          onPress={generateLPO}
-          disabled={isGenerating}
+          onPress={reviewOrder}
         >
-          {isGenerating ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <>
-              <Text className="text-white font-black text-base font-inter uppercase tracking-widest">Generate LPO & Print</Text>
-            </>
-          )}
+          <Text className="text-white font-black text-base font-inter uppercase tracking-widest">Review Order</Text>
         </TouchableOpacity>
       </View>
 
@@ -587,51 +595,73 @@ export default function LpoCreateScreen() {
         <View className="flex-1 bg-black/60 justify-center items-center p-6">
           <View className="bg-white rounded-3xl p-6 w-full max-w-sm">
             <View className="items-center mb-6">
-              <View className="w-16 h-16 bg-emerald-100 rounded-full items-center justify-center mb-4">
-                <Text className="text-emerald-600 text-2xl">✓</Text>
-              </View>
-              <Text className="text-2xl font-black text-slate-800 text-center">Submitted!</Text>
-              <Text className="text-slate-500 text-center mt-2">LPO <Text className="font-bold text-slate-700">{orderNumber}</Text> has been submitted for WM Review.</Text>
+              {isConfirmed ? (
+                <>
+                  <View className="w-16 h-16 bg-emerald-100 rounded-full items-center justify-center mb-4">
+                    <Text className="text-emerald-600 text-2xl">✓</Text>
+                  </View>
+                  <Text className="text-2xl font-black text-slate-800 text-center">Confirmed!</Text>
+                  <Text className="text-slate-500 text-center mt-2">LPO <Text className="font-bold text-slate-700">{orderNumber}</Text> has been submitted for WM Review.</Text>
+                </>
+              ) : (
+                <>
+                  <View className="w-16 h-16 bg-blue-100 rounded-full items-center justify-center mb-4">
+                    <Search size={32} color="#2563eb" />
+                  </View>
+                  <Text className="text-2xl font-black text-slate-800 text-center">Review Order</Text>
+                  <Text className="text-slate-500 text-center mt-2">Order <Text className="font-bold text-slate-700">{orderNumber}</Text> is ready for review.</Text>
+                </>
+              )}
             </View>
 
             <View className="gap-3">
-              {/* Step 1 - Download */}
               <TouchableOpacity 
                 onPress={() => handleDownloadPDF(true)} 
                 className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row gap-2"
               >
-                <Text className="font-bold text-slate-700 text-base">⬇ Download PDF</Text>
+                <Text className="font-bold text-slate-700 text-base">⬇ Download LPO</Text>
               </TouchableOpacity>
 
-              {/* Step 2 - Upload to confirm */}
-              {!isPdfUploaded ? (
-                <TouchableOpacity 
-                  onPress={handleUploadLpoPdf} 
-                  disabled={isUploading} 
-                  className="w-full p-4 rounded-xl bg-emerald-600 items-center justify-center flex-row gap-2"
-                >
-                  {isUploading ? (
-                    <ActivityIndicator color="white" />
-                  ) : (
-                    <Text className="font-bold text-white text-base">⬆ Upload PDF & Confirm LPO</Text>
-                  )}
-                </TouchableOpacity>
-              ) : (
-                <View className="w-full p-4 rounded-xl bg-emerald-100 border border-emerald-300 items-center justify-center flex-row gap-2">
-                  <Text className="font-bold text-emerald-700 text-base">✅ LPO Confirmed!</Text>
-                </View>
+              {!isConfirmed && (
+                <>
+                  <TouchableOpacity 
+                    onPress={handleUploadLpoPdf} 
+                    className="w-full p-4 rounded-xl bg-blue-50 border border-blue-200 items-center justify-center flex-row gap-2"
+                  >
+                    <Text className="font-bold text-blue-700 text-base">
+                      {selectedLpoFile ? `📎 ${selectedLpoFile.filename}` : '⬆ Attach Signed LPO (Optional)'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    onPress={handleConfirmOrder} 
+                    disabled={isGenerating} 
+                    className="w-full p-4 rounded-xl bg-[#003527] items-center justify-center flex-row gap-2"
+                  >
+                    {isGenerating ? (
+                      <ActivityIndicator color="white" />
+                    ) : (
+                      <Text className="font-bold text-white text-base">✅ Confirm Order</Text>
+                    )}
+                  </TouchableOpacity>
+                </>
               )}
 
-              {/* Step 3 - New order (locked until PDF uploaded) */}
-              <TouchableOpacity 
-                onPress={isPdfUploaded ? handleCloseSuccess : undefined}
-                disabled={!isPdfUploaded}
-                className={`w-full p-4 rounded-xl items-center justify-center flex-row gap-2 ${isPdfUploaded ? 'bg-[#003527]' : 'bg-gray-300'}`}
-              >
-                <Text className={`font-bold text-base ${isPdfUploaded ? 'text-white' : 'text-gray-500'}`}>
-                  {isPdfUploaded ? 'Create New Order' : '🔒 Upload PDF First'}
-                </Text>
-              </TouchableOpacity>
+              {isConfirmed ? (
+                <TouchableOpacity 
+                  onPress={resetFormExplicitly}
+                  className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row gap-2 mt-2"
+                >
+                  <Text className="font-bold text-slate-700 text-base">➕ Create New Order</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity 
+                  onPress={handleCloseSuccess}
+                  className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row gap-2 mt-2"
+                >
+                  <Text className="font-bold text-slate-500 text-base">Cancel & Edit</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>

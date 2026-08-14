@@ -34,6 +34,16 @@ export default function PickItemRow({ item, onScanStart, onMissing, onToggleCart
                 Bin: {item.bin_location}
               </Text>
             )}
+            {item.is_full_carton ? (
+              <View className="bg-purple-100 border border-purple-200 px-2 py-0.5 rounded mr-2 flex-row items-center shadow-sm">
+                <Box size={10} color="#7e22ce" style={{marginRight: 4}} />
+                <Text className="text-xs font-bold text-purple-700 font-inter">CARTON</Text>
+              </View>
+            ) : (
+              <View className="bg-blue-50 border border-blue-200 px-2 py-0.5 rounded mr-2 flex-row items-center shadow-sm">
+                <Text className="text-xs font-bold text-blue-700 font-inter">LOOSE</Text>
+              </View>
+            )}
             {item.picked ? (
               <Text className="text-xs font-bold text-primary font-inter">✓ Picked</Text>
             ) : isMissing ? (
