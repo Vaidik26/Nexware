@@ -96,10 +96,91 @@ async def get_lpo_by_id(
     return lpo
 
 
+import random
+from sqlalchemy import func as sa_func
+
+async def process_lpo_auto_assign(db: AsyncSession, lpo: Lpo, background_tasks: BackgroundTasks):
+    # Create picklist
+    db_picklist = PickList(
+        order_number=lpo.lpo_number,
+        customer_name=lpo.customer_name,
+        sales_person_id=lpo.sales_person_id,
+        sales_order_id=None,
+        status="draft",
+        picker_job_number=None,
+        delivery_date=lpo.delivery_date,
+    )
+    db.add(db_picklist)
+    await db.flush()
+
+    all_barcodes = [item.get("barcode", "N/A") for item in lpo.items]
+    cat_res = await db.execute(select(SalesItem).filter(SalesItem.primary_barcode.in_(all_barcodes)))
+    cat_map = {ci.primary_barcode: ci for ci in cat_res.scalars().all()}
+
+    for item in lpo.items:
+        bc = item.get("barcode", "N/A")
+        cat_item = cat_map.get(bc)
+        db.add(PickListItem(
+            pick_list_id=db_picklist.id,
+            barcode=bc,
+            product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
+            quantity=item.get("quantity", 1),
+            unit=item.get("unit", "PCS"),
+            bin_location=cat_item.bin_location if cat_item else None,
+        ))
+
+    # Auto: least-loaded active picker
+    pickers_res = await db.execute(
+        select(User).filter(User.role == "picker", User.is_active == True).with_for_update()
+    )
+    all_pickers = pickers_res.scalars().all()
+    if not all_pickers:
+        logger.warning("No active pickers available for auto-assignment of LPO %s", lpo.id)
+        lpo.status = "processed"
+        return
+
+    picker_counts = []
+    for p in all_pickers:
+        cnt_res = await db.execute(
+            select(sa_func.count(PickAssignment.id))
+            .join(PickList, PickAssignment.pick_list_id == PickList.id)
+            .filter(
+                PickAssignment.picker_id == p.id,
+                PickList.status.notin_(["completed", "cancelled"]),
+            )
+        )
+        cnt = cnt_res.scalar() or 0
+        picker_counts.append((p, cnt))
+        
+    min_count = min(cnt for _, cnt in picker_counts)
+    best_pickers = [p for p, cnt in picker_counts if cnt == min_count]
+    picker = random.choice(best_pickers)
+
+    assignment = PickAssignment(pick_list_id=db_picklist.id, picker_id=picker.id)
+    db.add(assignment)
+    db_picklist.status = "assigned"
+
+    db.add(Notification(
+        user_id=picker.id,
+        type="pick_assignment",
+        title="New Picklist Assigned",
+        message=f"LPO #{lpo.lpo_number} for {lpo.customer_name} has been assigned to you.",
+    ))
+    background_tasks.add_task(
+        send_push_notification,
+        picker.push_token or "",
+        "New Picklist Assigned",
+        f"LPO #{lpo.lpo_number} assigned to you.",
+    )
+
+    lpo.status = "processed"
+    await db.flush()
+
 @router.post("", response_model=LpoOut)
 @router.post("/", response_model=LpoOut)
 async def create_lpo(
     lpo: LpoCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user_optional),  # optional — mobile creates without admin token
 ):
@@ -113,20 +194,21 @@ async def create_lpo(
         logger.warning("Duplicate LPO number detected, auto-suffixed to: %s", lpo_number)
 
     source = lpo.source or "upload"
-    # Mobile LPOs start as 'draft' until the PDF is uploaded to confirm them
-    initial_status = "draft" if source == "mobile" else "pending"
-
     db_lpo = Lpo(
         lpo_number=lpo_number,
         customer_name=lpo.customer_name,
         sales_person_id=lpo.sales_person_id,
         items=[item.model_dump() for item in lpo.items],
         delivery_date=lpo.delivery_date,
-        status=initial_status,
+        status="processed", # Skipping pending, direct to processed
         source=source,
         created_by_id=current_user.id if current_user else None,
     )
     db.add(db_lpo)
+    await db.commit()
+
+    # Trigger auto assign immediately
+    await process_lpo_auto_assign(db, db_lpo, background_tasks)
     await db.commit()
 
     result = await db.execute(
@@ -134,7 +216,7 @@ async def create_lpo(
         .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
         .filter(Lpo.id == db_lpo.id)
     )
-    logger.info("LPO created: lpo_number=%s status=%s source=%s", lpo_number, initial_status, source)
+    logger.info("LPO created and auto-assigned: lpo_number=%s source=%s", lpo_number, source)
     return result.scalar_one()
 
 

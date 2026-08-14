@@ -34,8 +34,8 @@ export default function OrderUpload() {
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [validationErrors, setValidationErrors] = useState<{barcode: string, error: string}[]>([]);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const navigate = useNavigate();
-
 
   // Load Sales Catalogue on mount
   useEffect(() => {
@@ -63,6 +63,7 @@ export default function OrderUpload() {
 
     const formData = new FormData();
     formData.append('file', file);
+    setUploadedFile(file);
 
     try {
       setProgress(65);
@@ -194,9 +195,17 @@ export default function OrderUpload() {
         })),
       };
 
-      await api.post('/lpos', payload);
+      const lpoRes = await api.post('/lpos', payload);
       
-      toast.success(`Order #${results.orderNumber} successfully pushed to LPO Management for WM Review!`);
+      if (uploadedFile && lpoRes.data?.id) {
+        const formData = new FormData();
+        formData.append('file', uploadedFile);
+        await api.post(`/lpos/${lpoRes.data.id}/upload-pdf`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      }
+      
+      toast.success(`Order #${results.orderNumber} successfully pushed and auto-assigned!`);
       navigate('/warehouse/lpos');
     } catch (err: any) {
       toast.error(getErrorMessage(err, 'Could not submit LPO to management queue'));

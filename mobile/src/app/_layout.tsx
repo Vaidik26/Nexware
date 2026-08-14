@@ -13,85 +13,85 @@ const queryClient = new QueryClient();
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [fontsLoaded, fontError] = useFonts({
-    Inter: Inter_400Regular,
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
-  });
+ const [fontsLoaded, fontError] = useFonts({
+  Inter: Inter_400Regular,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+ });
 
-  const [isReady, setIsReady] = useState(false);
-  const router = useRouter();
-  const segments = useSegments();
-  const { isAuthenticated, setAuthenticated, setPicker } = useAuthStore();
+ const [isReady, setIsReady] = useState(false);
+ const router = useRouter();
+ const segments = useSegments();
+ const { isAuthenticated, setAuthenticated, setPicker } = useAuthStore();
 
-  // We only use the safety valve for the session restore, not for fonts.
-  // We MUST wait for fontsLoaded to be true before rendering to avoid font warnings.
-  const canRender = (fontsLoaded || fontError) && isReady;
+ // We only use the safety valve for the session restore, not for fonts.
+ // We MUST wait for fontsLoaded to be true before rendering to avoid font warnings.
+ const canRender = (fontsLoaded || fontError) && isReady;
 
-  useEffect(() => {
-    let isMounted = true;
-    const restoreSession = async () => {
-      try {
-        // Wrap SecureStore in a race with a 1.2s timer to prevent Android KeyStore hang on restart
-        const sessionPromise = Promise.all([getToken(), getPickerInfo()]);
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('SecureStore timeout')), 1200));
-        
-        const [token, pickerInfo] = (await Promise.race([sessionPromise, timeoutPromise])) as [string | null, string | null];
-        
-        if (isMounted) {
-          if (token && pickerInfo) {
-            setPicker(JSON.parse(pickerInfo));
-            setAuthenticated(true);
-          } else {
-            setAuthenticated(false);
-          }
-        }
-      } catch (e) {
-        if (isMounted) setAuthenticated(false);
-      } finally {
-        if (isMounted) setIsReady(true);
-      }
-    };
+ useEffect(() => {
+  let isMounted = true;
+  const restoreSession = async () => {
+   try {
+    // Wrap SecureStore in a race with a 1.2s timer to prevent Android KeyStore hang on restart
+    const sessionPromise = Promise.all([getToken(), getPickerInfo()]);
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('SecureStore timeout')), 1200));
     
-    restoreSession();
-    return () => { isMounted = false; };
-  }, []);
-
-  useEffect(() => {
-    if (!canRender) return;
-
-    const inAuthGroup = segments[0] === '(auth)';
-    const inPickerGroup = segments[0] === '(picker)';
-    const inLpoGroup = segments[0] === '(lpo)';
+    const [token, pickerInfo] = (await Promise.race([sessionPromise, timeoutPromise])) as [string | null, string | null];
     
-    if (isAuthenticated) {
-      const isLpoUser = useAuthStore.getState().picker?.role === 'sales_person';
-      if (isLpoUser && !inLpoGroup) {
-        router.replace('/(lpo)/create');
-      } else if (!isLpoUser && !inPickerGroup) {
-        router.replace('/(picker)/jobs');
-      }
-    } else if (!isAuthenticated && !inAuthGroup) {
-      // If not logged in and trying to access anything other than auth, push to login
-      router.replace('/(auth)/login');
+    if (isMounted) {
+     if (token && pickerInfo) {
+      setPicker(JSON.parse(pickerInfo));
+      setAuthenticated(true);
+     } else {
+      setAuthenticated(false);
+     }
     }
-  }, [isAuthenticated, canRender, segments]);
+   } catch (e) {
+    if (isMounted) setAuthenticated(false);
+   } finally {
+    if (isMounted) setIsReady(true);
+   }
+  };
+  
+  restoreSession();
+  return () => { isMounted = false; };
+ }, []);
 
-  useEffect(() => {
-    if (canRender) {
-      SplashScreen.hideAsync();
-    }
-  }, [canRender]);
+ useEffect(() => {
+  if (!canRender) return;
 
-  if (!canRender) {
-    return null; // Return null to keep splash screen visible, instead of ActivityIndicator
+  const inAuthGroup = segments[0] === '(auth)';
+  const inPickerGroup = segments[0] === '(picker)';
+  const inLpoGroup = segments[0] === '(lpo)';
+  
+  if (isAuthenticated) {
+   const isLpoUser = useAuthStore.getState().picker?.role === 'sales_person';
+   if (isLpoUser && !inLpoGroup) {
+    router.replace('/(lpo)/create');
+   } else if (!isLpoUser && !inPickerGroup) {
+    router.replace('/(picker)/jobs');
+   }
+  } else if (!isAuthenticated && !inAuthGroup) {
+   // If not logged in and trying to access anything other than auth, push to login
+   router.replace('/(auth)/login');
   }
+ }, [isAuthenticated, canRender, segments]);
 
-  return (
-    <QueryClientProvider client={queryClient}>
-      <Slot />
-    </QueryClientProvider>
-  );
+ useEffect(() => {
+  if (canRender) {
+   SplashScreen.hideAsync();
+  }
+ }, [canRender]);
+
+ if (!canRender) {
+  return null; // Return null to keep splash screen visible, instead of ActivityIndicator
+ }
+
+ return (
+  <QueryClientProvider client={queryClient}>
+   <Slot />
+  </QueryClientProvider>
+ );
 }
