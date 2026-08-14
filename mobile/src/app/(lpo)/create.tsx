@@ -504,7 +504,9 @@ export default function LpoCreateScreen() {
      className="bg-[#003527] py-4 rounded-2xl flex-row items-center justify-center shadow-md"
      onPress={reviewOrder}
     >
-     <Text className="text-white font-black text-base uppercase tracking-widest">Review Order</Text>
+     <Text className="text-white font-black text-base uppercase tracking-widest">
+      {selectedLpoFile ? 'Confirm Order' : 'Save Order'}
+     </Text>
     </TouchableOpacity>
    </View>
 
@@ -654,7 +656,9 @@ export default function LpoCreateScreen() {
           {isGenerating ? (
            <ActivityIndicator color="white" />
           ) : (
-           <Text className="font-bold text-white text-base">✅ Confirm Order</Text>
+            <Text className="font-bold text-white text-base">
+              {selectedLpoFile ? '✅ Confirm Order' : '💾 Save Order'}
+            </Text>
           )}
          </TouchableOpacity>
         </>

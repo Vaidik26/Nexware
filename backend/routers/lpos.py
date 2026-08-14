@@ -194,21 +194,20 @@ async def create_lpo(
         logger.warning("Duplicate LPO number detected, auto-suffixed to: %s", lpo_number)
 
     source = lpo.source or "upload"
+    # Mobile LPOs start as 'draft' until the PDF is uploaded to confirm them
+    initial_status = "draft" if source == "mobile" else "pending"
+
     db_lpo = Lpo(
         lpo_number=lpo_number,
         customer_name=lpo.customer_name,
         sales_person_id=lpo.sales_person_id,
         items=[item.model_dump() for item in lpo.items],
         delivery_date=lpo.delivery_date,
-        status="processed", # Skipping pending, direct to processed
+        status=initial_status,
         source=source,
         created_by_id=current_user.id if current_user else None,
     )
     db.add(db_lpo)
-    await db.commit()
-
-    # Trigger auto assign immediately
-    await process_lpo_auto_assign(db, db_lpo, background_tasks)
     await db.commit()
 
     result = await db.execute(
@@ -216,7 +215,7 @@ async def create_lpo(
         .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
         .filter(Lpo.id == db_lpo.id)
     )
-    logger.info("LPO created and auto-assigned: lpo_number=%s source=%s", lpo_number, source)
+    logger.info("LPO created: lpo_number=%s status=%s source=%s", lpo_number, initial_status, source)
     return result.scalar_one()
 
 
@@ -245,6 +244,7 @@ async def update_lpo_url(
 @router.post("/{lpo_id}/upload-pdf")
 async def upload_lpo_pdf(
     lpo_id: int,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
@@ -293,9 +293,11 @@ async def upload_lpo_pdf(
         raise HTTPException(status_code=500, detail="File upload failed. Please try again.")
 
     lpo.signed_lpo_url = public_url
-    # Confirming the LPO — move from draft to pending so admin can see it
-    if lpo.status == "draft":
-        lpo.status = "pending"
+
+    # Trigger auto assign immediately upon receiving PDF
+    if lpo.status in ["draft", "pending"]:
+        # Auto-approves the LPO and generates PickList
+        await process_lpo_auto_assign(db, lpo, background_tasks)
 
     await db.commit()
     await db.refresh(lpo)
