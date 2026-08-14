@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, ActivityIndicator, RefreshControl, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LogOut, Plus, Trash2, QrCode, Share, Search } from 'lucide-react-native';
 import { useAuthStore } from '../../store/authStore';
@@ -127,15 +127,27 @@ export default function LpoCreateScreen() {
  };
 
  const updateQuantity = (id: number, qtyStr: string) => {
-  let qty = parseInt(qtyStr) || 0;
+  if (qtyStr === '') {
+   setCart(cart.map(c => c.id === id ? { ...c, quantity: '' as any } : c));
+   return;
+  }
+  let qty = parseInt(qtyStr);
+  if (isNaN(qty)) return;
+  
   const item = cart.find(c => c.id === id);
   if (item) {
    if (qty > item.available_quantity) {
     Alert.alert('Stock Limit Exceeded', `Only ${item.available_quantity} available in stock.`);
     qty = item.available_quantity;
    }
-   if (qty < 1) qty = 1;
    setCart(cart.map(c => c.id === id ? { ...c, quantity: qty } : c));
+  }
+ };
+
+ const validateQuantityOnBlur = (id: number) => {
+  const item = cart.find(c => c.id === id);
+  if (item && (!item.quantity || item.quantity < 1)) {
+   setCart(cart.map(c => c.id === id ? { ...c, quantity: 1 } : c));
   }
  };
 
@@ -176,7 +188,7 @@ export default function LpoCreateScreen() {
   setSelectedLpoFile(null);
  };
 
- const handleConfirmOrder = async () => {
+ const executeOrderCreation = async () => {
   try {
    setIsGenerating(true);
    const payload: any = {
@@ -185,7 +197,7 @@ export default function LpoCreateScreen() {
     source: 'mobile',
     items: cart.map(c => ({
      barcode: c.barcode,
-     quantity: c.quantity,
+     quantity: parseInt(c.quantity) || 1,
      unit: c.unit,
      product_name: c.product_name
     }))
@@ -221,6 +233,21 @@ export default function LpoCreateScreen() {
    Alert.alert('Error', err.response?.data?.detail?.message || err.response?.data?.detail || 'Failed to confirm LPO.');
   } finally {
    setIsGenerating(false);
+  }
+ };
+
+ const handleConfirmOrder = () => {
+  if (selectedLpoFile) {
+   Alert.alert(
+    'Confirm Upload', 
+    'Are you sure you want to attach this PDF? Once attached, the order is confirmed and cannot be modified.',
+    [
+     { text: 'Cancel', style: 'cancel' },
+     { text: 'Confirm', style: 'default', onPress: executeOrderCreation }
+    ]
+   );
+  } else {
+   executeOrderCreation();
   }
  };
 
@@ -484,8 +511,10 @@ export default function LpoCreateScreen() {
          <TextInput
           className="w-12 text-center font-black text-sm bg-white h-full border-x border-gray-200"
           keyboardType="number-pad"
-          value={String(item.quantity)}
+          value={item.quantity === '' ? '' : String(item.quantity)}
           onChangeText={(val) => updateQuantity(item.id, val)}
+          onBlur={() => validateQuantityOnBlur(item.id)}
+          selectTextOnFocus
          />
          <TouchableOpacity onPress={() => incrementQuantity(item.id)} className="px-3 py-2 bg-white">
           <Text className="font-black text-gray-600 text-lg leading-5">+</Text>

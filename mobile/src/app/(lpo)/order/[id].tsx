@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Linking, Modal, TextInput, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Linking, Modal, TextInput, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, FileText, Download, UploadCloud, Edit2, Search, Plus, Trash2 } from 'lucide-react-native';
@@ -78,7 +78,7 @@ export default function LpoOrderDetailsScreen() {
    const payload: any = {
     items: cart.map(c => ({
      barcode: c.barcode,
-     quantity: c.quantity,
+     quantity: parseInt(c.quantity) || 1,
      unit: c.unit,
      product_name: c.product_name
     }))
@@ -104,26 +104,42 @@ export default function LpoOrderDetailsScreen() {
    Alert.alert('Out of Stock', 'This item is out of stock.');
    return;
   }
-  const existing = cart.find(c => c.barcode === item.primary_barcode);
+  const existing = cart.find(c => 
+   (c.id && item.id && c.id === item.id) || 
+   (c.barcode && item.primary_barcode && c.barcode === item.primary_barcode)
+  );
   if (existing) {
-   Alert.alert('Already Added', 'Item is already in the order.');
+   Alert.alert('Already Added', 'This item is already in the order.');
+   return;
   } else {
-   setCart([...cart, { barcode: item.primary_barcode || '', product_name: item.item_name, quantity: 1, available_quantity: item.available_quantity, unit: 'PCS' }]);
+   setCart([...cart, { id: item.id, barcode: item.primary_barcode || '', product_name: item.item_name, quantity: 1, available_quantity: item.available_quantity, unit: 'PCS' }]);
   }
   setShowItemModal(false);
   setSearch('');
  };
 
  const updateQuantity = (barcode: string, qtyStr: string) => {
-  let qty = parseInt(qtyStr) || 0;
+  if (qtyStr === '') {
+   setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: '' as any } : c));
+   return;
+  }
+  let qty = parseInt(qtyStr);
+  if (isNaN(qty)) return;
+
   const item = cart.find(c => c.barcode === barcode);
   if (item) {
-   if (item.available_quantity && qty > item.available_quantity) {
+   if (qty > item.available_quantity) {
     Alert.alert('Stock Limit Exceeded', `Only ${item.available_quantity} available in stock.`);
     qty = item.available_quantity;
    }
-   if (qty < 1) qty = 1;
    setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: qty } : c));
+  }
+ };
+
+ const validateQuantityOnBlur = (barcode: string) => {
+  const item = cart.find(c => c.barcode === barcode);
+  if (item && (!item.quantity || item.quantity < 1)) {
+   setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: 1 } : c));
   }
  };
 
@@ -133,7 +149,7 @@ export default function LpoOrderDetailsScreen() {
    if (item.available_quantity && item.quantity + 1 > item.available_quantity) {
     Alert.alert('Stock Limit Exceeded', `Only ${item.available_quantity} available in stock.`);
    } else {
-    setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: c.quantity + 1 } : c));
+    setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: Number(item.quantity) + 1 } : c));
    }
   }
  };
@@ -141,7 +157,7 @@ export default function LpoOrderDetailsScreen() {
  const decrementQuantity = (barcode: string) => {
   const item = cart.find(c => c.barcode === barcode);
   if (item && item.quantity > 1) {
-   setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: c.quantity - 1 } : c));
+   setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: Number(item.quantity) - 1 } : c));
   }
  };
 
@@ -165,7 +181,7 @@ export default function LpoOrderDetailsScreen() {
    const d = new Date();
    const dateStr = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
    const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-   const totalQty = itemsToUse.reduce((sum: number, item: any) => sum + item.quantity, 0);
+   const totalQty = itemsToUse.reduce((sum: number, item: any) => sum + (parseInt(item.quantity) || 0), 0);
    const delDate = isEditing ? deliveryDate : (lpo?.delivery_date ? new Date(lpo.delivery_date) : null);
 
    const itemRows = itemsToUse.map((item: any, idx: number) => (
@@ -258,7 +274,16 @@ export default function LpoOrderDetailsScreen() {
        allowsEditing: false,
       });
       if (!result.canceled && result.assets[0]) {
-       await executeUpload(result.assets[0].uri, result.assets[0].mimeType || 'image/jpeg', `lpo-${lpo.lpo_number}.jpg`);
+       Alert.alert(
+        'Confirm Upload',
+        'Are you sure you want to attach this document? Once attached, the order is confirmed and cannot be modified.',
+        [
+         { text: 'Cancel', style: 'cancel' },
+         { text: 'Confirm', style: 'default', onPress: async () => {
+          await executeUpload(result.assets[0].uri, result.assets[0].mimeType || 'image/jpeg', `lpo-${lpo.lpo_number}.jpg`);
+         }}
+        ]
+       );
       }
      },
     },
@@ -270,7 +295,16 @@ export default function LpoOrderDetailsScreen() {
        copyToCacheDirectory: true,
       });
       if (!result.canceled && result.assets[0]) {
-       await executeUpload(result.assets[0].uri, result.assets[0].mimeType || 'application/pdf', result.assets[0].name);
+       Alert.alert(
+        'Confirm Upload',
+        'Are you sure you want to attach this document? Once attached, the order is confirmed and cannot be modified.',
+        [
+         { text: 'Cancel', style: 'cancel' },
+         { text: 'Confirm', style: 'default', onPress: async () => {
+          await executeUpload(result.assets[0].uri, result.assets[0].mimeType || 'application/pdf', result.assets[0].name);
+         }}
+        ]
+       );
       }
      },
     },
@@ -489,6 +523,8 @@ export default function LpoOrderDetailsScreen() {
             keyboardType="number-pad"
             value={String(item.quantity)}
             onChangeText={(val) => updateQuantity(item.barcode, val)}
+            onBlur={() => validateQuantityOnBlur(item.barcode)}
+            selectTextOnFocus
            />
            <TouchableOpacity onPress={() => incrementQuantity(item.barcode)} className="px-3 py-2 bg-white">
             <Text className="font-black text-gray-600 text-lg leading-5">+</Text>
