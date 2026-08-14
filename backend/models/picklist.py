@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey, func
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey, func, nulls_last
 from sqlalchemy.orm import relationship
 from backend.database import Base
 
@@ -18,7 +18,17 @@ class PickList(Base):
     sales_person = relationship("User", foreign_keys=[sales_person_id], lazy="selectin")
 
     
-    items = relationship("PickListItem", back_populates="pick_list", cascade="all, delete-orphan", lazy="selectin")
+    items = relationship(
+        "PickListItem", 
+        back_populates="pick_list", 
+        cascade="all, delete-orphan", 
+        lazy="selectin",
+        order_by=lambda: [
+            nulls_last(func.substr(PickListItem.bin_location, 1, 2)),
+            PickListItem.is_full_carton.desc(),
+            nulls_last(PickListItem.bin_location)
+        ]
+    )
     assignments = relationship("PickAssignment", back_populates="pick_list", cascade="all, delete-orphan", lazy="selectin")
     boxes = relationship("PickListBox", back_populates="pick_list", cascade="all, delete-orphan", lazy="selectin")
     @property
