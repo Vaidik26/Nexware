@@ -98,7 +98,7 @@ def generate_branded_picklist_excel(items_list: Any) -> bytes:
     ws.row_dimensions[3].height = 10
     
     # Row 4: Operational Table Headers
-    headers = ["SI", "Item Code (Barcode)", "Description / Product Title", "Quantity", "Checked", "Picked"]
+    headers = ["SI", "Bin Location", "Packaging", "Item Code (Barcode)", "Description / Product Title", "Quantity", "Checked", "Picked"]
     for col_idx, h_text in enumerate(headers, start=1):
         cell = ws.cell(row=4, column=col_idx, value=h_text)
         cell.font = Font(name="Arial", size=11, bold=True, color=white)
@@ -118,6 +118,8 @@ def generate_branded_picklist_excel(items_list: Any) -> bytes:
                 "product_name": getattr(i, "product_name", ""),
                 "quantity": getattr(i, "quantity", 1) or 1,
                 "is_picked": getattr(i, "is_picked", False),
+                "is_full_carton": getattr(i, "is_full_carton", False),
+                "bin_location": getattr(i, "bin_location", "") or "",
             }
             for i in raw
         ]
@@ -128,6 +130,8 @@ def generate_branded_picklist_excel(items_list: Any) -> bytes:
                 "product_name": str(i.get("product_name", "") or i.get("itemName", "") or i.get("description", "")).strip(),
                 "quantity": float(i.get("quantity", 1) or 1),
                 "is_picked": i.get("is_picked", False),
+                "is_full_carton": i.get("is_full_carton", False),
+                "bin_location": str(i.get("bin_location", "")).strip(),
             }
             for i in items_list
         ]
@@ -147,43 +151,55 @@ def generate_branded_picklist_excel(items_list: Any) -> bytes:
         c1 = ws.cell(row=row_num, column=1, value=idx)
         c1.alignment = Alignment(horizontal="center", vertical="center")
         
+        # Bin Location
+        bin_loc = str(item.get("bin_location", "")) or "N/A"
+        c2 = ws.cell(row=row_num, column=2, value=bin_loc.upper())
+        c2.alignment = Alignment(horizontal="center", vertical="center")
+        c2.font = Font(name="Arial", size=11, bold=True, color="1D5D42")
+
+        # Packaging (Full Carton / Loose Item)
+        pkg_type = "Full Carton" if item.get("is_full_carton") else "Loose Item"
+        c3 = ws.cell(row=row_num, column=3, value=pkg_type)
+        c3.alignment = Alignment(horizontal="center", vertical="center")
+        c3.font = Font(name="Arial", size=10, bold=True, color="000000" if item.get("is_full_carton") else "555555")
+        
         # Barcode (Strict text format '@' totally prevents scientific notation 6.29E+12)
         bc_str = str(item.get("barcode", "")).strip() or "N/A"
-        c2 = ws.cell(row=row_num, column=2)
-        c2.number_format = '@'
-        c2.data_type = 's'
-        c2.value = bc_str
-        c2.font = Font(name="Consolas", size=11, bold=True)
-        c2.alignment = Alignment(horizontal="center", vertical="center")
+        c4 = ws.cell(row=row_num, column=4)
+        c4.number_format = '@'
+        c4.data_type = 's'
+        c4.value = bc_str
+        c4.font = Font(name="Consolas", size=11, bold=True)
+        c4.alignment = Alignment(horizontal="center", vertical="center")
         
         # Description (with text wrapping enabled for long item titles)
         prod_title = str(item.get("product_name", ""))
-        c3 = ws.cell(row=row_num, column=3, value=prod_title)
-        c3.alignment = Alignment(horizontal="left", vertical="center", indent=1, wrap_text=True)
-        c3.font = Font(name="Arial", size=11, bold=True)
+        c5 = ws.cell(row=row_num, column=5, value=prod_title)
+        c5.alignment = Alignment(horizontal="left", vertical="center", indent=1, wrap_text=True)
+        c5.font = Font(name="Arial", size=11, bold=True)
         
         # Quantity (Default to 1 if missing or 0)
         qty_val = float(item.get("quantity", 1)) if item.get("quantity") else 1.0
-        c4 = ws.cell(row=row_num, column=4, value=qty_val if qty_val % 1 != 0 else int(qty_val))
-        c4.alignment = Alignment(horizontal="center", vertical="center")
-        c4.font = Font(name="Arial", size=12, bold=True)
+        c6 = ws.cell(row=row_num, column=6, value=qty_val if qty_val % 1 != 0 else int(qty_val))
+        c6.alignment = Alignment(horizontal="center", vertical="center")
+        c6.font = Font(name="Arial", size=12, bold=True)
         
         is_picked_row = pl_status in ("waiting_verification", "picked", "verified", "completed") or item.get("is_picked", False)
         is_checked_row = pl_status in ("verified", "completed")
 
-        c5_val = "[ ✔ ]" if is_checked_row else "[        ]"
-        c6_val = "[ ✔ ]" if is_picked_row else "[        ]"
+        c7_val = "[ ✔ ]" if is_checked_row else "[        ]"
+        c8_val = "[ ✔ ]" if is_picked_row else "[        ]"
 
         # Checked & Picked slots
-        c5 = ws.cell(row=row_num, column=5, value=c5_val)
-        c5.alignment = Alignment(horizontal="center", vertical="center")
-        c5.font = Font(name="Arial" if is_checked_row else "Consolas", size=11, bold=is_checked_row, color="154c34" if is_checked_row else "555555")
+        c7 = ws.cell(row=row_num, column=7, value=c7_val)
+        c7.alignment = Alignment(horizontal="center", vertical="center")
+        c7.font = Font(name="Arial" if is_checked_row else "Consolas", size=11, bold=is_checked_row, color="154c34" if is_checked_row else "555555")
         
-        c6 = ws.cell(row=row_num, column=6, value=c6_val)
-        c6.alignment = Alignment(horizontal="center", vertical="center")
-        c6.font = Font(name="Arial" if is_picked_row else "Consolas", size=11, bold=is_picked_row, color="154c34" if is_picked_row else "555555")
+        c8 = ws.cell(row=row_num, column=8, value=c8_val)
+        c8.alignment = Alignment(horizontal="center", vertical="center")
+        c8.font = Font(name="Arial" if is_picked_row else "Consolas", size=11, bold=is_picked_row, color="154c34" if is_picked_row else "555555")
         
-        for cell in [c1, c2, c3, c4, c5, c6]:
+        for cell in [c1, c2, c3, c4, c5, c6, c7, c8]:
             cell.fill = row_fill
             cell.border = cell_border
             
@@ -196,11 +212,13 @@ def generate_branded_picklist_excel(items_list: Any) -> bytes:
     col_c_width = min(95, max(68, int(max_desc_len * 0.95)))
     
     ws.column_dimensions["A"].width = 8
-    ws.column_dimensions["B"].width = 25
-    ws.column_dimensions["C"].width = col_c_width
-    ws.column_dimensions["D"].width = 15
-    ws.column_dimensions["E"].width = 16
-    ws.column_dimensions["F"].width = 16
+    ws.column_dimensions["B"].width = 16
+    ws.column_dimensions["C"].width = 16
+    ws.column_dimensions["D"].width = 20
+    ws.column_dimensions["E"].width = col_c_width
+    ws.column_dimensions["F"].width = 12
+    ws.column_dimensions["G"].width = 14
+    ws.column_dimensions["H"].width = 14
     
     buf = BytesIO()
     wb.save(buf)

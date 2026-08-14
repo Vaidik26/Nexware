@@ -34,6 +34,8 @@ def generate_picklist_pdf(picklist_data, items_data=None):
                 "unit": getattr(i, "unit", "PCS"),
                 "quantity": getattr(i, "quantity", 1),
                 "is_picked": getattr(i, "is_picked", False),
+                "is_full_carton": getattr(i, "is_full_carton", False),
+                "bin_location": getattr(i, "bin_location", ""),
             }
             for i in raw_items
         ]
@@ -54,11 +56,13 @@ def generate_picklist_pdf(picklist_data, items_data=None):
     # Table Data with wrapped paragraphs
     data = [[
         Paragraph('<b>SI</b>', header_style),
-        Paragraph('<b>Item Code (Barcode)</b>', header_style),
-        Paragraph('<b>Description / Product Title</b>', header_left),
-        Paragraph('<b>Quantity</b>', header_style),
-        Paragraph('<b>Checked</b>', header_style),
-        Paragraph('<b>Picked</b>', header_style)
+        Paragraph('<b>Bin Loc</b>', header_style),
+        Paragraph('<b>Pkg</b>', header_style),
+        Paragraph('<b>Barcode</b>', header_style),
+        Paragraph('<b>Product Title</b>', header_left),
+        Paragraph('<b>Qty</b>', header_style),
+        Paragraph('<b>Chk</b>', header_style),
+        Paragraph('<b>Pck</b>', header_style)
     ]]
     
     tick_html = '<b>[</b> <font name="ZapfDingbats" color="#154c34" size="10">4</font> <b>]</b>'
@@ -73,9 +77,14 @@ def generate_picklist_pdf(picklist_data, items_data=None):
 
         picked_cell = tick_html if is_picked_row else empty_html
         checked_cell = tick_html if is_checked_row else empty_html
+        
+        bin_loc = str(item.get('bin_location', '')) or 'N/A'
+        pkg = "Full Carton" if item.get('is_full_carton') else "Loose"
 
         data.append([
             Paragraph(str(idx + 1), cell_center),
+            Paragraph(f"<b>{bin_loc.upper()}</b>", cell_center),
+            Paragraph(pkg, cell_center),
             Paragraph(str(item.get('barcode', '')), cell_barcode),
             Paragraph(str(item.get('product_name', '')), cell_left_bold),
             Paragraph(f"<b>{qty_val}</b> {unit_val}", cell_center),
@@ -83,7 +92,7 @@ def generate_picklist_pdf(picklist_data, items_data=None):
             Paragraph(picked_cell, cell_center)
         ])
         
-    t = Table(data, colWidths=[28, 97, 280, 45, 45, 45])
+    t = Table(data, colWidths=[22, 45, 55, 85, 213, 40, 40, 40])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#154c34')),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
