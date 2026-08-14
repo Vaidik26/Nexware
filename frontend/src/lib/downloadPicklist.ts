@@ -3,11 +3,13 @@ export const downloadPicklistPDF = (lpo: any) => {
   const rows = (lpo.items || []).map((item: any, i: number) => `
     <tr>
       <td>${i + 1}</td>
+      <td style="font-weight:bold">${(item.bin_location || 'N/A').toUpperCase()}</td>
+      <td>${item.is_full_carton ? 'Full Carton' : 'Loose'}</td>
       <td>${item.barcode}</td>
-      <td>${item.product_name}</td>
-      <td>${item.quantity}</td>
+      <td><strong>${item.product_name}</strong></td>
+      <td><strong>${item.quantity}</strong></td>
       <td>${item.unit || 'PCS'}</td>
-      <td style="width:80px">&nbsp;</td>
+      <td style="width:60px; text-align:center;">[ &nbsp; ]</td>
     </tr>`);
   const html = `
     <!DOCTYPE html><html><head><meta charset="utf-8">
@@ -30,7 +32,7 @@ export const downloadPicklistPDF = (lpo: any) => {
       Items: <strong>${lpo.items?.length || 0}</strong>
     </div>
     <table>
-      <thead><tr><th>#</th><th>Barcode</th><th>Product Name</th><th>Qty</th><th>Unit</th><th>Picked ✓</th></tr></thead>
+      <thead><tr><th>#</th><th>Bin Loc</th><th>Pkg</th><th>Barcode</th><th>Product Name</th><th>Qty</th><th>Unit</th><th>Picked ✓</th></tr></thead>
       <tbody>${rows.join('')}</tbody>
     </table>
     <div class="footer">NexWare — Noor Ghazal General Trading LLC &nbsp;|&nbsp; Generated: ${new Date().toLocaleString()}</div>
@@ -45,9 +47,9 @@ export const downloadPicklistPDF = (lpo: any) => {
 
 export const downloadPicklistExcel = (lpo: any) => {
   if (!lpo) return;
-  const headers = ['#', 'Barcode', 'Product Name', 'Quantity', 'Unit', 'Picked'];
+  const headers = ['#', 'Bin Loc', 'Pkg', 'Barcode', 'Product Name', 'Quantity', 'Unit', 'Picked'];
   const rows = (lpo.items || []).map((item: any, i: number) => [
-    i + 1, item.barcode, item.product_name, item.quantity, item.unit || 'PCS', ''
+    i + 1, (item.bin_location || 'N/A').toUpperCase(), item.is_full_carton ? 'Full Carton' : 'Loose', item.barcode, item.product_name, item.quantity, item.unit || 'PCS', ''
   ]);
   const csvContent = [headers, ...rows]
     .map((r: any) => r.map((v: any) => `"${String(v).replace(/"/g, '""')}"`).join(','))
