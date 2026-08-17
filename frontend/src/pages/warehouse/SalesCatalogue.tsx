@@ -22,6 +22,7 @@ const itemSchema = z.object({
   standard_carton_quantity: z.coerce.number().min(1),
   packaging_weight: z.coerce.number().min(0),
   sku_size_category: z.string().min(1),
+  max_order_quantity: z.coerce.number().min(0).optional(),
 });
 
 type ItemForm = z.infer<typeof itemSchema>;
@@ -48,7 +49,7 @@ export default function SalesCatalogue() {
   
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<ItemForm>({
     resolver: zodResolver(itemSchema),
-    defaultValues: { standard_carton_quantity: 1, packaging_weight: 0, sku_size_category: '>100g' }
+    defaultValues: { standard_carton_quantity: 1, packaging_weight: 0, sku_size_category: '>100g', max_order_quantity: 0 }
   });
 
   const { register: registerCarton, handleSubmit: handleCartonSubmit, reset: resetCarton, formState: { errors: cartonErrors } } = useForm<CartonForm>({
@@ -94,6 +95,7 @@ export default function SalesCatalogue() {
     setValue('standard_carton_quantity', item.standard_carton_quantity || 1);
     setValue('packaging_weight', item.packaging_weight || 0);
     setValue('sku_size_category', item.sku_size_category || '>100g');
+    setValue('max_order_quantity', item.max_order_quantity || 0);
     setIsEditModalOpen(true);
   };
 
@@ -101,7 +103,7 @@ export default function SalesCatalogue() {
     setIsAddModalOpen(false);
     setIsEditModalOpen(false);
     setEditingItem(null);
-    reset({ standard_carton_quantity: 1, packaging_weight: 0, sku_size_category: '>100g', item_name: '', item_number: '', primary_barcode: '', secondary_barcode: '', bin_location: '' });
+    reset({ standard_carton_quantity: 1, packaging_weight: 0, sku_size_category: '>100g', max_order_quantity: 0, item_name: '', item_number: '', primary_barcode: '', secondary_barcode: '', bin_location: '' });
     resetCarton();
   };
 
@@ -118,6 +120,7 @@ export default function SalesCatalogue() {
         standard_carton_quantity: data.standard_carton_quantity,
         packaging_weight: data.packaging_weight,
         sku_size_category: data.sku_size_category,
+        max_order_quantity: data.max_order_quantity || null,
       };
 
       if (isEditModalOpen && editingItem) {
@@ -207,6 +210,7 @@ export default function SalesCatalogue() {
     { header: 'Secondary Barcode', accessor: (r: any) => r.secondary_barcode ? <span className="font-mono text-xs font-semibold bg-slate-100 px-2 py-1 rounded">{r.secondary_barcode}</span> : '-' },
     { header: 'Bin Location', accessor: (r: any) => r.bin_location || '-' },
     { header: 'SKU Size', accessor: (r: any) => r.sku_size_category || '-' },
+    { header: 'Max Order Qty', accessor: (r: any) => r.max_order_quantity || '-' },
     { header: 'Available Qty', accessor: (r: any) => (
         <span className={r.available_quantity > 0 ? "text-emerald-600 font-bold" : "text-slate-400 font-bold"}>
           {r.available_quantity || 0} PCS
@@ -320,9 +324,10 @@ export default function SalesCatalogue() {
               <Input label="Secondary Barcode" placeholder="Optional" {...register('secondary_barcode')} error={errors.secondary_barcode?.message} />
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <Input label="Bin Location" placeholder="e.g. A1-B2-C3" {...register('bin_location')} error={errors.bin_location?.message} />
-              <Input label="SKU Size Category" placeholder="<=100g, >100g" {...register('sku_size_category')} error={errors.sku_size_category?.message} />
+              <Input label="SKU Size" placeholder="<=100g, >100g" {...register('sku_size_category')} error={errors.sku_size_category?.message} />
+              <Input label="Max Order Qty" type="number" placeholder="0 = None" {...register('max_order_quantity')} error={errors.max_order_quantity?.message} />
             </div>
             
             <div className="grid grid-cols-2 gap-4">

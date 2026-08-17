@@ -88,6 +88,7 @@ export default function LpoCreateScreen() {
  const [search, setSearch] = useState('');
  const [customerSearch, setCustomerSearch] = useState('');
  const [debouncedSearch, setDebouncedSearch] = useState('');
+ const [customersLoading, setCustomersLoading] = useState(false);
  
  // SUCCESS MODAL STATE
  const [successModalVisible, setSuccessModalVisible] = useState(false);
@@ -123,11 +124,14 @@ export default function LpoCreateScreen() {
 
  const fetchCustomers = async (searchQuery: string = '') => {
   try {
+   setCustomersLoading(true);
    const endpoint = searchQuery ? `/customers?q=${encodeURIComponent(searchQuery)}` : '/customers';
    const custRes = await api.get(endpoint);
    setCustomers(custRes.data || []);
   } catch (err) {
    console.log('Error fetching customers:', err);
+  } finally {
+   setCustomersLoading(false);
   }
  };
 
@@ -149,7 +153,8 @@ export default function LpoCreateScreen() {
   await logout();
  };
 
- const handleSelectFromCatalogue = (item: CatalogueItem) => {
+ 
+ const handleSelectFromCatalogue = (item: any) => {
   const existing = cart.find(c => 
    (c.id && item.id && c.id === item.id) || 
    (c.barcode && item.primary_barcode && c.barcode === item.primary_barcode)
@@ -335,11 +340,11 @@ export default function LpoCreateScreen() {
  };
 
  const handleConfirmPhotos = (fileData: any) => {
-  setSelectedLpoFile(fileData);
-  setShowCameraModal(false);
-  // Execute order right after confirming photos!
-  executeOrderCreation(fileData);
- };
+    setSelectedLpoFile(fileData);
+    setShowCameraModal(false);
+    // Success alert for photos attached
+    Alert.alert('✅ Success', 'LPO Photos attached successfully!');
+   };
 
   const handleDownloadPDF = async (share: boolean = false) => {
   if (isSharing) return;
@@ -671,7 +676,11 @@ export default function LpoCreateScreen() {
       )}
       ListEmptyComponent={
        <View className="p-8 items-center justify-center">
-        <Text className="text-gray-400 text-sm font-semibold text-center">No customers found.</Text>
+        {customersLoading ? (
+          <ActivityIndicator size="small" color="#059669" />
+        ) : (
+          <Text className="text-gray-400 text-sm font-semibold text-center">No customers found.</Text>
+        )}
        </View>
       }
      />
@@ -708,7 +717,7 @@ export default function LpoCreateScreen() {
          disabled={isSharing}
          className={`w-full p-4 rounded-xl items-center justify-center flex-row gap-2 ${isSharing ? 'bg-slate-200' : 'bg-slate-100'}`}
         >
-         {isSharing ? <ActivityIndicator color="#334155" /> : <Text className="font-bold text-slate-700 text-base">⬇ Download LPO</Text>}
+         {isSharing ? <ActivityIndicator color="#334155" /> : <Text className="font-bold text-slate-700 text-base">🖨️ Print and Save</Text>}
         </TouchableOpacity>
 
         {!isConfirmed && hasDownloadedPDF && (

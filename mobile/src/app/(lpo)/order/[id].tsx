@@ -8,7 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import MultiPhotoModal from '../../components/MultiPhotoModal';
+import MultiPhotoModal from '../../../components/MultiPhotoModal';
 
 const CartItemRow = React.memo(({ item, index, isEditing, removeItem, decrementQuantity, updateQuantity, validateQuantityOnBlur, incrementQuantity }: any) => {
  return (
@@ -84,11 +84,15 @@ export default function LpoOrderDetailsScreen() {
  const [quantityModalVisible, setQuantityModalVisible] = useState(false);
  const [selectedItemForQuantity, setSelectedItemForQuantity] = useState<any>(null);
  const [tempQuantity, setTempQuantity] = useState('1');
+ const quantityInputRef = useRef<any>(null);
  const [showCameraModal, setShowCameraModal] = useState(false);
 
  useEffect(() => {
-  fetchLpoDetails();
-  fetchCatalogue();
+  if (id) {
+   setSelectedLpoFile(null);
+   fetchLpoDetails();
+   fetchCatalogue();
+  }
  }, [id]);
 
  const fetchLpoDetails = async () => {
@@ -484,7 +488,7 @@ export default function LpoOrderDetailsScreen() {
             {isSharing ? <ActivityIndicator color="#374151" /> : (
              <>
               <Download size={18} color="#374151" />
-              <Text className="text-gray-700 font-black text-base ml-2">Download PDF</Text>
+              <Text className="text-gray-700 font-black text-base ml-2">🖨️ Print and Save</Text>
              </>
             )}
            </TouchableOpacity>
@@ -502,7 +506,7 @@ export default function LpoOrderDetailsScreen() {
             ) : (
              <>
               <UploadCloud size={18} color="#fff" />
-              <Text className="text-white font-black text-base ml-2">Upload Signed PDF</Text>
+              <Text className="text-white font-black text-base ml-2">📷 Take Photos of Signed LPO</Text>
              </>
             )}
            </TouchableOpacity>
@@ -606,7 +610,15 @@ export default function LpoOrderDetailsScreen() {
    </Modal>
 
    {/* Quantity Modal */}
-   <Modal visible={quantityModalVisible} transparent animationType="fade">
+   <Modal 
+     visible={quantityModalVisible} 
+     transparent 
+     animationType="fade"
+     onShow={() => {
+       // Small delay to ensure modal is fully visible before focusing
+       setTimeout(() => quantityInputRef.current?.focus(), 100);
+     }}
+   >
     <View className="flex-1 bg-black/50 justify-center items-center p-6">
      <View className="bg-white rounded-3xl p-6 w-full max-w-sm">
       <Text className="text-xl font-black text-gray-800 text-center mb-2">Enter Quantity</Text>
@@ -615,8 +627,9 @@ export default function LpoOrderDetailsScreen() {
       </Text>
       
       <TextInput
+       ref={quantityInputRef}
        className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-4 text-center text-3xl font-black text-gray-800 mb-6"
-       keyboardType="number-pad"
+       keyboardType="numeric"
        value={tempQuantity}
        onChangeText={setTempQuantity}
        autoFocus

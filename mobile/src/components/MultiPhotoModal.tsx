@@ -1,1 +1,176 @@
-import React, { useState, useRef } from "react";\nimport { View, Text, TouchableOpacity, ScrollView, Image, ActivityIndicator, Alert, SafeAreaView, Modal } from "react-native";\nimport { CameraView, useCameraPermissions } from "expo-camera";\nimport { X, Camera, Check, Trash2, FileText } from "lucide-react-native";\nimport * as Print from "expo-print";\nimport * as FileSystem from "expo-file-system";\n\nexport default function MultiPhotoModal({ visible, onClose, onConfirm }) {\n  const [permission, requestPermission] = useCameraPermissions();\n  const [photos, setPhotos] = useState<string[]>([]);\n  const [isPreview, setIsPreview] = useState(false);\n  const [isProcessing, setIsProcessing] = useState(false);\n  const cameraRef = useRef<CameraView>(null);\n\n  if (!visible) return null;\n\n  if (!permission) {\n    return <View />;\n  }\n\n  if (!permission.granted) {\n    return (\n      <Modal visible={visible} animationType="slide">\n        <SafeAreaView className="flex-1 bg-black justify-center items-center">\n          <Text className="text-white text-center mb-4 text-lg">We need camera access to attach LPO photos</Text>\n          <TouchableOpacity onPress={requestPermission} className="bg-emerald-600 px-6 py-4 rounded-xl">\n            <Text className="text-white font-black text-lg">Grant Permission</Text>\n          </TouchableOpacity>\n          <TouchableOpacity onPress={onClose} className="mt-8">\n            <Text className="text-gray-400 font-bold">Cancel</Text>\n          </TouchableOpacity>\n        </SafeAreaView>\n      </Modal>\n    );\n  }\n\n  const takePhoto = async () => {\n    if (cameraRef.current) {\n      try {\n        const photo = await cameraRef.current.takePictureAsync({\n          quality: 0.7,\n        });\n        if (photo?.uri) {\n          setPhotos([...photos, photo.uri]);\n        }\n      } catch (err) {\n        console.error(err);\n      }\n    }\n  };\n\n  const removePhoto = (index: number) => {\n    setPhotos(photos.filter((_, i) => i !== index));\n  };\n\n  const generatePDFAndConfirm = async () => {\n    if (photos.length === 0) return;\n    setIsProcessing(true);\n    try {\n      const base64Photos = await Promise.all(\n        photos.map(async (uri) => {\n          const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });\n          return `data:image/jpeg;base64,${base64}`;\n        })\n      );\n      \n      const imgTags = base64Photos.map(b64 => `<img src="${b64}" style="width: 100%; margin-bottom: 20px; border-radius: 8px;" />`).join("");\n      \n      const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>body { margin: 0; padding: 20px; font-family: sans-serif; text-align: center; background: #f8fafc; }</style></head><body>${imgTags}</body></html>`;\n      \n      const { uri: pdfUri } = await Print.printToFileAsync({ html: htmlContent, base64: false });\n      \n      onConfirm({\n        uri: pdfUri,\n        mimeType: "application/pdf",\n        filename: `lpo-photos-${Date.now()}.pdf`\n      });\n      \n      setPhotos([]);\n      setIsPreview(false);\n      onClose();\n    } catch (err) {\n      console.error(err);\n      Alert.alert("Error", "Failed to process photos.");\n    } finally {\n      setIsProcessing(false);\n    }\n  };\n\n  return (\n    <Modal visible={visible} animationType="slide">\n      <SafeAreaView className="flex-1 bg-black">\n        {!isPreview ? (\n          <View className="flex-1">\n            <View className="flex-row justify-between items-center p-4 z-10 absolute top-0 w-full">\n              <TouchableOpacity onPress={onClose} className="w-10 h-10 bg-black/50 rounded-full items-center justify-center">\n                <X color="white" size={24} />\n              </TouchableOpacity>\n              <View className="bg-black/50 px-3 py-1 rounded-full">\n                <Text className="text-white font-bold">{photos.length} Photos</Text>\n              </View>\n            </View>\n            \n            <View className="flex-1 rounded-3xl overflow-hidden mt-16 mb-4 mx-4">\n              <CameraView ref={cameraRef} style={{ flex: 1 }} facing="back" />\n            </View>\n            \n            <View className="p-6 pb-10 flex-row items-center justify-between">\n              <View className="w-16" />\n              <TouchableOpacity onPress={takePhoto} className="w-20 h-20 rounded-full border-4 border-white items-center justify-center">\n                <View className="w-16 h-16 bg-white rounded-full" />\n              </TouchableOpacity>\n              <TouchableOpacity \n                className={`w-16 h-16 rounded-2xl items-center justify-center ${photos.length > 0 ? "bg-emerald-500" : "bg-gray-800"}`}\n                disabled={photos.length === 0}\n                onPress={() => setIsPreview(true)}\n              >\n                <Check color={photos.length > 0 ? "white" : "#4b5563"} size={28} />\n              </TouchableOpacity>\n            </View>\n          </View>\n        ) : (\n          <View className="flex-1 bg-white">\n            <View className="flex-row justify-between items-center p-4 border-b border-gray-200">\n              <TouchableOpacity onPress={() => setIsPreview(false)} className="w-10 h-10 bg-gray-100 rounded-full items-center justify-center">\n                <X color="#374151" size={20} />\n              </TouchableOpacity>\n              <Text className="text-lg font-black text-gray-800">Preview ({photos.length})</Text>\n              <View className="w-10" />\n            </View>\n            \n            <ScrollView className="flex-1 p-4">\n              {photos.map((uri, index) => (\n                <View key={index} className="mb-4 relative">\n                  <Image source={{ uri }} className="w-full h-80 rounded-2xl" resizeMode="cover" />\n                  <TouchableOpacity \n                    onPress={() => removePhoto(index)}\n                    className="absolute top-4 right-4 w-10 h-10 bg-rose-500 rounded-full items-center justify-center shadow-md"\n                  >\n                    <Trash2 color="white" size={20} />\n                  </TouchableOpacity>\n                </View>\n              ))}\n              {photos.length === 0 && (\n                <View className="py-20 items-center">\n                  <Text className="text-gray-500 font-bold">No photos taken.</Text>\n                </View>\n              )}\n            </ScrollView>\n            \n            <View className="p-4 border-t border-gray-200">\n              <TouchableOpacity \n                className={`w-full py-4 rounded-2xl flex-row items-center justify-center shadow-sm ${photos.length > 0 ? "bg-red-600" : "bg-gray-300"}`}\n                disabled={photos.length === 0 || isProcessing}\n                onPress={generatePDFAndConfirm}\n              >\n                {isProcessing ? (\n                  <ActivityIndicator color="white" />\n                ) : (\n                  <Text className="text-white font-black text-base uppercase tracking-widest">Confirm Order</Text>\n                )}\n              </TouchableOpacity>\n            </View>\n          </View>\n        )}\n      </SafeAreaView>\n    </Modal>\n  );\n}\n
+import React, { useState, useRef, useEffect } from "react";
+import { View, Text, TouchableOpacity, ScrollView, Image, ActivityIndicator, Alert, SafeAreaView, Modal } from "react-native";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import { X, Camera, Check, Trash2, FileText } from "lucide-react-native";
+import * as Print from "expo-print";
+import * as FileSystem from "expo-file-system";
+
+export default function MultiPhotoModal({ visible, onClose, onConfirm }: any) {
+  const [permission, requestPermission] = useCameraPermissions();
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [isPreview, setIsPreview] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const cameraRef = useRef<CameraView>(null);
+
+  useEffect(() => {
+    if (!visible) {
+      setPhotos([]);
+      setIsPreview(false);
+      setIsProcessing(false);
+    }
+  }, [visible]);
+
+  if (!visible) return null;
+
+  if (!permission) {
+    return <View />;
+  }
+
+  if (!permission.granted) {
+    return (
+      <SafeAreaView className="flex-1 bg-[#003527] justify-center items-center">
+        <Text className="text-white text-center mb-4 text-lg">We need camera access to attach LPO photos</Text>
+        <TouchableOpacity onPress={requestPermission} className="bg-[#003527] border-2 border-white px-6 py-4 rounded-xl">
+          <Text className="text-white font-black text-lg">Grant Permission</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onClose} className="mt-8">
+          <Text className="text-gray-400 font-bold">Cancel</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+const takePhoto = async () => {
+  if (cameraRef.current) {
+    try {
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.7,
+      });
+      if (photo?.uri) {
+        setPhotos([...photos, photo.uri]);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+};
+
+const removePhoto = (index: number) => {
+  setPhotos(photos.filter((_, i) => i !== index));
+};
+
+const generatePDFAndConfirm = async () => {
+  if (photos.length === 0) return;
+  setIsProcessing(true);
+  try {
+    const base64Photos = await Promise.all(
+      photos.map(async (uri) => {
+        const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+        return `data:image/jpeg;base64,${base64}`;
+      })
+    );
+    
+    const imgTags = base64Photos.map(b64 => `<img src="${b64}" style="width: 100%; margin-bottom: 20px; border-radius: 8px;" />`).join("");
+    
+    const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>body { margin: 0; padding: 20px; font-family: sans-serif; text-align: center; background: #f8fafc; }</style></head><body>${imgTags}</body></html>`;
+    
+    const { uri: pdfUri } = await Print.printToFileAsync({ html: htmlContent, base64: false });
+    
+    onConfirm({
+      uri: pdfUri,
+      mimeType: "application/pdf",
+      filename: `lpo-photos-${Date.now()}.pdf`
+    });
+    
+    setPhotos([]);
+    setIsPreview(false);
+    onClose();
+  } catch (err) {
+    console.error(err);
+    Alert.alert("Error", "Failed to process photos.");
+  } finally {
+    setIsProcessing(false);
+  }
+};
+
+return (
+  <Modal visible={visible} animationType="slide">
+    <SafeAreaView className="flex-1 bg-[#003527]">
+      {!isPreview ? (
+        <View className="flex-1">
+          <View className="flex-row justify-between items-center p-4 z-10 absolute top-0 w-full">
+            <TouchableOpacity onPress={onClose} className="w-10 h-10 bg-black/50 rounded-full items-center justify-center">
+              <X color="white" size={24} />
+            </TouchableOpacity>
+            <View className="bg-black/50 px-3 py-1 rounded-full">
+              <Text className="text-white font-bold">{photos.length} Photos</Text>
+            </View>
+          </View>
+          
+          <View className="flex-1 rounded-3xl overflow-hidden mt-16 mb-4 mx-4">
+            <CameraView ref={cameraRef} style={{ flex: 1 }} facing="back" />
+          </View>
+          
+          <View className="p-6 pb-10 flex-row items-center justify-between">
+            <View className="w-16" />
+            <TouchableOpacity onPress={takePhoto} className="w-20 h-20 rounded-full border-4 border-white items-center justify-center">
+              <View className="w-16 h-16 bg-white rounded-full" />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              className={`w-16 h-16 rounded-2xl items-center justify-center ${photos.length > 0 ? "bg-white" : "bg-gray-800"}`}
+              disabled={photos.length === 0}
+              onPress={() => setIsPreview(true)}
+            >
+              <Check color={photos.length > 0 ? "#003527" : "#4b5563"} size={28} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <View className="flex-1 bg-white">
+          <View className="flex-row justify-between items-center p-4 border-b border-gray-200">
+            <TouchableOpacity onPress={() => setIsPreview(false)} className="w-10 h-10 bg-gray-100 rounded-full items-center justify-center">
+              <X color="#374151" size={20} />
+            </TouchableOpacity>
+            <Text className="text-lg font-black text-gray-800">Preview ({photos.length})</Text>
+            <View className="w-10" />
+          </View>
+          
+          <ScrollView className="flex-1 p-4">
+            {photos.map((uri, index) => (
+              <View key={index} className="mb-4 relative">
+                <Image source={{ uri }} className="w-full h-80 rounded-2xl" resizeMode="cover" />
+                <TouchableOpacity 
+                  onPress={() => removePhoto(index)}
+                  className="absolute top-4 right-4 w-10 h-10 bg-rose-500 rounded-full items-center justify-center shadow-md"
+                >
+                  <Trash2 color="white" size={20} />
+                </TouchableOpacity>
+              </View>
+            ))}
+            {photos.length === 0 && (
+              <View className="py-20 items-center">
+                <Text className="text-gray-500 font-bold">No photos taken.</Text>
+              </View>
+            )}
+          </ScrollView>
+          
+          <View className="p-4 border-t border-gray-200">
+            <TouchableOpacity 
+              className={`w-full py-4 rounded-2xl flex-row items-center justify-center shadow-sm ${photos.length > 0 ? "bg-[#003527]" : "bg-gray-300"}`}
+              disabled={photos.length === 0 || isProcessing}
+              onPress={generatePDFAndConfirm}
+            >
+              {isProcessing ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text className="text-white font-black text-base uppercase tracking-widest">Confirm Photos</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </SafeAreaView>
+  </Modal>
+);
+}
