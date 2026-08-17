@@ -1,14 +1,65 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Linking, Modal, TextInput, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, FileText, Download, UploadCloud, Edit2, Search, Plus, Trash2 } from 'lucide-react-native';
 import api from '../../../lib/api';
-import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import MultiPhotoModal from '../../components/MultiPhotoModal';
+
+const CartItemRow = React.memo(({ item, index, isEditing, removeItem, decrementQuantity, updateQuantity, validateQuantityOnBlur, incrementQuantity }: any) => {
+ return (
+  <View className={`p-4 flex-col bg-white border-b border-gray-100`}>
+   <View className="flex-row items-start justify-between mb-2">
+    <View className="flex-row items-start gap-4 flex-1 pr-2">
+     <View className="w-8 h-8 rounded-full bg-emerald-50 border border-emerald-100 items-center justify-center">
+      <Text className="text-emerald-700 font-black text-xs">{index + 1}</Text>
+     </View>
+     <View className="flex-1">
+      <Text className="text-gray-800 font-bold text-base" numberOfLines={2}>{item.product_name}</Text>
+      <Text className="text-emerald-600 font-mono text-xs font-bold mt-0.5">{item.barcode}</Text>
+     </View>
+    </View>
+    {isEditing && (
+     <TouchableOpacity onPress={() => removeItem(item.barcode)} className="p-2 bg-rose-50 rounded-lg">
+      <Trash2 size={16} color="#ef4444" />
+     </TouchableOpacity>
+    )}
+   </View>
+   
+   {isEditing ? (
+    <View className="flex-row justify-end items-center mt-2 border-t border-gray-50 pt-2">
+     <View className="flex-row items-center border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+      <TouchableOpacity onPress={() => decrementQuantity(item.barcode)} className="px-3 py-2 bg-white">
+       <Text className="font-black text-gray-600 text-lg leading-5">-</Text>
+      </TouchableOpacity>
+      <TextInput
+       className="w-12 text-center font-black text-sm bg-white h-full border-x border-gray-200"
+       keyboardType="number-pad"
+       value={String(item.quantity)}
+       onChangeText={(val) => updateQuantity(item.barcode, val)}
+       onBlur={() => validateQuantityOnBlur(item.barcode)}
+       selectTextOnFocus
+      />
+      <TouchableOpacity onPress={() => incrementQuantity(item.barcode)} className="px-3 py-2 bg-white">
+       <Text className="font-black text-gray-600 text-lg leading-5">+</Text>
+      </TouchableOpacity>
+     </View>
+    </View>
+   ) : (
+    <View className="flex-row justify-end items-center mt-1">
+     <View className="items-end pl-2">
+      <Text className="text-gray-500 font-semibold text-xs mb-0.5">QTY</Text>
+      <Text className="text-gray-900 font-black text-lg">{item.quantity}</Text>
+     </View>
+    </View>
+   )}
+  </View>
+ );
+});
 
 export default function LpoOrderDetailsScreen() {
  const { id } = useLocalSearchParams();
@@ -29,6 +80,11 @@ export default function LpoOrderDetailsScreen() {
  const [catalogue, setCatalogue] = useState<any[]>([]);
  const [showItemModal, setShowItemModal] = useState(false);
  const [search, setSearch] = useState('');
+ 
+ const [quantityModalVisible, setQuantityModalVisible] = useState(false);
+ const [selectedItemForQuantity, setSelectedItemForQuantity] = useState<any>(null);
+ const [tempQuantity, setTempQuantity] = useState('1');
+ const [showCameraModal, setShowCameraModal] = useState(false);
 
  useEffect(() => {
   fetchLpoDetails();
@@ -99,11 +155,7 @@ export default function LpoOrderDetailsScreen() {
   }
  };
 
- const addToCart = (item: any) => {
-  if (item.available_quantity <= 0) {
-   Alert.alert('Out of Stock', 'This item is out of stock.');
-   return;
-  }
+ const handleSelectFromCatalogue = (item: any) => {
   const existing = cart.find(c => 
    (c.id && item.id && c.id === item.id) || 
    (c.barcode && item.primary_barcode && c.barcode === item.primary_barcode)
@@ -111,59 +163,85 @@ export default function LpoOrderDetailsScreen() {
   if (existing) {
    Alert.alert('Already Added', 'This item is already in the order.');
    return;
-  } else {
-   setCart([...cart, { id: item.id, barcode: item.primary_barcode || '', product_name: item.item_name, quantity: 1, available_quantity: item.available_quantity, unit: 'PCS' }]);
   }
+  
+  setSelectedItemForQuantity(item);
+  setTempQuantity('1');
+  setQuantityModalVisible(true);
+ };
+
+ const confirmQuantity = () => {
+  if (!selectedItemForQuantity) return;
+  let qty = parseInt(tempQuantity);
+  if (isNaN(qty) || qty < 1) qty = 1;
+  
+  const maxQty = selectedItemForQuantity.max_order_quantity;
+  if (maxQty !== null && maxQty !== undefined && qty > maxQty) {
+   Alert.alert('Limit Exceeded', `Cannot order more than ${maxQty} of this item.`);
+   return;
+  }
+
+  setCart([...cart, { 
+   id: selectedItemForQuantity.id, 
+   barcode: selectedItemForQuantity.primary_barcode || '', 
+   product_name: selectedItemForQuantity.item_name, 
+   quantity: qty, 
+   max_order_quantity: selectedItemForQuantity.max_order_quantity, 
+   unit: 'PCS' 
+  }]);
+  
+  setQuantityModalVisible(false);
+  setSelectedItemForQuantity(null);
   setShowItemModal(false);
   setSearch('');
  };
 
- const updateQuantity = (barcode: string, qtyStr: string) => {
-  if (qtyStr === '') {
-   setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: '' as any } : c));
-   return;
-  }
-  let qty = parseInt(qtyStr);
-  if (isNaN(qty)) return;
-
-  const item = cart.find(c => c.barcode === barcode);
-  if (item) {
-   if (qty > item.available_quantity) {
-    Alert.alert('Stock Limit Exceeded', `Only ${item.available_quantity} available in stock.`);
-    qty = item.available_quantity;
+ const updateQuantity = useCallback((barcode: string, qtyStr: string) => {
+  setCart(prev => prev.map(c => {
+   if (c.barcode !== barcode) return c;
+   if (qtyStr === '') return { ...c, quantity: '' as any };
+   let qty = parseInt(qtyStr);
+   if (isNaN(qty)) return c;
+   const maxQty = c.max_order_quantity;
+   if (maxQty !== null && maxQty !== undefined && qty > maxQty) {
+    Alert.alert('Limit Exceeded', `Cannot order more than ${maxQty} of this item.`);
+    qty = maxQty;
    }
-   setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: qty } : c));
-  }
- };
+   return { ...c, quantity: qty };
+  }));
+ }, []);
 
- const validateQuantityOnBlur = (barcode: string) => {
-  const item = cart.find(c => c.barcode === barcode);
-  if (item && (!item.quantity || item.quantity < 1)) {
-   setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: 1 } : c));
-  }
- };
+ const validateQuantityOnBlur = useCallback((barcode: string) => {
+  setCart(prev => prev.map(c => {
+   if (c.barcode !== barcode) return c;
+   if (!c.quantity || c.quantity < 1) return { ...c, quantity: 1 };
+   return c;
+  }));
+ }, []);
 
- const incrementQuantity = (barcode: string) => {
-  const item = cart.find(c => c.barcode === barcode);
-  if (item) {
-   if (item.available_quantity && item.quantity + 1 > item.available_quantity) {
-    Alert.alert('Stock Limit Exceeded', `Only ${item.available_quantity} available in stock.`);
-   } else {
-    setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: Number(item.quantity) + 1 } : c));
+ const incrementQuantity = useCallback((barcode: string) => {
+  setCart(prev => prev.map(c => {
+   if (c.barcode !== barcode) return c;
+   const maxQty = c.max_order_quantity;
+   if (maxQty !== null && maxQty !== undefined && c.quantity + 1 > maxQty) {
+    Alert.alert('Limit Exceeded', `Cannot order more than ${maxQty} of this item.`);
+    return c;
    }
-  }
- };
+   return { ...c, quantity: Number(c.quantity) + 1 };
+  }));
+ }, []);
 
- const decrementQuantity = (barcode: string) => {
-  const item = cart.find(c => c.barcode === barcode);
-  if (item && item.quantity > 1) {
-   setCart(cart.map(c => c.barcode === barcode ? { ...c, quantity: Number(item.quantity) - 1 } : c));
-  }
- };
+ const decrementQuantity = useCallback((barcode: string) => {
+  setCart(prev => prev.map(c => {
+   if (c.barcode !== barcode) return c;
+   if (c.quantity > 1) return { ...c, quantity: Number(c.quantity) - 1 };
+   return c;
+  }));
+ }, []);
 
- const removeItem = (barcode: string) => {
-  setCart(cart.filter(c => c.barcode !== barcode));
- };
+ const removeItem = useCallback((barcode: string) => {
+  setCart(prev => prev.filter(c => c.barcode !== barcode));
+ }, []);
 
  const handleOpenPdf = () => {
   if (lpo?.signed_lpo_url) {
@@ -252,65 +330,12 @@ export default function LpoOrderDetailsScreen() {
  };
 
  const handleUploadClick = () => {
-  showUploadOptions();
+  setShowCameraModal(true);
  };
 
- const showUploadOptions = () => {
-  Alert.alert(
-   'Attach Signed LPO',
-   'Choose how to attach the document:',
-   [
-    {
-     text: '📷 Take Photo',
-     onPress: async () => {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-       Alert.alert('Permission Denied', 'Camera permission is required.');
-       return;
-      }
-      const result = await ImagePicker.launchCameraAsync({
-       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-       quality: 0.8,
-       allowsEditing: false,
-      });
-      if (!result.canceled && result.assets[0]) {
-       Alert.alert(
-        'Confirm Upload',
-        'Are you sure you want to attach this document? Once attached, the order is confirmed and cannot be modified.',
-        [
-         { text: 'Cancel', style: 'cancel' },
-         { text: 'Confirm', style: 'default', onPress: async () => {
-          await executeUpload(result.assets[0].uri, result.assets[0].mimeType || 'image/jpeg', `lpo-${lpo.lpo_number}.jpg`);
-         }}
-        ]
-       );
-      }
-     },
-    },
-    {
-     text: '📎 Attach File',
-     onPress: async () => {
-      const result = await DocumentPicker.getDocumentAsync({
-       type: ['application/pdf', 'image/*'],
-       copyToCacheDirectory: true,
-      });
-      if (!result.canceled && result.assets[0]) {
-       Alert.alert(
-        'Confirm Upload',
-        'Are you sure you want to attach this document? Once attached, the order is confirmed and cannot be modified.',
-        [
-         { text: 'Cancel', style: 'cancel' },
-         { text: 'Confirm', style: 'default', onPress: async () => {
-          await executeUpload(result.assets[0].uri, result.assets[0].mimeType || 'application/pdf', result.assets[0].name);
-         }}
-        ]
-       );
-      }
-     },
-    },
-    { text: 'Cancel', style: 'cancel' },
-   ]
-  );
+ const handleConfirmPhotos = (fileData: any) => {
+  executeUpload(fileData.uri, fileData.mimeType, fileData.filename);
+  setShowCameraModal(false);
  };
 
  const executeUpload = async (uri: string, mimeType: string, filename: string) => {
@@ -379,177 +404,145 @@ export default function LpoOrderDetailsScreen() {
     )}
    </View>
 
-   <ScrollView className="flex-1" contentContainerStyle={{ padding: 16 }}>
-    {/* Order Summary Card */}
-    <View className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
-     <View className="flex-row items-center gap-3 mb-4">
-      <View className="w-12 h-12 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center justify-center">
-       <FileText size={24} color="#059669" />
-      </View>
-      <View className="flex-1">
-       <Text className="text-2xl font-black text-gray-800">{lpo.lpo_number}</Text>
-       <Text className="text-gray-500 font-bold">{lpo.customer_name}</Text>
-      </View>
-     </View>
-
-     <View className="bg-gray-50 p-4 rounded-2xl mb-4 border border-gray-100">
-      <View className="flex-row justify-between mb-2">
-       <Text className="text-gray-500 font-semibold text-sm">Status</Text>
-       <Text className="text-gray-500 font-semibold text-sm">Delivery Date</Text>
-      </View>
-      <View className="flex-row justify-between items-center">
-       <View className="bg-emerald-100 px-3 py-1 rounded-lg">
-        <Text className="text-emerald-800 font-bold text-xs uppercase">{lpo.status}</Text>
-       </View>
-       {isEditing ? (
-        <TouchableOpacity 
-         className="bg-white border border-gray-200 rounded-lg px-3 py-1.5"
-         onPress={() => setShowDatePicker(true)}
-        >
-         <Text className="text-gray-800 font-bold text-sm">
-          {deliveryDate ? deliveryDate.toISOString().split('T')[0] : 'Select Date'}
-         </Text>
-        </TouchableOpacity>
-       ) : (
-        <Text className="text-gray-800 font-black text-sm">
-         {lpo.delivery_date ? new Date(lpo.delivery_date).toLocaleDateString() : 'N/A'}
-        </Text>
-       )}
-      </View>
-     </View>
-     
-     {showDatePicker && (
-      <DateTimePicker
-       value={deliveryDate || new Date()}
-       mode="date"
-       display="default"
-       onChange={(event: any, selectedDate?: Date) => {
-        setShowDatePicker(false);
-        if (selectedDate) setDeliveryDate(selectedDate);
-       }}
-      />
-     )}
-
-     {!isEditing && (
-      <>
-       {lpo.signed_lpo_url ? (
-        <TouchableOpacity 
-         onPress={handleOpenPdf}
-         className="bg-emerald-600 py-4 rounded-2xl flex-row items-center justify-center shadow-sm"
-        >
-         <Download size={18} color="#fff" />
-         <Text className="text-white font-black text-base ml-2">View Signed LPO</Text>
-        </TouchableOpacity>
-       ) : (
-        <View className="gap-3">
-         <TouchableOpacity 
-          onPress={handleDownloadPDF} 
-          disabled={isSharing}
-          className={`py-4 rounded-2xl flex-row items-center justify-center shadow-sm border ${isSharing ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-200'}`}
-         >
-          {isSharing ? <ActivityIndicator color="#374151" /> : (
-           <>
-            <Download size={18} color="#374151" />
-            <Text className="text-gray-700 font-black text-base ml-2">Download PDF</Text>
-           </>
-          )}
-         </TouchableOpacity>
-         
-         <TouchableOpacity 
-          onPress={handleUploadClick}
-          disabled={isUploading}
-          className={`bg-[#003527] py-4 rounded-2xl flex-row items-center justify-center shadow-sm ${isUploading ? 'opacity-75' : ''}`}
-         >
-          {isUploading ? (
-           <>
-            <ActivityIndicator color="#fff" />
-            <Text className="text-white font-black text-base ml-2">Uploading...</Text>
-           </>
-          ) : (
-           <>
-            <UploadCloud size={18} color="#fff" />
-            <Text className="text-white font-black text-base ml-2">Upload Signed PDF</Text>
-           </>
-          )}
-         </TouchableOpacity>
+   <FlatList
+    className="flex-1"
+    contentContainerStyle={{ padding: 16 }}
+    data={itemsToDisplay}
+    keyExtractor={(item, index) => item.barcode || `temp-${index}`}
+    initialNumToRender={15}
+    maxToRenderPerBatch={10}
+    windowSize={5}
+    ListHeaderComponent={
+     <>
+      {/* Order Summary Card */}
+      <View className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
+       <View className="flex-row items-center gap-3 mb-4">
+        <View className="w-12 h-12 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center justify-center">
+         <FileText size={24} color="#059669" />
         </View>
-       )}
-      </>
-     )}
-    </View>
+        <View className="flex-1">
+         <Text className="text-2xl font-black text-gray-800">{lpo.lpo_number}</Text>
+         <Text className="text-gray-500 font-bold">{lpo.customer_name}</Text>
+        </View>
+       </View>
 
-    {/* Items List */}
-    <View className="mb-8">
-     <View className="flex-row justify-between items-center mb-4">
-      <Text className="text-lg font-black text-gray-800 ml-1">Order Items ({itemsToDisplay.length})</Text>
-      {isEditing && (
-       <TouchableOpacity onPress={() => setShowItemModal(true)} className="bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
-        <Text className="text-emerald-700 font-bold text-xs uppercase">+ Add Item</Text>
-       </TouchableOpacity>
-      )}
-     </View>
-     
-     <View className="bg-white rounded-3xl border border-gray-200 overflow-hidden shadow-sm">
-      {itemsToDisplay.map((item: any, index: number) => (
-       <View 
-        key={item.barcode || index} 
-        className={`p-4 flex-col ${index !== itemsToDisplay.length - 1 ? 'border-b border-gray-100' : ''}`}
-       >
-        <View className="flex-row items-start justify-between mb-2">
-         <View className="flex-row items-start gap-4 flex-1 pr-2">
-          <View className="w-8 h-8 rounded-full bg-emerald-50 border border-emerald-100 items-center justify-center">
-           <Text className="text-emerald-700 font-black text-xs">{index + 1}</Text>
-          </View>
-          <View className="flex-1">
-           <Text className="text-gray-800 font-bold text-base" numberOfLines={2}>{item.product_name}</Text>
-           <Text className="text-emerald-600 font-mono text-xs font-bold mt-0.5">{item.barcode}</Text>
-          </View>
+       <View className="bg-gray-50 p-4 rounded-2xl mb-4 border border-gray-100">
+        <View className="flex-row justify-between mb-2">
+         <Text className="text-gray-500 font-semibold text-sm">Status</Text>
+         <Text className="text-gray-500 font-semibold text-sm">Delivery Date</Text>
+        </View>
+        <View className="flex-row justify-between items-center">
+         <View className="bg-emerald-100 px-3 py-1 rounded-lg">
+          <Text className="text-emerald-800 font-bold text-xs uppercase">{lpo.status}</Text>
          </View>
-         {isEditing && (
-          <TouchableOpacity onPress={() => removeItem(item.barcode)} className="p-2 bg-rose-50 rounded-lg">
-           <Trash2 size={16} color="#ef4444" />
+         {isEditing ? (
+          <TouchableOpacity 
+           className="bg-white border border-gray-200 rounded-lg px-3 py-1.5"
+           onPress={() => setShowDatePicker(true)}
+          >
+           <Text className="text-gray-800 font-bold text-sm">
+            {deliveryDate ? deliveryDate.toISOString().split('T')[0] : 'Select Date'}
+           </Text>
           </TouchableOpacity>
+         ) : (
+          <Text className="text-gray-800 font-black text-sm">
+           {lpo.delivery_date ? new Date(lpo.delivery_date).toLocaleDateString() : 'N/A'}
+          </Text>
          )}
         </View>
-        
-        {isEditing ? (
-         <View className="flex-row justify-end items-center mt-2 border-t border-gray-50 pt-2">
-          <View className="flex-row items-center border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-           <TouchableOpacity onPress={() => decrementQuantity(item.barcode)} className="px-3 py-2 bg-white">
-            <Text className="font-black text-gray-600 text-lg leading-5">-</Text>
-           </TouchableOpacity>
-           <TextInput
-            className="w-12 text-center font-black text-sm bg-white h-full border-x border-gray-200"
-            keyboardType="number-pad"
-            value={String(item.quantity)}
-            onChangeText={(val) => updateQuantity(item.barcode, val)}
-            onBlur={() => validateQuantityOnBlur(item.barcode)}
-            selectTextOnFocus
-           />
-           <TouchableOpacity onPress={() => incrementQuantity(item.barcode)} className="px-3 py-2 bg-white">
-            <Text className="font-black text-gray-600 text-lg leading-5">+</Text>
-           </TouchableOpacity>
-          </View>
-         </View>
-        ) : (
-         <View className="flex-row justify-end items-center mt-1">
-          <View className="items-end pl-2">
-           <Text className="text-gray-500 font-semibold text-xs mb-0.5">QTY</Text>
-           <Text className="text-gray-900 font-black text-lg">{item.quantity}</Text>
-          </View>
-         </View>
-        )}
        </View>
-      ))}
+       
+       {showDatePicker && (
+        <DateTimePicker
+         value={deliveryDate || new Date()}
+         mode="date"
+         display="default"
+         onChange={(event: any, selectedDate?: Date) => {
+          setShowDatePicker(false);
+          if (selectedDate) setDeliveryDate(selectedDate);
+         }}
+        />
+       )}
 
-      {(!itemsToDisplay || itemsToDisplay.length === 0) && (
-       <View className="p-8 items-center justify-center">
-        <Text className="text-gray-400 font-semibold">No items found in this order.</Text>
-       </View>
-      )}
+       {!isEditing && (
+        <>
+         {lpo.signed_lpo_url ? (
+          <TouchableOpacity 
+           onPress={handleOpenPdf}
+           className="bg-emerald-600 py-4 rounded-2xl flex-row items-center justify-center shadow-sm"
+          >
+           <Download size={18} color="#fff" />
+           <Text className="text-white font-black text-base ml-2">View Signed LPO</Text>
+          </TouchableOpacity>
+         ) : (
+          <View className="gap-3">
+           <TouchableOpacity 
+            onPress={handleDownloadPDF} 
+            disabled={isSharing}
+            className={`py-4 rounded-2xl flex-row items-center justify-center shadow-sm border ${isSharing ? 'bg-gray-100 border-gray-200' : 'bg-white border-gray-200'}`}
+           >
+            {isSharing ? <ActivityIndicator color="#374151" /> : (
+             <>
+              <Download size={18} color="#374151" />
+              <Text className="text-gray-700 font-black text-base ml-2">Download PDF</Text>
+             </>
+            )}
+           </TouchableOpacity>
+           
+           <TouchableOpacity 
+            onPress={handleUploadClick}
+            disabled={isUploading}
+            className={`bg-[#003527] py-4 rounded-2xl flex-row items-center justify-center shadow-sm ${isUploading ? 'opacity-75' : ''}`}
+           >
+            {isUploading ? (
+             <>
+              <ActivityIndicator color="#fff" />
+              <Text className="text-white font-black text-base ml-2">Uploading...</Text>
+             </>
+            ) : (
+             <>
+              <UploadCloud size={18} color="#fff" />
+              <Text className="text-white font-black text-base ml-2">Upload Signed PDF</Text>
+             </>
+            )}
+           </TouchableOpacity>
+          </View>
+         )}
+        </>
+       )}
+      </View>
+
+      <View className="flex-row justify-between items-center mb-4">
+       <Text className="text-lg font-black text-gray-800 ml-1">Order Items ({itemsToDisplay.length})</Text>
+       {isEditing && (
+        <TouchableOpacity onPress={() => setShowItemModal(true)} className="bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+         <Text className="text-emerald-700 font-bold text-xs uppercase">+ Add Item</Text>
+        </TouchableOpacity>
+       )}
+      </View>
+     </>
+    }
+    renderItem={({ item, index }) => (
+     <CartItemRow 
+      item={item}
+      index={index}
+      isEditing={isEditing}
+      removeItem={removeItem}
+      decrementQuantity={decrementQuantity}
+      updateQuantity={updateQuantity}
+      validateQuantityOnBlur={validateQuantityOnBlur}
+      incrementQuantity={incrementQuantity}
+     />
+    )}
+    ListEmptyComponent={
+     <View className="p-8 items-center justify-center bg-white rounded-3xl border border-gray-200">
+      <Text className="text-gray-400 font-semibold">No items found in this order.</Text>
      </View>
-    </View>
-   </ScrollView>
+    }
+    ItemSeparatorComponent={() => <View />}
+    ListFooterComponent={<View className="h-8" />}
+    style={{ flex: 1 }}
+   />
    
    {isEditing && (
     <View className="p-4 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
@@ -590,16 +583,11 @@ export default function LpoOrderDetailsScreen() {
       renderItem={({ item }) => (
        <TouchableOpacity
         className="px-4 py-4 border-b border-gray-100 flex-row justify-between items-center bg-white"
-        onPress={() => addToCart(item)}
+        onPress={() => handleSelectFromCatalogue(item)}
        >
         <View className="flex-1 pr-4">
          <Text className="font-bold text-gray-800 text-base mb-1">{item.item_name}</Text>
          <Text className="text-xs text-gray-500 font-semibold">{item.primary_barcode}</Text>
-        </View>
-        <View className={`px-3 py-1.5 rounded-lg border ${item.available_quantity > 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
-         <Text className={`text-xs font-black ${item.available_quantity > 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-          {item.available_quantity > 0 ? `${item.available_quantity} PCS` : 'Out of Stock'}
-         </Text>
         </View>
        </TouchableOpacity>
       )}
@@ -608,14 +596,56 @@ export default function LpoOrderDetailsScreen() {
    </Modal>
 
    {/* Loading Overlay */}
-   {isUploading && (
-    <View className="absolute inset-0 bg-black/50 items-center justify-center z-50">
-     <View className="bg-white p-6 rounded-2xl items-center">
+   <Modal visible={isUploading} transparent animationType="fade">
+    <View className="flex-1 bg-black/50 items-center justify-center">
+     <View className="bg-white p-6 rounded-2xl items-center flex-row shadow-lg">
       <ActivityIndicator size="large" color="#059669" />
-      <Text className="mt-4 font-bold text-gray-800">Uploading LPO...</Text>
+      <Text className="ml-4 font-bold text-gray-800 text-base">Uploading LPO...</Text>
      </View>
     </View>
-   )}
+   </Modal>
+
+   {/* Quantity Modal */}
+   <Modal visible={quantityModalVisible} transparent animationType="fade">
+    <View className="flex-1 bg-black/50 justify-center items-center p-6">
+     <View className="bg-white rounded-3xl p-6 w-full max-w-sm">
+      <Text className="text-xl font-black text-gray-800 text-center mb-2">Enter Quantity</Text>
+      <Text className="text-sm text-gray-500 text-center mb-6" numberOfLines={2}>
+       {selectedItemForQuantity?.item_name}
+      </Text>
+      
+      <TextInput
+       className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-4 text-center text-3xl font-black text-gray-800 mb-6"
+       keyboardType="number-pad"
+       value={tempQuantity}
+       onChangeText={setTempQuantity}
+       autoFocus
+       selectTextOnFocus
+      />
+      
+      <View className="flex-row gap-3">
+       <TouchableOpacity 
+        onPress={() => setQuantityModalVisible(false)}
+        className="flex-1 p-4 rounded-xl bg-gray-100 items-center justify-center"
+       >
+        <Text className="font-bold text-gray-600 text-base">Cancel</Text>
+       </TouchableOpacity>
+       <TouchableOpacity 
+        onPress={confirmQuantity}
+        className="flex-1 p-4 rounded-xl bg-[#003527] items-center justify-center"
+       >
+        <Text className="font-bold text-white text-base">Confirm</Text>
+       </TouchableOpacity>
+      </View>
+     </View>
+    </View>
+   </Modal>
+
+   <MultiPhotoModal 
+     visible={showCameraModal} 
+     onClose={() => setShowCameraModal(false)} 
+     onConfirm={handleConfirmPhotos} 
+   />
   </SafeAreaView>
  );
 }

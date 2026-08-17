@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, ActivityIndicator, RefreshControl, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LogOut, Plus, Trash2, QrCode, Share, Search } from 'lucide-react-native';
@@ -36,41 +36,6 @@ const generateAutoLpoNumber = () => {
  const rnd = Math.floor(1000 + Math.random() * 9000);
  return `LPO-${yyyy}${mm}${dd}-${rnd}`;
 };
-
-const CartItemRow = React.memo(({ item, removeItem, decrementQuantity, updateQuantity, validateQuantityOnBlur, incrementQuantity }: any) => {
- return (
-  <View className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm mb-3 flex-col">
-   <View className="flex-row justify-between items-start mb-3">
-    <View className="flex-1 pr-2">
-     <Text className="font-bold text-gray-800 text-sm mb-1">{item.product_name}</Text>
-     <Text className="text-xs text-gray-500 font-semibold bg-gray-100 self-start px-2 py-0.5 rounded-md">{item.barcode}</Text>
-    </View>
-    <TouchableOpacity onPress={() => removeItem(item.id)} className="p-2 bg-rose-50 rounded-lg">
-     <Trash2 size={16} color="#ef4444" />
-    </TouchableOpacity>
-   </View>
-   
-   <View className="flex-row items-center justify-end border-t border-gray-100 pt-3">
-    <View className="flex-row items-center border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-     <TouchableOpacity onPress={() => decrementQuantity(item.id)} className="px-3 py-2 bg-white">
-      <Text className="font-black text-gray-600 text-lg leading-5">-</Text>
-     </TouchableOpacity>
-     <TextInput
-      className="w-12 text-center font-black text-sm bg-white h-full border-x border-gray-200"
-      keyboardType="number-pad"
-      value={item.quantity === '' ? '' : String(item.quantity)}
-      onChangeText={(val) => updateQuantity(item.id, val)}
-      onBlur={() => validateQuantityOnBlur(item.id)}
-      selectTextOnFocus
-     />
-     <TouchableOpacity onPress={() => incrementQuantity(item.id)} className="px-3 py-2 bg-white">
-      <Text className="font-black text-gray-600 text-lg leading-5">+</Text>
-     </TouchableOpacity>
-    </View>
-   </View>
-  </View>
- );
-});
 
 export default function LpoCreateScreen() {
  const { logout, picker } = useAuthStore();
@@ -190,52 +155,54 @@ export default function LpoCreateScreen() {
   setSearch('');
  };
 
- const removeItem = useCallback((id: number) => {
-  setCart(prev => prev.filter(c => c.id !== id));
- }, []);
-
- const updateQuantity = useCallback((id: number, qtyStr: string) => {
-  setCart(prev => prev.map(c => {
-   if (c.id !== id) return c;
-   if (qtyStr === '') return { ...c, quantity: '' as any };
-   let qty = parseInt(qtyStr);
-   if (isNaN(qty)) return c;
-   const maxQty = c.max_order_quantity;
+ const updateQuantity = (id: number, qtyStr: string) => {
+  if (qtyStr === '') {
+   setCart(cart.map(c => c.id === id ? { ...c, quantity: '' as any } : c));
+   return;
+  }
+  let qty = parseInt(qtyStr);
+  if (isNaN(qty)) return;
+  
+  const item = cart.find(c => c.id === id);
+  if (item) {
+   const maxQty = item.max_order_quantity;
    if (maxQty !== null && maxQty !== undefined && qty > maxQty) {
     Alert.alert('Limit Exceeded', `Cannot order more than ${maxQty} of this item.`);
     qty = maxQty;
    }
-   return { ...c, quantity: qty };
-  }));
- }, []);
+   setCart(cart.map(c => c.id === id ? { ...c, quantity: qty } : c));
+  }
+ };
 
- const validateQuantityOnBlur = useCallback((id: number) => {
-  setCart(prev => prev.map(c => {
-   if (c.id !== id) return c;
-   if (!c.quantity || c.quantity < 1) return { ...c, quantity: 1 };
-   return c;
-  }));
- }, []);
+ const validateQuantityOnBlur = (id: number) => {
+  const item = cart.find(c => c.id === id);
+  if (item && (!item.quantity || item.quantity < 1)) {
+   setCart(cart.map(c => c.id === id ? { ...c, quantity: 1 } : c));
+  }
+ };
 
- const incrementQuantity = useCallback((id: number) => {
-  setCart(prev => prev.map(c => {
-   if (c.id !== id) return c;
-   const maxQty = c.max_order_quantity;
-   if (maxQty !== null && maxQty !== undefined && c.quantity + 1 > maxQty) {
+ const incrementQuantity = (id: number) => {
+  const item = cart.find(c => c.id === id);
+  if (item) {
+   const maxQty = item.max_order_quantity;
+   if (maxQty !== null && maxQty !== undefined && item.quantity + 1 > maxQty) {
     Alert.alert('Limit Exceeded', `Cannot order more than ${maxQty} of this item.`);
-    return c;
+   } else {
+    setCart(cart.map(c => c.id === id ? { ...c, quantity: c.quantity + 1 } : c));
    }
-   return { ...c, quantity: c.quantity + 1 };
-  }));
- }, []);
+  }
+ };
 
- const decrementQuantity = useCallback((id: number) => {
-  setCart(prev => prev.map(c => {
-   if (c.id !== id) return c;
-   if (c.quantity > 1) return { ...c, quantity: c.quantity - 1 };
-   return c;
-  }));
- }, []);
+ const decrementQuantity = (id: number) => {
+  const item = cart.find(c => c.id === id);
+  if (item && item.quantity > 1) {
+   setCart(cart.map(c => c.id === id ? { ...c, quantity: c.quantity - 1 } : c));
+  }
+ };
+
+ const removeItem = (id: number) => {
+  setCart(cart.filter(c => c.id !== id));
+ };
 
  const reviewOrder = () => {
   if (!customerName.trim() || !orderNumber.trim()) {
@@ -510,18 +477,37 @@ export default function LpoCreateScreen() {
      className="flex-1"
      showsVerticalScrollIndicator={false}
      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#003527"]} tintColor="#006c49" />}
-     initialNumToRender={15}
-     maxToRenderPerBatch={10}
-     windowSize={5}
      renderItem={({ item }) => (
-      <CartItemRow 
-       item={item}
-       removeItem={removeItem}
-       decrementQuantity={decrementQuantity}
-       updateQuantity={updateQuantity}
-       validateQuantityOnBlur={validateQuantityOnBlur}
-       incrementQuantity={incrementQuantity}
-      />
+      <View className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm mb-3 flex-col">
+       <View className="flex-row justify-between items-start mb-3">
+        <View className="flex-1 pr-2">
+         <Text className="font-bold text-gray-800 text-sm mb-1">{item.product_name}</Text>
+         <Text className="text-xs text-gray-500 font-semibold bg-gray-100 self-start px-2 py-0.5 rounded-md">{item.barcode}</Text>
+        </View>
+        <TouchableOpacity onPress={() => removeItem(item.id)} className="p-2 bg-rose-50 rounded-lg">
+         <Trash2 size={16} color="#ef4444" />
+        </TouchableOpacity>
+       </View>
+       
+       <View className="flex-row items-center justify-end border-t border-gray-100 pt-3">
+        <View className="flex-row items-center border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+         <TouchableOpacity onPress={() => decrementQuantity(item.id)} className="px-3 py-2 bg-white">
+          <Text className="font-black text-gray-600 text-lg leading-5">-</Text>
+         </TouchableOpacity>
+         <TextInput
+          className="w-12 text-center font-black text-sm bg-white h-full border-x border-gray-200"
+          keyboardType="number-pad"
+          value={item.quantity === '' ? '' : String(item.quantity)}
+          onChangeText={(val) => updateQuantity(item.id, val)}
+          onBlur={() => validateQuantityOnBlur(item.id)}
+          selectTextOnFocus
+         />
+         <TouchableOpacity onPress={() => incrementQuantity(item.id)} className="px-3 py-2 bg-white">
+          <Text className="font-black text-gray-600 text-lg leading-5">+</Text>
+         </TouchableOpacity>
+        </View>
+       </View>
+      </View>
      )}
      ListEmptyComponent={
       <View className="items-center justify-center py-12 bg-white rounded-2xl border border-dashed border-gray-300">

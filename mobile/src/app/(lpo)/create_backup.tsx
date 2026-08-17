@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, ActivityIndicator, RefreshControl, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LogOut, Plus, Trash2, QrCode, Share, Search } from 'lucide-react-native';
@@ -10,13 +10,12 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import MultiPhotoModal from '../../components/MultiPhotoModal';
 
 interface CatalogueItem {
  id: number;
  primary_barcode: string;
  item_name: string;
- max_order_quantity: number | null;
+ available_quantity: number;
 }
 
 interface CartItem {
@@ -24,7 +23,7 @@ interface CartItem {
  barcode: string;
  product_name: string;
  quantity: number;
- max_order_quantity: number | null;
+ available_quantity: number;
  unit: string;
 }
 
@@ -36,41 +35,6 @@ const generateAutoLpoNumber = () => {
  const rnd = Math.floor(1000 + Math.random() * 9000);
  return `LPO-${yyyy}${mm}${dd}-${rnd}`;
 };
-
-const CartItemRow = React.memo(({ item, removeItem, decrementQuantity, updateQuantity, validateQuantityOnBlur, incrementQuantity }: any) => {
- return (
-  <View className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm mb-3 flex-col">
-   <View className="flex-row justify-between items-start mb-3">
-    <View className="flex-1 pr-2">
-     <Text className="font-bold text-gray-800 text-sm mb-1">{item.product_name}</Text>
-     <Text className="text-xs text-gray-500 font-semibold bg-gray-100 self-start px-2 py-0.5 rounded-md">{item.barcode}</Text>
-    </View>
-    <TouchableOpacity onPress={() => removeItem(item.id)} className="p-2 bg-rose-50 rounded-lg">
-     <Trash2 size={16} color="#ef4444" />
-    </TouchableOpacity>
-   </View>
-   
-   <View className="flex-row items-center justify-end border-t border-gray-100 pt-3">
-    <View className="flex-row items-center border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-     <TouchableOpacity onPress={() => decrementQuantity(item.id)} className="px-3 py-2 bg-white">
-      <Text className="font-black text-gray-600 text-lg leading-5">-</Text>
-     </TouchableOpacity>
-     <TextInput
-      className="w-12 text-center font-black text-sm bg-white h-full border-x border-gray-200"
-      keyboardType="number-pad"
-      value={item.quantity === '' ? '' : String(item.quantity)}
-      onChangeText={(val) => updateQuantity(item.id, val)}
-      onBlur={() => validateQuantityOnBlur(item.id)}
-      selectTextOnFocus
-     />
-     <TouchableOpacity onPress={() => incrementQuantity(item.id)} className="px-3 py-2 bg-white">
-      <Text className="font-black text-gray-600 text-lg leading-5">+</Text>
-     </TouchableOpacity>
-    </View>
-   </View>
-  </View>
- );
-});
 
 export default function LpoCreateScreen() {
  const { logout, picker } = useAuthStore();
@@ -97,12 +61,6 @@ export default function LpoCreateScreen() {
  const [selectedLpoFile, setSelectedLpoFile] = useState<any>(null);
  const [refreshing, setRefreshing] = useState(false);
  const [isSharing, setIsSharing] = useState(false);
- const [hasDownloadedPDF, setHasDownloadedPDF] = useState(false);
- const [showCameraModal, setShowCameraModal] = useState(false);
-
- const [quantityModalVisible, setQuantityModalVisible] = useState(false);
- const [selectedItemForQuantity, setSelectedItemForQuantity] = useState<CatalogueItem | null>(null);
- const [tempQuantity, setTempQuantity] = useState('1');
 
  // Debounce search input
  useEffect(() => {
@@ -149,7 +107,11 @@ export default function LpoCreateScreen() {
   await logout();
  };
 
- const handleSelectFromCatalogue = (item: CatalogueItem) => {
+ const addToCart = (item: CatalogueItem) => {
+  if (item.available_quantity <= 0) {
+   Alert.alert('Out of Stock', 'This item is out of stock and cannot be added.');
+   return;
+  }
   const existing = cart.find(c => 
    (c.id && item.id && c.id === item.id) || 
    (c.barcode && item.primary_barcode && c.barcode === item.primary_barcode)
@@ -157,85 +119,59 @@ export default function LpoCreateScreen() {
   if (existing) {
    Alert.alert('Already Added', 'This item is already in the LPO. You can adjust its quantity from the list.');
    return;
+  } else {
+   setCart([...cart, { id: item.id, barcode: item.primary_barcode || '', product_name: item.item_name, quantity: 1, available_quantity: item.available_quantity, unit: 'PCS' }]);
   }
-  
-  setSelectedItemForQuantity(item);
-  setTempQuantity('1');
-  setQuantityModalVisible(true);
- };
-
- const confirmQuantity = () => {
-  if (!selectedItemForQuantity) return;
-  let qty = parseInt(tempQuantity);
-  if (isNaN(qty) || qty < 1) qty = 1;
-  
-  const maxQty = selectedItemForQuantity.max_order_quantity;
-  if (maxQty !== null && maxQty !== undefined && qty > maxQty) {
-   Alert.alert('Limit Exceeded', `Cannot order more than ${maxQty} of this item.`);
-   return;
-  }
-
-  setCart([...cart, { 
-   id: selectedItemForQuantity.id, 
-   barcode: selectedItemForQuantity.primary_barcode || '', 
-   product_name: selectedItemForQuantity.item_name, 
-   quantity: qty, 
-   max_order_quantity: selectedItemForQuantity.max_order_quantity, 
-   unit: 'PCS' 
-  }]);
-  
-  setQuantityModalVisible(false);
-  setSelectedItemForQuantity(null);
   setShowItemModal(false);
   setSearch('');
  };
 
- const removeItem = useCallback((id: number) => {
-  setCart(prev => prev.filter(c => c.id !== id));
- }, []);
-
- const updateQuantity = useCallback((id: number, qtyStr: string) => {
-  setCart(prev => prev.map(c => {
-   if (c.id !== id) return c;
-   if (qtyStr === '') return { ...c, quantity: '' as any };
-   let qty = parseInt(qtyStr);
-   if (isNaN(qty)) return c;
-   const maxQty = c.max_order_quantity;
-   if (maxQty !== null && maxQty !== undefined && qty > maxQty) {
-    Alert.alert('Limit Exceeded', `Cannot order more than ${maxQty} of this item.`);
-    qty = maxQty;
+ const updateQuantity = (id: number, qtyStr: string) => {
+  if (qtyStr === '') {
+   setCart(cart.map(c => c.id === id ? { ...c, quantity: '' as any } : c));
+   return;
+  }
+  let qty = parseInt(qtyStr);
+  if (isNaN(qty)) return;
+  
+  const item = cart.find(c => c.id === id);
+  if (item) {
+   if (qty > item.available_quantity) {
+    Alert.alert('Stock Limit Exceeded', `Only ${item.available_quantity} available in stock.`);
+    qty = item.available_quantity;
    }
-   return { ...c, quantity: qty };
-  }));
- }, []);
+   setCart(cart.map(c => c.id === id ? { ...c, quantity: qty } : c));
+  }
+ };
 
- const validateQuantityOnBlur = useCallback((id: number) => {
-  setCart(prev => prev.map(c => {
-   if (c.id !== id) return c;
-   if (!c.quantity || c.quantity < 1) return { ...c, quantity: 1 };
-   return c;
-  }));
- }, []);
+ const validateQuantityOnBlur = (id: number) => {
+  const item = cart.find(c => c.id === id);
+  if (item && (!item.quantity || item.quantity < 1)) {
+   setCart(cart.map(c => c.id === id ? { ...c, quantity: 1 } : c));
+  }
+ };
 
- const incrementQuantity = useCallback((id: number) => {
-  setCart(prev => prev.map(c => {
-   if (c.id !== id) return c;
-   const maxQty = c.max_order_quantity;
-   if (maxQty !== null && maxQty !== undefined && c.quantity + 1 > maxQty) {
-    Alert.alert('Limit Exceeded', `Cannot order more than ${maxQty} of this item.`);
-    return c;
+ const incrementQuantity = (id: number) => {
+  const item = cart.find(c => c.id === id);
+  if (item) {
+   if (item.quantity + 1 > item.available_quantity) {
+    Alert.alert('Stock Limit Exceeded', `Only ${item.available_quantity} available in stock.`);
+   } else {
+    setCart(cart.map(c => c.id === id ? { ...c, quantity: c.quantity + 1 } : c));
    }
-   return { ...c, quantity: c.quantity + 1 };
-  }));
- }, []);
+  }
+ };
 
- const decrementQuantity = useCallback((id: number) => {
-  setCart(prev => prev.map(c => {
-   if (c.id !== id) return c;
-   if (c.quantity > 1) return { ...c, quantity: c.quantity - 1 };
-   return c;
-  }));
- }, []);
+ const decrementQuantity = (id: number) => {
+  const item = cart.find(c => c.id === id);
+  if (item && item.quantity > 1) {
+   setCart(cart.map(c => c.id === id ? { ...c, quantity: c.quantity - 1 } : c));
+  }
+ };
+
+ const removeItem = (id: number) => {
+  setCart(cart.filter(c => c.id !== id));
+ };
 
  const reviewOrder = () => {
   if (!customerName.trim() || !orderNumber.trim()) {
@@ -331,14 +267,73 @@ export default function LpoCreateScreen() {
 
 
  const handleUploadLpoPdf = async () => {
-  setShowCameraModal(true);
- };
-
- const handleConfirmPhotos = (fileData: any) => {
-  setSelectedLpoFile(fileData);
-  setShowCameraModal(false);
-  // Execute order right after confirming photos!
-  executeOrderCreation(fileData);
+  Alert.alert(
+   'Attach Signed LPO',
+   'Choose how to attach the signed LPO:',
+   [
+    {
+     text: '📷 Take Photo',
+     onPress: async () => {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+       Alert.alert('Permission Denied', 'Camera permission is required.');
+       return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+       mediaTypes: ImagePicker.MediaTypeOptions.Images,
+       quality: 0.8,
+       allowsEditing: false,
+      });
+      if (!result.canceled && result.assets[0]) {
+       const fileData = {
+        uri: result.assets[0].uri,
+        mimeType: result.assets[0].mimeType || 'image/jpeg',
+        filename: `lpo-${orderNumber}.jpg`
+       };
+       Alert.alert(
+        'Confirm Upload',
+        'Are you sure you want to attach this document? Once attached, the order is confirmed and cannot be modified.',
+        [
+         { text: 'Cancel', style: 'cancel' },
+         { text: 'Confirm', style: 'default', onPress: () => {
+          setSelectedLpoFile(fileData);
+          executeOrderCreation(fileData);
+         }}
+        ]
+       );
+      }
+     },
+    },
+    {
+     text: '📎 Attach File',
+     onPress: async () => {
+      const result = await DocumentPicker.getDocumentAsync({
+       type: ['application/pdf', 'image/*'],
+       copyToCacheDirectory: true,
+      });
+      if (!result.canceled && result.assets[0]) {
+       const fileData = {
+        uri: result.assets[0].uri,
+        mimeType: result.assets[0].mimeType || 'application/pdf',
+        filename: result.assets[0].name
+       };
+       Alert.alert(
+        'Confirm Upload',
+        'Are you sure you want to attach this document? Once attached, the order is confirmed and cannot be modified.',
+        [
+         { text: 'Cancel', style: 'cancel' },
+         { text: 'Confirm', style: 'default', onPress: () => {
+          setSelectedLpoFile(fileData);
+          executeOrderCreation(fileData);
+         }}
+        ]
+       );
+      }
+     },
+    },
+    { text: 'Cancel', style: 'cancel' },
+   ]
+  );
  };
 
   const handleDownloadPDF = async (share: boolean = false) => {
@@ -417,9 +412,6 @@ export default function LpoCreateScreen() {
    Alert.alert('Error', 'Failed to generate LPO PDF.');
   } finally {
    setIsSharing(false);
-   if (share) {
-    setHasDownloadedPDF(true);
-   }
   }
  };
 
@@ -510,18 +502,38 @@ export default function LpoCreateScreen() {
      className="flex-1"
      showsVerticalScrollIndicator={false}
      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#003527"]} tintColor="#006c49" />}
-     initialNumToRender={15}
-     maxToRenderPerBatch={10}
-     windowSize={5}
      renderItem={({ item }) => (
-      <CartItemRow 
-       item={item}
-       removeItem={removeItem}
-       decrementQuantity={decrementQuantity}
-       updateQuantity={updateQuantity}
-       validateQuantityOnBlur={validateQuantityOnBlur}
-       incrementQuantity={incrementQuantity}
-      />
+      <View className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm mb-3 flex-col">
+       <View className="flex-row justify-between items-start mb-3">
+        <View className="flex-1 pr-2">
+         <Text className="font-bold text-gray-800 text-sm mb-1">{item.product_name}</Text>
+         <Text className="text-xs text-gray-500 font-semibold bg-gray-100 self-start px-2 py-0.5 rounded-md">{item.barcode}</Text>
+        </View>
+        <TouchableOpacity onPress={() => removeItem(item.id)} className="p-2 bg-rose-50 rounded-lg">
+         <Trash2 size={16} color="#ef4444" />
+        </TouchableOpacity>
+       </View>
+       
+       <View className="flex-row items-center justify-between border-t border-gray-100 pt-3">
+        <Text className="text-xs font-bold text-emerald-600">Stock: {item.available_quantity}</Text>
+        <View className="flex-row items-center border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+         <TouchableOpacity onPress={() => decrementQuantity(item.id)} className="px-3 py-2 bg-white">
+          <Text className="font-black text-gray-600 text-lg leading-5">-</Text>
+         </TouchableOpacity>
+         <TextInput
+          className="w-12 text-center font-black text-sm bg-white h-full border-x border-gray-200"
+          keyboardType="number-pad"
+          value={item.quantity === '' ? '' : String(item.quantity)}
+          onChangeText={(val) => updateQuantity(item.id, val)}
+          onBlur={() => validateQuantityOnBlur(item.id)}
+          selectTextOnFocus
+         />
+         <TouchableOpacity onPress={() => incrementQuantity(item.id)} className="px-3 py-2 bg-white">
+          <Text className="font-black text-gray-600 text-lg leading-5">+</Text>
+         </TouchableOpacity>
+        </View>
+       </View>
+      </View>
      )}
      ListEmptyComponent={
       <View className="items-center justify-center py-12 bg-white rounded-2xl border border-dashed border-gray-300">
@@ -547,7 +559,7 @@ export default function LpoCreateScreen() {
      onPress={reviewOrder}
     >
      <Text className="text-white font-black text-base uppercase tracking-widest">
-      Print and Save
+      {selectedLpoFile ? 'Confirm Order' : 'Save Order'}
      </Text>
     </TouchableOpacity>
    </View>
@@ -579,52 +591,21 @@ export default function LpoCreateScreen() {
       renderItem={({ item }) => (
        <TouchableOpacity
         className="px-4 py-4 border-b border-gray-100 flex-row justify-between items-center hover:bg-gray-50"
-        onPress={() => handleSelectFromCatalogue(item)}
+        onPress={() => addToCart(item)}
        >
         <View className="flex-1 pr-4">
          <Text className="font-bold text-gray-800 text-base mb-1">{item.item_name}</Text>
          <Text className="text-xs text-gray-500 font-semibold">{item.primary_barcode}</Text>
         </View>
+        <View className={`px-3 py-1.5 rounded-lg border ${item.available_quantity > 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
+         <Text className={`text-xs font-black ${item.available_quantity > 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+          {item.available_quantity > 0 ? `${item.available_quantity} PCS` : 'Out of Stock'}
+         </Text>
+        </View>
        </TouchableOpacity>
       )}
      />
     </SafeAreaView>
-   </Modal>
-
-   {/* Quantity Modal */}
-   <Modal visible={quantityModalVisible} transparent animationType="fade">
-    <View className="flex-1 bg-black/50 justify-center items-center p-6">
-     <View className="bg-white rounded-3xl p-6 w-full max-w-sm">
-      <Text className="text-xl font-black text-gray-800 text-center mb-2">Enter Quantity</Text>
-      <Text className="text-sm text-gray-500 text-center mb-6" numberOfLines={2}>
-       {selectedItemForQuantity?.item_name}
-      </Text>
-      
-      <TextInput
-       className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-4 text-center text-3xl font-black text-gray-800 mb-6"
-       keyboardType="number-pad"
-       value={tempQuantity}
-       onChangeText={setTempQuantity}
-       autoFocus
-       selectTextOnFocus
-      />
-      
-      <View className="flex-row gap-3">
-       <TouchableOpacity 
-        onPress={() => setQuantityModalVisible(false)}
-        className="flex-1 p-4 rounded-xl bg-gray-100 items-center justify-center"
-       >
-        <Text className="font-bold text-gray-600 text-base">Cancel</Text>
-       </TouchableOpacity>
-       <TouchableOpacity 
-        onPress={confirmQuantity}
-        className="flex-1 p-4 rounded-xl bg-[#003527] items-center justify-center"
-       >
-        <Text className="font-bold text-white text-base">Confirm</Text>
-       </TouchableOpacity>
-      </View>
-     </View>
-    </View>
    </Modal>
 
    {/* Customer Selection Modal */}
@@ -703,75 +684,64 @@ export default function LpoCreateScreen() {
       </View>
 
       <View className="gap-3">
+       <TouchableOpacity 
+        onPress={() => handleDownloadPDF(true)} 
+        disabled={isSharing}
+        className={`w-full p-4 rounded-xl items-center justify-center flex-row gap-2 ${isSharing ? 'bg-slate-200' : 'bg-slate-100'}`}
+       >
+        {isSharing ? <ActivityIndicator color="#334155" /> : <Text className="font-bold text-slate-700 text-base">⬇ Download LPO</Text>}
+       </TouchableOpacity>
+
+       {!isConfirmed && (
+        <>
+         <TouchableOpacity 
+          onPress={handleUploadLpoPdf} 
+          className="w-full p-4 rounded-xl bg-blue-50 border border-blue-200 items-center justify-center flex-row gap-2"
+         >
+          <Text className="font-bold text-blue-700 text-base">
+           {selectedLpoFile ? `📎 ${selectedLpoFile.filename}` : '⬆ Attach Signed LPO (Optional)'}
+          </Text>
+         </TouchableOpacity>
+
+         <TouchableOpacity 
+          onPress={handleConfirmOrder} 
+          disabled={isGenerating} 
+          className="w-full p-4 rounded-xl bg-[#003527] items-center justify-center flex-row gap-2"
+         >
+          {isGenerating ? (
+           <>
+            <ActivityIndicator color="white" />
+            <Text className="font-bold text-white text-base ml-2">{selectedLpoFile ? 'Uploading...' : 'Saving...'}</Text>
+           </>
+          ) : (
+            <Text className="font-bold text-white text-base">
+              {selectedLpoFile ? '✅ Confirm Order' : '💾 Save Order'}
+            </Text>
+          )}
+         </TouchableOpacity>
+        </>
+       )}
+
+       {isConfirmed ? (
         <TouchableOpacity 
-         onPress={() => handleDownloadPDF(true)} 
-         disabled={isSharing}
-         className={`w-full p-4 rounded-xl items-center justify-center flex-row gap-2 ${isSharing ? 'bg-slate-200' : 'bg-slate-100'}`}
+         onPress={resetFormExplicitly}
+         className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row gap-2 mt-2"
         >
-         {isSharing ? <ActivityIndicator color="#334155" /> : <Text className="font-bold text-slate-700 text-base">⬇ Download LPO</Text>}
+         <Text className="font-bold text-slate-700 text-base">➕ Create New Order</Text>
         </TouchableOpacity>
-
-        {!isConfirmed && hasDownloadedPDF && (
-         <>
-          <TouchableOpacity 
-           onPress={handleUploadLpoPdf} 
-           className="w-full p-4 rounded-xl bg-blue-50 border border-blue-200 items-center justify-center flex-row gap-2"
-          >
-           <Text className="font-bold text-blue-700 text-base">
-            {selectedLpoFile ? `📎 Photos Attached` : '📷 Take Photos of Signed LPO (Optional)'}
-           </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-           onPress={() => executeOrderCreation(selectedLpoFile)} 
-           disabled={isGenerating} 
-           className="w-full p-4 rounded-xl bg-[#003527] items-center justify-center flex-row gap-2"
-          >
-           {isGenerating ? (
-            <>
-             <ActivityIndicator color="white" />
-             <Text className="font-bold text-white text-base ml-2">{selectedLpoFile ? 'Uploading...' : 'Saving...'}</Text>
-            </>
-           ) : (
-             <Text className="font-bold text-white text-base">
-               {selectedLpoFile ? '✅ Confirm Order' : '💾 Save Order'}
-             </Text>
-           )}
-          </TouchableOpacity>
-         </>
-        )}
-
-        {!isConfirmed && !hasDownloadedPDF && (
-          <View className="p-2 items-center">
-            <Text className="text-sm text-slate-400 text-center">Download the LPO to attach photos and confirm</Text>
-          </View>
-        )}
-
-        {isConfirmed ? (
-         <TouchableOpacity 
-          onPress={resetFormExplicitly}
-          className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row gap-2 mt-2"
-         >
-          <Text className="font-bold text-slate-700 text-base">➕ Create New Order</Text>
-         </TouchableOpacity>
-        ) : (
-         <TouchableOpacity 
-          onPress={handleCloseSuccess}
-          className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row gap-2 mt-2"
-         >
-          <Text className="font-bold text-slate-500 text-base">Cancel & Edit</Text>
-         </TouchableOpacity>
-        )}
-       </View>
+       ) : (
+        <TouchableOpacity 
+         onPress={handleCloseSuccess}
+         className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row gap-2 mt-2"
+        >
+         <Text className="font-bold text-slate-500 text-base">Cancel & Edit</Text>
+        </TouchableOpacity>
+       )}
       </View>
      </View>
-    </Modal>
-    
-    <MultiPhotoModal 
-      visible={showCameraModal} 
-      onClose={() => setShowCameraModal(false)} 
-      onConfirm={handleConfirmPhotos} 
-    />
+    </View>
+   </Modal>
+
   </SafeAreaView>
  );
 }

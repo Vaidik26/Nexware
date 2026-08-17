@@ -12,6 +12,7 @@ class SalesItemBase(BaseModel):
     packaging_weight: float = 0.0
     sku_size_category: str = ">100g"
     available_quantity: int = 0
+    max_order_quantity: Optional[int] = None
 
 class CartonTypeBase(BaseModel):
     name: str

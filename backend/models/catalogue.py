@@ -15,6 +15,7 @@ class SalesItem(Base):
     packaging_weight = Column(Float, default=0.0)
     sku_size_category = Column(String, default=">100g")
     available_quantity = Column(Integer, default=0)
+    max_order_quantity = Column(Integer, nullable=True)
 
 class CartonType(Base):
     __tablename__ = "carton_types"

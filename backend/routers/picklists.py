@@ -205,6 +205,7 @@ async def generate_picklist(
     db.add(db_picklist)
     await db.flush()
 
+    new_items = []
     for mi in matched_items:
         qty = mi["quantity"]
         scq = mi["standard_carton_quantity"]
@@ -213,7 +214,7 @@ async def generate_picklist(
         loose_pieces = qty % scq if scq > 0 else qty
 
         if full_cartons > 0:
-            db.add(PickListItem(
+            new_items.append(PickListItem(
                 pick_list_id=db_picklist.id,
                 barcode=mi["primary_barcode"],
                 product_name=mi["product_name"],
@@ -224,7 +225,7 @@ async def generate_picklist(
             ))
             
         if loose_pieces > 0 or full_cartons == 0:
-            db.add(PickListItem(
+            new_items.append(PickListItem(
                 pick_list_id=db_picklist.id,
                 barcode=mi["secondary_barcode"] or mi["barcode"],
                 product_name=mi["product_name"],
@@ -234,6 +235,7 @@ async def generate_picklist(
                 bin_location=mi.get("bin_location"),
             ))
 
+    db.add_all(new_items)
     order.status = "picklist_generated"
     await db.commit()
     await db.refresh(db_picklist)
@@ -448,6 +450,7 @@ async def direct_assign_picklist(
         )
 
     verified_count = 0
+    new_items = []
     for item in payload.items:
         bc = item.barcode or "N/A"
         cat_item = cat_map.get(bc)
@@ -459,7 +462,7 @@ async def direct_assign_picklist(
         loose_pieces = qty % scq if scq > 0 else qty
 
         if full_cartons > 0:
-            db.add(PickListItem(
+            new_items.append(PickListItem(
                 pick_list_id=db_picklist.id,
                 barcode=cat_item.primary_barcode if cat_item else bc,
                 product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
@@ -471,7 +474,7 @@ async def direct_assign_picklist(
             verified_count += 1
             
         if loose_pieces > 0 or full_cartons == 0:
-            db.add(PickListItem(
+            new_items.append(PickListItem(
                 pick_list_id=db_picklist.id,
                 barcode=cat_item.secondary_barcode if (cat_item and cat_item.secondary_barcode) else bc,
                 product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
@@ -488,6 +491,8 @@ async def direct_assign_picklist(
             status_code=400,
             detail={"message": "Cannot assign pick list: No items attached to order.", "errors": []}
         )
+    
+    db.add_all(new_items)
 
     assignment = PickAssignment(pick_list_id=db_picklist.id, picker_id=picker_id)
     db.add(assignment)
@@ -605,6 +610,7 @@ async def direct_assign_auto(
         )
 
     verified_count = 0
+    new_items = []
     for item in payload.items:
         bc = item.barcode or "N/A"
         cat_item = cat_map.get(bc)
@@ -616,7 +622,7 @@ async def direct_assign_auto(
         loose_pieces = qty % scq if scq > 0 else qty
 
         if full_cartons > 0:
-            db.add(PickListItem(
+            new_items.append(PickListItem(
                 pick_list_id=db_picklist.id,
                 barcode=cat_item.primary_barcode if cat_item else bc,
                 product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
@@ -628,7 +634,7 @@ async def direct_assign_auto(
             verified_count += 1
             
         if loose_pieces > 0 or full_cartons == 0:
-            db.add(PickListItem(
+            new_items.append(PickListItem(
                 pick_list_id=db_picklist.id,
                 barcode=cat_item.secondary_barcode if (cat_item and cat_item.secondary_barcode) else bc,
                 product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
@@ -645,6 +651,8 @@ async def direct_assign_auto(
             status_code=400,
             detail={"message": "Cannot assign pick list: No items attached.", "errors": []}
         )
+    
+    db.add_all(new_items)
 
     if not payload.auto_assign:
         await db.commit()
