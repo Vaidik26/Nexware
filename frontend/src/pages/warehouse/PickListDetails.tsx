@@ -4,7 +4,7 @@ import api from '@/lib/api';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { ArrowLeft, FileSpreadsheet, Download, CheckCircle2, Box, Package, ScanLine, AlertCircle } from 'lucide-react';
+import { ArrowLeft, FileSpreadsheet, Download, CheckCircle2, Box, Package, ScanLine, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { downloadPicklistPDF, downloadPicklistExcel } from '@/lib/downloadPicklist';
 import { toast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
@@ -16,6 +16,7 @@ export default function PickListDetails() {
   const [picklist, setPicklist] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'audit' | 'sequence'>('sequence');
+  const [expandedBoxes, setExpandedBoxes] = useState<Set<number>>(new Set());
   
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
@@ -60,8 +61,11 @@ export default function PickListDetails() {
     setIsDownloadingExcel(false);
   };
 
-  const openVerifyModal = (box: any) => {
+  const [boxToVerifyIndex, setBoxToVerifyIndex] = useState<number | null>(null);
+
+  const openVerifyModal = (box: any, index: number) => {
     setBoxToVerify(box);
+    setBoxToVerifyIndex(index);
     setIsVerifyModalOpen(true);
   };
 
@@ -98,7 +102,7 @@ export default function PickListDetails() {
               // Call API to persist verification
               api.post(`/picklists/${id}/boxes/${boxToVerify.id}/verify`)
                 .then(() => {
-                  toast.success(`Successfully verified BOX-${boxToVerify.id}!`);
+                  toast.success(`Successfully verified Box ${boxToVerifyIndex !== null ? boxToVerifyIndex + 1 : boxToVerify.id}!`);
                   setVerifiedBoxes(prev => new Set(prev).add(boxToVerify.id));
                   setIsVerifyModalOpen(false);
                 })
@@ -106,7 +110,7 @@ export default function PickListDetails() {
                   toast.error(err.response?.data?.detail || 'Failed to verify box on server');
                 });
             } else {
-              toast.error(`QR Code belongs to ${data.box_id}, not BOX-${boxToVerify.id}`);
+              toast.error(`QR Code belongs to ${data.box_id}, not Box ${boxToVerifyIndex !== null ? boxToVerifyIndex + 1 : boxToVerify.id}`);
             }
           } catch (err) {
             toast.error('Invalid QR Code format.');
@@ -199,47 +203,57 @@ export default function PickListDetails() {
               </div>
             ) : (
               <div className="space-y-4">
-                {picklist.boxes.map((box: any) => {
+                {picklist.boxes.map((box: any, index: number) => {
                   const isVerified = verifiedBoxes.has(box.id);
+                  const isExpanded = expandedBoxes.has(box.id);
+                  
+                  const toggleExpanded = () => {
+                    const newExpanded = new Set(expandedBoxes);
+                    if (isExpanded) {
+                      newExpanded.delete(box.id);
+                    } else {
+                      newExpanded.add(box.id);
+                    }
+                    setExpandedBoxes(newExpanded);
+                  };
+
                   return (
                     <div key={box.id} className={`border rounded-xl p-5 ${isVerified ? 'bg-emerald-50/50 border-emerald-200' : 'bg-surface border-outline-variant'}`}>
                       <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-3 mb-2">
-                            <h4 className="font-bold text-lg text-on-surface">BOX-{box.id}</h4>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2 cursor-pointer" onClick={toggleExpanded}>
+                            <h4 className="font-bold text-lg text-on-surface flex items-center gap-2">
+                              {isExpanded ? <ChevronDown className="w-5 h-5 text-on-surface-variant" /> : <ChevronRight className="w-5 h-5 text-on-surface-variant" />}
+                              Box {index + 1}
+                            </h4>
                             {isVerified && (
                               <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-1 rounded flex items-center gap-1">
                                 <CheckCircle2 className="w-3 h-3" /> Verified
                               </span>
                             )}
                           </div>
-                          <p className="text-sm text-on-surface-variant font-medium mb-3">Recorded Weight: {box.entered_weight} kg</p>
+                          <p className="text-sm text-on-surface-variant font-medium mb-3 ml-7">Recorded Weight: {box.entered_weight} kg</p>
                           
-                          <div className="space-y-2 mt-4 border-t border-outline-variant pt-4">
-                            <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Contents ({box.box_items?.length || 0} items)</p>
-                            {box.box_items?.map((bi: any) => {
-                              const itemDetails = picklist.items.find((i: any) => i.id === bi.item_id);
-                              return (
-                                <div key={bi.id} className="flex items-center justify-between text-sm w-full max-w-2xl py-1">
-                                  <span className="text-on-surface truncate pr-4 flex-1">{itemDetails?.product_name || `Item #${bi.item_id}`}</span>
-                                  <span className="text-on-surface-variant font-medium whitespace-nowrap w-24 text-right">{bi.quantity} {itemDetails?.unit || 'units'}</span>
-                                  <div className="w-28 flex justify-end">
-                                    {isVerified ? (
-                                      <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded text-xs font-bold border border-emerald-100">Scanned</span>
-                                    ) : (
-                                      <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded text-xs font-bold border border-amber-100">Pending</span>
-                                    )}
+                          {isExpanded && (
+                            <div className="space-y-2 mt-4 border-t border-outline-variant pt-4 ml-7">
+                              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Contents ({box.box_items?.length || 0} items)</p>
+                              {box.box_items?.map((bi: any) => {
+                                const itemDetails = picklist.items.find((i: any) => i.id === bi.item_id);
+                                return (
+                                  <div key={bi.id} className="flex items-center justify-between text-sm w-full max-w-lg py-1">
+                                    <span className="text-on-surface truncate pr-4 flex-1">{itemDetails?.product_name || `Item #${bi.item_id}`}</span>
+                                    <span className="text-on-surface-variant font-medium whitespace-nowrap text-right">{bi.quantity} {itemDetails?.unit || 'units'}</span>
                                   </div>
-                                </div>
-                              );
-                            })}
-                          </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
 
                         {!isVerified && (
                           <Button 
-                            onClick={() => openVerifyModal(box)} 
-                            className="bg-[#003527] hover:bg-[#006c49] text-white flex items-center gap-2"
+                            onClick={() => openVerifyModal(box, index)} 
+                            className="bg-[#003527] hover:bg-[#006c49] text-white flex items-center gap-2 mt-1"
                           >
                             <ScanLine className="w-4 h-4" /> Verify Label
                           </Button>
@@ -344,7 +358,7 @@ export default function PickListDetails() {
         onClose={() => {
           if (!isVerifying) setIsVerifyModalOpen(false);
         }}
-        title={`Verify BOX-${boxToVerify?.id}`}
+        title={`Verify Box ${boxToVerifyIndex !== null ? boxToVerifyIndex + 1 : boxToVerify?.id}`}
       >
         <div className="space-y-6 py-4">
           <p className="text-on-surface-variant text-sm">
