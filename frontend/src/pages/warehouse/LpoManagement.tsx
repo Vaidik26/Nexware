@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
 import { RefreshCw, Search, FileText, ArrowRight } from 'lucide-react';
 import { PageLoader } from '@/components/ui/PageLoader';
@@ -27,7 +27,6 @@ interface LPO {
 
 export default function LpoManagement() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
 
   // Use React Query for caching, background syncing, and instant reloads
