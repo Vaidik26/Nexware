@@ -142,17 +142,17 @@ export default function PickListDetails() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate('/warehouse/picklists')}
-            className="p-2 hover:bg-slate-800 rounded-xl transition-colors"
+            className="p-2 hover:bg-surface-variant rounded-xl transition-colors"
           >
-            <ArrowLeft className="w-5 h-5 text-slate-300" />
+            <ArrowLeft className="w-5 h-5 text-on-surface-variant" />
           </button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-white">Order {picklist.order_number}</h1>
+              <h1 className="text-2xl font-bold text-on-surface">Order {picklist.order_number}</h1>
               <StatusBadge status={picklist.status} />
             </div>
-            <p className="text-slate-300 text-sm mt-1">
-              Customer: <span className="font-medium text-white">{picklist.customer_name}</span>
+            <p className="text-on-surface-variant text-sm mt-1">
+              Customer: <span className="font-medium text-on-surface">{picklist.customer_name}</span>
             </p>
           </div>
         </div>
@@ -175,7 +175,7 @@ export default function PickListDetails() {
             className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
               activeTab === 'sequence'
                 ? 'border-primary text-primary'
-                : 'border-transparent text-slate-300 hover:text-white hover:border-outline-variant'
+                : 'border-transparent text-on-surface-variant hover:text-on-surface hover:border-outline-variant'
             }`}
           >
             <CheckCircle2 className="w-4 h-4" />
@@ -186,7 +186,7 @@ export default function PickListDetails() {
             className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
               activeTab === 'audit'
                 ? 'border-primary text-primary'
-                : 'border-transparent text-slate-300 hover:text-white hover:border-outline-variant'
+                : 'border-transparent text-on-surface-variant hover:text-on-surface hover:border-outline-variant'
             }`}
           >
             <Package className="w-4 h-4" />
@@ -196,11 +196,11 @@ export default function PickListDetails() {
       </div>
 
       {/* Tab Contents */}
-      <div className="bg-slate-900 rounded-2xl shadow-sm border border-outline-variant overflow-hidden min-h-[500px]">
+      <div className="bg-surface rounded-2xl shadow-sm border border-outline-variant overflow-hidden min-h-[500px]">
         {activeTab === 'audit' ? (
           <div className="p-6">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-bold text-white">Sealed Boxes Pending Audit</h3>
+              <h3 className="text-lg font-bold text-on-surface">Sealed Boxes Pending Audit</h3>
               {picklist.boxes.length > 0 && (
                 <Button 
                   onClick={() => setIsVerifyModalOpen(true)} 
@@ -214,7 +214,7 @@ export default function PickListDetails() {
             {picklist.boxes.length === 0 ? (
               <div className="text-center py-12">
                 <Box className="w-12 h-12 text-outline mx-auto mb-3" />
-                <p className="text-slate-300 font-medium">No loose item boxes have been sealed yet.</p>
+                <p className="text-on-surface-variant font-medium">No loose item boxes have been sealed yet.</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -233,12 +233,12 @@ export default function PickListDetails() {
                   };
 
                   return (
-                    <div key={box.id} className={`border rounded-xl p-5 ${isVerified ? 'bg-emerald-50/50 border-emerald-200' : 'bg-slate-900 border-outline-variant'}`}>
+                    <div key={box.id} className={`border rounded-xl p-5 ${isVerified ? 'bg-emerald-50/50 border-emerald-200' : 'bg-surface border-outline-variant'}`}>
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2 cursor-pointer" onClick={toggleExpanded}>
-                            <h4 className="font-bold text-lg text-white flex items-center gap-2">
-                              {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-300" /> : <ChevronRight className="w-5 h-5 text-slate-300" />}
+                            <h4 className="font-bold text-lg text-on-surface flex items-center gap-2">
+                              {isExpanded ? <ChevronDown className="w-5 h-5 text-on-surface-variant" /> : <ChevronRight className="w-5 h-5 text-on-surface-variant" />}
                               Box {index + 1} - {box.carton_type?.name || 'Standard Carton'}
                             </h4>
                             {isVerified && (
@@ -247,17 +247,17 @@ export default function PickListDetails() {
                               </span>
                             )}
                           </div>
-                          <p className="text-sm text-slate-300 font-medium mb-3 ml-7">Recorded Weight: {box.entered_weight} kg</p>
+                          <p className="text-sm text-on-surface-variant font-medium mb-3 ml-7">Recorded Weight: {box.entered_weight} kg</p>
                           
                           {isExpanded && (
                             <div className="space-y-2 mt-4 border-t border-outline-variant pt-4 ml-7">
-                              <p className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Contents ({box.box_items?.length || 0} items)</p>
+                              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-2">Contents ({box.box_items?.length || 0} items)</p>
                               {box.box_items?.map((bi: any) => {
                                 const itemDetails = picklist.items.find((i: any) => i.id === bi.item_id);
                                 return (
                                   <div key={bi.id} className="flex items-center justify-between text-sm w-full max-w-lg py-1">
-                                    <span className="text-white truncate pr-4 flex-1">{itemDetails?.product_name || `Item #${bi.item_id}`}</span>
-                                    <span className="text-slate-300 font-medium whitespace-nowrap text-right">{bi.quantity} {itemDetails?.unit || 'units'}</span>
+                                    <span className="text-on-surface truncate pr-4 flex-1">{itemDetails?.product_name || `Item #${bi.item_id}`}</span>
+                                    <span className="text-on-surface-variant font-medium whitespace-nowrap text-right">{bi.quantity} {itemDetails?.unit || 'units'}</span>
                                   </div>
                                 );
                               })}
@@ -274,18 +274,18 @@ export default function PickListDetails() {
         ) : (
           <div className="p-0">
              <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-slate-800/50 border-b border-outline-variant">
+              <thead className="bg-surface-variant/50 border-b border-outline-variant">
                 <tr>
-                  <th className="p-4 font-semibold text-slate-300 w-16 text-center">Status</th>
-                  <th className="p-4 font-semibold text-slate-300">Bin Location</th>
-                  <th className="p-4 font-semibold text-slate-300">Barcode</th>
-                  <th className="p-4 font-semibold text-slate-300">Product Name</th>
-                  <th className="p-4 font-semibold text-slate-300 text-right">Qty</th>
+                  <th className="p-4 font-semibold text-on-surface-variant w-16 text-center">Status</th>
+                  <th className="p-4 font-semibold text-on-surface-variant">Bin Location</th>
+                  <th className="p-4 font-semibold text-on-surface-variant">Barcode</th>
+                  <th className="p-4 font-semibold text-on-surface-variant">Product Name</th>
+                  <th className="p-4 font-semibold text-on-surface-variant text-right">Qty</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant">
                 {[...picklist.items].sort((a, b) => (a.bin_location || '').localeCompare(b.bin_location || '')).map((item: any) => (
-                  <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
+                  <tr key={item.id} className="hover:bg-surface-variant/30 transition-colors">
                     <td className="p-4 text-center">
                       {item.is_picked ? (
                         <CheckCircle2 className="w-5 h-5 text-emerald-500 mx-auto" />
@@ -298,9 +298,9 @@ export default function PickListDetails() {
                         {item.bin_location || 'No Bin'}
                       </span>
                     </td>
-                    <td className="p-4 text-slate-300 font-mono">{item.barcode}</td>
-                    <td className="p-4 font-medium text-white whitespace-normal">{item.product_name}</td>
-                    <td className="p-4 text-right font-semibold text-white">
+                    <td className="p-4 text-on-surface-variant font-mono">{item.barcode}</td>
+                    <td className="p-4 font-medium text-on-surface whitespace-normal">{item.product_name}</td>
+                    <td className="p-4 text-right font-semibold text-on-surface">
                       {item.is_picked ? item.picked_quantity : 0} / {item.quantity} {item.unit}
                     </td>
                   </tr>
@@ -320,7 +320,7 @@ export default function PickListDetails() {
         title={`Verify Box Label`}
       >
         <div className="space-y-6 py-4">
-          <p className="text-slate-300 text-sm">
+          <p className="text-on-surface-variant text-sm">
             Upload the QR code image saved from the Picker App to simulate scanning the physical label.
           </p>
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex gap-3">
@@ -330,11 +330,11 @@ export default function PickListDetails() {
             </p>
           </div>
 
-          <div className="border-2 border-dashed border-outline-variant rounded-xl p-10 flex flex-col items-center justify-center bg-slate-800/20">
+          <div className="border-2 border-dashed border-outline-variant rounded-xl p-10 flex flex-col items-center justify-center bg-surface-variant/20">
             {isVerifying ? (
               <div className="flex flex-col items-center">
                 <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
-                <p className="text-white font-medium">Analyzing QR Code...</p>
+                <p className="text-on-surface font-medium">Analyzing QR Code...</p>
               </div>
             ) : (
               <>
