@@ -57,13 +57,40 @@ export default function JobsScreen() {
       };
      });
     setJobs(mapped);
+   } else {
+    setJobs([]);
    }
   } catch (err) {
    console.log('Error fetching live picklists:', err);
   } finally {
+   setRefreshing(false);
    setIsLoading(false);
   }
  };
+
+ useEffect(() => {
+  let wsUrl = api.defaults.baseURL || 'http://localhost:8000/api';
+  wsUrl = wsUrl.replace('http://', 'ws://').replace('https://', 'wss://').replace('/api', '/ws/notifications');
+  
+  const ws = new WebSocket(wsUrl);
+  
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.event === 'PICKLIST_ASSIGNED' && data.picker_id === picker?.id) {
+        fetchAssignedJobs();
+      } else if (data.event === 'ORDER_CREATED') {
+        fetchAssignedJobs();
+      }
+    } catch (err) {
+      // ignore
+    }
+  };
+  
+  return () => {
+    ws.close();
+  };
+ }, [picker?.id]);
 
  useFocusEffect(
   useCallback(() => {

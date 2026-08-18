@@ -268,7 +268,7 @@ export default function LpoCreateScreen() {
     source: 'mobile',
     items: cart.map(c => ({
      barcode: c.barcode,
-     quantity: parseInt(c.quantity) || 1,
+     quantity: parseInt(String(c.quantity)) || 1,
      unit: c.unit,
      product_name: c.product_name
     }))

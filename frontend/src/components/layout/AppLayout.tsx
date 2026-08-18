@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { preloadAllMasterData } from '@/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { toast } from '@/components/ui/Toast';
 
@@ -29,6 +30,8 @@ const playBeep = () => {
 };
 
 export default function AppLayout() {
+  const queryClient = useQueryClient();
+
   useEffect(() => {
     // Silently pre-fetch all master datasets on initial application load for 0ms transitions
     preloadAllMasterData();
@@ -48,6 +51,10 @@ export default function AppLayout() {
         if (data.event === 'READY_FOR_AUDIT') {
           playBeep();
           toast.success(`🔔 ${data.message}`, { duration: 8000 });
+        } else if (data.event === 'ORDER_CREATED') {
+          playBeep();
+          toast.success(`🔔 ${data.message}`, { duration: 5000 });
+          queryClient.invalidateQueries({ queryKey: ['lpos'] });
         }
       } catch (err) {
         // Ignore parsing errors
@@ -57,7 +64,7 @@ export default function AppLayout() {
     return () => {
       ws.close();
     };
-  }, []);
+  }, [queryClient]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">

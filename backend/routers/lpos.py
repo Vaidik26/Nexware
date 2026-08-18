@@ -200,6 +200,14 @@ async def process_lpo_auto_assign(db: AsyncSession, lpo: Lpo, background_tasks: 
 
     lpo.status = "processed"
     await db.flush()
+    
+    from backend.websockets import manager
+    await manager.broadcast({
+        "event": "PICKLIST_ASSIGNED",
+        "picker_id": picker.id,
+        "picklist_id": db_picklist.id,
+        "message": f"New Picklist Assigned: {lpo.lpo_number}"
+    })
 
 @router.post("", response_model=LpoOut)
 @router.post("/", response_model=LpoOut)
@@ -240,8 +248,18 @@ async def create_lpo(
         .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
         .filter(Lpo.id == db_lpo.id)
     )
+    lpo_obj = result.scalar_one()
     logger.info("LPO created: lpo_number=%s status=%s source=%s", lpo_number, initial_status, source)
-    return result.scalar_one()
+    
+    from backend.websockets import manager
+    await manager.broadcast({
+        "event": "ORDER_CREATED",
+        "lpo_id": lpo_obj.id,
+        "lpo_number": lpo_obj.lpo_number,
+        "message": f"New Order Created: {lpo_obj.lpo_number}"
+    })
+    
+    return lpo_obj
 
 @router.put("/{lpo_id}", response_model=LpoOut)
 async def update_lpo(
@@ -557,6 +575,20 @@ async def approve_lpo(
         lpo_id, current_user.id, db_picklist.id,
         picker.full_name if picker else "unassigned",
     )
+    
+    from backend.websockets import manager
+    if picker:
+        await manager.broadcast({
+            "event": "PICKLIST_ASSIGNED",
+            "picker_id": picker.id,
+            "picklist_id": db_picklist.id,
+            "message": f"New Picklist Assigned: {lpo.lpo_number}"
+        })
+    else:
+        await manager.broadcast({
+            "event": "ORDER_CREATED", # reusing the generic event to refresh lists
+            "message": f"LPO {lpo.lpo_number} converted to unassigned Picklist"
+        })
     return {
         "message": "LPO approved and converted to picklist",
         "picklist_id": db_picklist.id,
