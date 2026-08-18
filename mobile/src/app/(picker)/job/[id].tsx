@@ -87,6 +87,8 @@ export default function JobDetailScreen() {
   const [showSealModal, setShowSealModal] = useState(false);
   const [sealWeight, setSealWeight] = useState('');
   const [isSealing, setIsSealing] = useState(false);
+  const [weightEstimate, setWeightEstimate] = useState<any>(null);
+  const [isEstimating, setIsEstimating] = useState(false);
 
   // ── QR modal state ──
   const [showQRModal, setShowQRModal] = useState(false);
@@ -322,6 +324,25 @@ export default function JobDetailScreen() {
 
   // ─── Seal box ──────────────────────────────────────────────────────────────
 
+  const handleOpenSealModal = async () => {
+    if (!activeBox) return;
+    setShowSealModal(true);
+    setIsEstimating(true);
+    try {
+      const res = await api.post(`/picklists/${id}/boxes/estimate-weight`, {
+        carton_type_id: activeBox.carton_type_id,
+        entered_weight: 0,
+        contents: activeBox.contents.map(c => ({ item_id: c.item_id, quantity: c.quantity })),
+      });
+      setWeightEstimate(res.data);
+    } catch (err) {
+      console.error('Failed to get weight estimate', err);
+      setWeightEstimate(null);
+    } finally {
+      setIsEstimating(false);
+    }
+  };
+
   const handleSealBox = async () => {
     if (!activeBox || !sealWeight) {
       Alert.alert('Error', 'Please enter the box weight');
@@ -502,11 +523,11 @@ export default function JobDetailScreen() {
               <Text className="text-[#a7f3d0] text-xs font-bold">Change</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              className="bg-white/20 px-3 py-1.5 rounded-lg flex-row items-center gap-1"
-              onPress={() => setShowSealModal(true)}
+              className="bg-[#003527] px-4 py-2 rounded flex-row items-center ml-2"
+              onPress={handleOpenSealModal}
             >
-              <Text className="text-white text-xs font-bold">SEAL</Text>
-              <ChevronRight size={13} color="white" />
+              <Text className="text-[#a7f3d0] font-bold mr-1">SEAL</Text>
+              <ChevronRight size={16} color="#a7f3d0" />
             </TouchableOpacity>
           </View>
         </View>
@@ -669,7 +690,32 @@ export default function JobDetailScreen() {
 
             <View className="bg-amber-50 rounded-xl p-3 mb-4 border border-amber-100">
               <Text className="text-xs font-bold text-amber-700 tracking-wider mb-1">WEIGHT GUIDELINE</Text>
-              <Text className="text-amber-700 text-sm">
+              
+              {isEstimating ? (
+                <ActivityIndicator color="#b45309" size="small" className="my-2" />
+              ) : weightEstimate ? (
+                <View className="mb-2 bg-amber-100/50 p-2 rounded">
+                  <Text className="text-amber-800 text-xs mb-1 font-semibold">Estimated Breakdown:</Text>
+                  {weightEstimate.breakdown?.map((b: any, idx: number) => (
+                    <View key={idx} className="flex-row justify-between mb-0.5">
+                      <Text className="text-amber-700 text-xs" numberOfLines={1} style={{maxWidth: '70%'}}>
+                        {b.product_name} ({b.quantity})
+                      </Text>
+                      <Text className="text-amber-700 text-xs">{b.line_weight.toFixed(2)} kg</Text>
+                    </View>
+                  ))}
+                  <View className="flex-row justify-between mb-0.5 border-b border-amber-200/60 pb-1 pt-1 mt-1">
+                    <Text className="text-amber-700 text-xs">Carton Tare Weight</Text>
+                    <Text className="text-amber-700 text-xs">+ {weightEstimate.tare_weight.toFixed(2)} kg</Text>
+                  </View>
+                  <View className="flex-row justify-between mt-1 pt-0.5">
+                    <Text className="text-amber-800 text-xs font-bold">Total Expected Gross</Text>
+                    <Text className="text-amber-800 text-xs font-bold">{weightEstimate.expected_weight.toFixed(2)} kg</Text>
+                  </View>
+                </View>
+              ) : null}
+
+              <Text className="text-amber-700 text-xs mt-1">
                 Place the sealed box on the scale and enter the gross weight (box + items). ±5% tolerance allowed.
               </Text>
             </View>

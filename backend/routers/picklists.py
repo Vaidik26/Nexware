@@ -887,6 +887,69 @@ async def create_box(
     await db.refresh(box)
     return box
 
+@router.post("/{picklist_id}/boxes/estimate-weight")
+async def estimate_box_weight(
+    picklist_id: int,
+    payload: SealBoxCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    carton_res = await db.execute(select(CartonType).filter(CartonType.id == payload.carton_type_id))
+    carton = carton_res.scalars().first()
+    if not carton:
+        raise HTTPException(status_code=400, detail="Carton type not found")
+
+    item_ids = [c.item_id for c in payload.contents]
+    items_res = await db.execute(
+        select(PickListItem).filter(
+            PickListItem.id.in_(item_ids),
+            PickListItem.pick_list_id == picklist_id
+        )
+    )
+    db_items = {item.id: item for item in items_res.scalars().all()}
+    
+    barcodes = [db_items[c.item_id].barcode for c in payload.contents if c.item_id in db_items]
+    cat_res = await db.execute(
+        select(SalesItem).filter(
+            (SalesItem.primary_barcode.in_(barcodes)) | 
+            (SalesItem.secondary_barcode.in_(barcodes))
+        )
+    )
+    cat_map = {}
+    for ci in cat_res.scalars().all():
+        if ci.primary_barcode in barcodes:
+            cat_map[ci.primary_barcode] = ci
+        if ci.secondary_barcode in barcodes:
+            cat_map[ci.secondary_barcode] = ci
+
+    breakdown = []
+    total_items_weight = 0.0
+
+    for content in payload.contents:
+        if content.item_id not in db_items:
+            continue
+        item = db_items[content.item_id]
+        cat_item = cat_map.get(item.barcode)
+        unit_weight = cat_item.packaging_weight if (cat_item and cat_item.packaging_weight) else 0.0
+        line_weight = unit_weight * content.quantity
+        total_items_weight += line_weight
+        breakdown.append({
+            "product_name": item.product_name,
+            "quantity": content.quantity,
+            "unit_weight": unit_weight,
+            "line_weight": line_weight
+        })
+        
+    expected_weight = carton.tare_weight + total_items_weight
+    
+    return {
+        "tare_weight": carton.tare_weight,
+        "total_items_weight": total_items_weight,
+        "expected_weight": expected_weight,
+        "breakdown": breakdown
+    }
+
+# ---------- Purge/Cancel ----------
 
 # ---------- Active Draft Box ----------
 
@@ -1039,8 +1102,18 @@ async def seal_loose_item_box(
 
     # Calculate expected weight from actual box contents (not full item qty)
     barcodes = [db_items[c.item_id].barcode for c in payload.contents]
-    cat_res = await db.execute(select(SalesItem).filter(SalesItem.barcode.in_(barcodes)))
-    cat_map = {ci.barcode: ci for ci in cat_res.scalars().all()}
+    cat_res = await db.execute(
+        select(SalesItem).filter(
+            (SalesItem.primary_barcode.in_(barcodes)) | 
+            (SalesItem.secondary_barcode.in_(barcodes))
+        )
+    )
+    cat_map = {}
+    for ci in cat_res.scalars().all():
+        if ci.primary_barcode in barcodes:
+            cat_map[ci.primary_barcode] = ci
+        if ci.secondary_barcode in barcodes:
+            cat_map[ci.secondary_barcode] = ci
 
     expected_weight = carton.tare_weight
     for content in payload.contents:
