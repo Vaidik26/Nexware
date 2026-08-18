@@ -143,3 +143,16 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+from backend.websockets import manager
+from fastapi import WebSocket, WebSocketDisconnect
+
+@app.websocket("/ws/notifications")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+

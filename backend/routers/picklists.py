@@ -829,6 +829,15 @@ async def complete_picking(
         assignment.completed_at = now
 
     await db.commit()
+    
+    from backend.websockets import manager
+    await manager.broadcast({
+        "event": "READY_FOR_AUDIT",
+        "picklist_id": pl.id,
+        "order_number": pl.order_number,
+        "message": f"Order {pl.order_number} is ready for Audit & Verify"
+    })
+
     return {"message": "Picking complete. Awaiting verification."}
 
 
