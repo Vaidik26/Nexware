@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Modal, ActivityIndicator, TextInput, Alert, Share } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, Modal, ActivityIndicator, TextInput, Alert, Share, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, CheckCircle, CheckCircle2, Box, Scan, AlertCircle, Package, Plus, ChevronRight } from 'lucide-react-native';
@@ -8,6 +8,8 @@ import { playTickSound } from '../../../lib/alertSound';
 import api from '../../../lib/api';
 import QRCode from 'react-native-qrcode-svg';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,6 +96,28 @@ export default function JobDetailScreen() {
   // ── QR modal state ──
   const [showQRModal, setShowQRModal] = useState(false);
   const [generatedQRData, setGeneratedQRData] = useState<any>(null);
+
+  // ── Print Simulation Ref ──
+  const qrViewRef = useRef<View>(null);
+
+  const handleShareQR = async () => {
+    try {
+      if (!qrViewRef.current) return;
+      const uri = await captureRef(qrViewRef, {
+        format: 'png',
+        quality: 1,
+      });
+      await Sharing.shareAsync(uri, {
+        dialogTitle: 'Save or Print Box Label',
+        mimeType: 'image/png',
+      });
+      // Optionally auto-close the modal after sharing
+      setShowQRModal(false);
+    } catch (err) {
+      console.log('Error sharing QR:', err);
+      Alert.alert('Error', 'Failed to generate label image.');
+    }
+  };
 
   // ─── Load data ─────────────────────────────────────────────────────────────
 
@@ -375,13 +399,22 @@ export default function JobDetailScreen() {
         return next;
       });
 
-      // Success: generate QR and show it
+      // Map item IDs to item names
+      const itemDetails = activeBox.contents.map(c => {
+        const found = items.find(i => String(i.id) === String(c.item_id));
+        return { name: found?.name || `Item ${c.item_id}`, qty: c.quantity };
+      });
+
+      // Success: generate rich QR payload
       const qrPayload = JSON.stringify({
         box_id: `BOX-${res.data.id}`,
-        job: jobLabel,
+        lpo_no: picklistInfo?.order_number || jobLabel,
+        customer: picklistInfo?.customer_name || 'Unknown',
         carton: activeBox.carton_name,
-        items: activeBox.contents.length,
-        weight: `${parseFloat(sealWeight).toFixed(2)}kg`,
+        items_list: itemDetails,
+        total_items: activeBox.contents.length,
+        total_qty: totalQty,
+        weight: `${parseFloat(sealWeight.replace(',', '.')).toFixed(2)}kg`,
       });
       setGeneratedQRData(qrPayload);
 
@@ -847,32 +880,40 @@ export default function JobDetailScreen() {
       <Modal visible={showQRModal} transparent animationType="fade">
         <View className="flex-1 bg-black/60 items-center justify-center px-6">
           <View className="bg-white rounded-3xl p-8 w-full shadow-2xl items-center border border-gray-100">
-            <View className="w-16 h-16 rounded-full bg-emerald-50 mb-4 items-center justify-center">
-              <CheckCircle2 size={32} color="#10b981" />
+            <View className="text-center mb-6">
+              <Text className="text-xl font-extrabold text-onSurface text-center">✅ Box Sealed</Text>
+              <Text className="text-sm text-gray-500 text-center">Label physically printed at packing station.</Text>
             </View>
-            <Text className="text-xl font-extrabold text-onSurface mb-2 text-center">
-              Box Label Generated!
-            </Text>
-            <Text className="text-sm text-gray-500 text-center mb-6">
-              Weight verified. Print and stick this label on the box.
-            </Text>
 
-            <View className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6">
+            {/* This view will be captured as an image */}
+            <View ref={qrViewRef} collapsable={false} className="bg-white p-6 rounded-2xl border-4 border-gray-100 items-center mb-6 w-full">
               {generatedQRData && (
-                <QRCode
-                  value={generatedQRData}
-                  size={180}
-                  color="black"
-                  backgroundColor="white"
-                />
+                <>
+                  <Text className="font-black text-2xl mb-1 text-gray-800">
+                    {JSON.parse(generatedQRData).customer}
+                  </Text>
+                  <Text className="font-bold text-gray-500 mb-4 text-sm">
+                    {JSON.parse(generatedQRData).lpo_no} | {JSON.parse(generatedQRData).carton}
+                  </Text>
+                  <QRCode
+                    value={generatedQRData}
+                    size={200}
+                    color="black"
+                    backgroundColor="white"
+                  />
+                  <View className="flex-row items-center justify-between w-full mt-5 px-2">
+                    <Text className="text-gray-600 font-bold">{JSON.parse(generatedQRData).total_qty} units</Text>
+                    <Text className="text-gray-600 font-bold">{JSON.parse(generatedQRData).weight}</Text>
+                  </View>
+                </>
               )}
             </View>
 
             <TouchableOpacity
-              className="bg-gray-100 w-full py-3 rounded-xl border border-gray-200 items-center mb-3"
-              onPress={() => Share.share({ message: `Box Label: ${generatedQRData}` })}
+              className="bg-[#003527] w-full py-4 rounded-xl border border-[#006c49] items-center mb-3 flex-row justify-center"
+              onPress={handleShareQR}
             >
-              <Text className="text-gray-700 font-bold text-sm">Share Label</Text>
+              <Text className="text-white font-extrabold text-base">Download / Share QR Prototype</Text>
             </TouchableOpacity>
 
             <TouchableOpacity

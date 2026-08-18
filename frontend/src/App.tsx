@@ -21,6 +21,7 @@ const MarketDashboard = React.lazy(() => import('@/pages/dashboard/MarketDashboa
 const SalesCatalogue = React.lazy(() => import('@/pages/warehouse/SalesCatalogue'));
 const OrderUpload = React.lazy(() => import('@/pages/warehouse/OrderUpload'));
 const PickLists = React.lazy(() => import('@/pages/warehouse/PickLists'));
+const PickListDetails = React.lazy(() => import('@/pages/warehouse/PickListDetails'));
 const LpoManagement = React.lazy(() => import('@/pages/warehouse/LpoManagement'));
 const LpoDetails = React.lazy(() => import('@/pages/warehouse/LpoDetails'));
 const RawMaterials = React.lazy(() => import('@/pages/market/RawMaterials'));
@@ -138,6 +139,7 @@ export default function App() {
                 <Route path="warehouse/upload" element={<OrderUpload />} />
                 <Route path="warehouse/picking" element={<Navigate to="/warehouse/picklists" replace />} />
                 <Route path="warehouse/picklists" element={<PickLists />} />
+                <Route path="warehouse/picklists/:id" element={<PickListDetails />} />
                 <Route path="warehouse/verification" element={<Navigate to="/warehouse/picklists" replace />} />
                 <Route path="market/materials" element={<RawMaterials />} />
                 <Route path="market/prices" element={<PriceManagement />} />
