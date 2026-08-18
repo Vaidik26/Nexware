@@ -928,7 +928,7 @@ async def get_active_box(
 @router.put("/{picklist_id}/active-box")
 async def set_active_box(
     picklist_id: int,
-    payload: Optional[ActiveBoxData],
+    payload: Optional[ActiveBoxData] = None,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -944,6 +944,22 @@ async def set_active_box(
         pl.active_box_carton_id = payload.carton_type_id
         pl.active_box_contents = [c.model_dump() for c in payload.contents]
         
+    await db.commit()
+    return {"status": "ok"}
+
+@router.delete("/{picklist_id}/active-box")
+async def clear_active_box(
+    picklist_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    pl_res = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    pl = pl_res.scalars().first()
+    if not pl:
+        raise HTTPException(status_code=404, detail="Pick list not found")
+        
+    pl.active_box_carton_id = None
+    pl.active_box_contents = None
     await db.commit()
     return {"status": "ok"}
 

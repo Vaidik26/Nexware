@@ -164,7 +164,11 @@ export default function JobDetailScreen() {
     
     const saveActiveBox = async () => {
       try {
-        await api.put(`/picklists/${id}/active-box`, activeBox);
+        if (activeBox) {
+          await api.put(`/picklists/${id}/active-box`, activeBox);
+        } else {
+          await api.delete(`/picklists/${id}/active-box`);
+        }
       } catch (err) {
         console.error('Failed to save active box to server');
       }
