@@ -55,13 +55,18 @@ class PickListBoxCreate(PickListBoxBase):
     """Legacy: used by old full-carton boxing. Kept for backward compatibility."""
     item_ids: List[int]
 
+class CartonTypeOut(BaseModel):
+    id: int
+    name: str
+    model_config = ConfigDict(from_attributes=True)
+
 class PickListBoxOut(PickListBoxBase):
     id: int
     pick_list_id: int
     created_at: datetime
     is_audited: bool = False
     box_items: List[PickListBoxItemOut] = []
-    carton_type: Optional[dict] = None
+    carton_type: Optional[CartonTypeOut] = None
     model_config = ConfigDict(from_attributes=True)
 
 class PickListOut(PickListBase):

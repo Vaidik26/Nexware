@@ -97,7 +97,7 @@ export default function Sidebar() {
         </div>
         <div>
           <span className="font-bold text-lg tracking-tight">Nexware</span>
-          <span className="text-xs text-on-primary-container block font-medium">Operations Platform</span>
+          <span className="text-xs text-white-container block font-medium">Operations Platform</span>
         </div>
       </div>
 
@@ -113,7 +113,7 @@ export default function Sidebar() {
                 onClick={() => toggleGroup(group.label)}
                 className={cn(
                   "w-full flex items-center justify-between px-3 py-2 text-sm font-bold uppercase tracking-wider rounded-lg transition-colors",
-                  hasActiveChild ? "text-secondary" : "text-on-primary-container hover:bg-primary-container/50 hover:text-white"
+                  hasActiveChild ? "text-secondary" : "text-white-container hover:bg-primary-container/50 hover:text-white"
                 )}
               >
                 <div className="flex items-center gap-2.5">

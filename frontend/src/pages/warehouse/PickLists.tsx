@@ -363,7 +363,7 @@ export default function PickLists() {
           {(row.status === 'draft' || row.status === 'assigned' || row.status === 'verified' || row.status === 'completed' || row.status === 'waiting_verification') && (
             <button
               onClick={() => navigate(`/warehouse/picklists/${row.id}`)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-on-primary hover:bg-primary/90 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-white hover:bg-primary/90 transition-colors"
             >
               Details <ArrowRight className="w-3.5 h-3.5" />
             </button>
