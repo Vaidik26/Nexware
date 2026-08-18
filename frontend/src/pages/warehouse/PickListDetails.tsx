@@ -26,6 +26,7 @@ export default function PickListDetails() {
 
   const [verifiedBoxes, setVerifiedBoxes] = useState<Set<number>>(new Set());
   const [isVerifying, setIsVerifying] = useState(false);
+  const [verifySuccessMsg, setVerifySuccessMsg] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -66,6 +67,7 @@ export default function PickListDetails() {
     if (!file) return;
 
     setIsVerifying(true);
+    setVerifySuccessMsg(null);
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
@@ -85,8 +87,6 @@ export default function PickListDetails() {
           inversionAttempts: "dontInvert",
         });
 
-        setIsVerifying(false);
-
         if (code) {
           try {
             const data = JSON.parse(code.data);
@@ -96,32 +96,42 @@ export default function PickListDetails() {
               
               if (!boxExists) {
                 toast.error(`QR Code belongs to Box ${boxId}, which is not part of this picklist.`);
+                setIsVerifying(false);
                 return;
               }
 
               if (verifiedBoxes.has(boxId)) {
                 toast.error(`Box ${boxId} has already been scanned and verified.`);
+                setIsVerifying(false);
                 return;
               }
 
               // Call API to persist verification
               api.post(`/picklists/${id}/boxes/${boxId}/verify`)
                 .then(() => {
-                  toast.success(`Successfully verified Box ${boxId}!`);
+                  setVerifySuccessMsg(`Successfully verified Box ${boxId}!`);
                   setVerifiedBoxes(prev => new Set(prev).add(boxId));
-                  setIsVerifyModalOpen(false);
+                  setTimeout(() => {
+                    setIsVerifyModalOpen(false);
+                    setIsVerifying(false);
+                    setVerifySuccessMsg(null);
+                  }, 1500);
                 })
                 .catch((err) => {
                   toast.error(err.response?.data?.detail || 'Failed to verify box on server');
+                  setIsVerifying(false);
                 });
             } else {
               toast.error(`Invalid QR code format. Missing box_id.`);
+              setIsVerifying(false);
             }
           } catch (err) {
             toast.error('Invalid QR Code format.');
+            setIsVerifying(false);
           }
         } else {
           toast.error('No QR Code found in the image. Please try again.');
+          setIsVerifying(false);
         }
       };
       img.src = event.target?.result as string;
@@ -201,7 +211,7 @@ export default function PickListDetails() {
           <div className="p-6">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-bold text-on-surface">Sealed Boxes Pending Audit</h3>
-              {picklist.boxes.length > 0 && (
+              {picklist.boxes.length > 0 && picklist.boxes.some((b: any) => !verifiedBoxes.has(b.id)) && (
                 <Button 
                   onClick={() => setIsVerifyModalOpen(true)} 
                   className="bg-[#003527] hover:bg-[#006c49] text-white flex items-center gap-2"
@@ -331,7 +341,12 @@ export default function PickListDetails() {
           </div>
 
           <div className="border-2 border-dashed border-outline-variant rounded-xl p-10 flex flex-col items-center justify-center bg-surface-variant/20">
-            {isVerifying ? (
+            {verifySuccessMsg ? (
+              <div className="flex flex-col items-center animate-in zoom-in duration-300">
+                <CheckCircle2 className="w-16 h-16 text-emerald-500 mb-4" />
+                <p className="text-emerald-700 font-bold text-lg">{verifySuccessMsg}</p>
+              </div>
+            ) : isVerifying ? (
               <div className="flex flex-col items-center">
                 <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
                 <p className="text-on-surface font-medium">Analyzing QR Code...</p>
