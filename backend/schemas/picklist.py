@@ -59,6 +59,7 @@ class PickListBoxOut(PickListBoxBase):
     id: int
     pick_list_id: int
     created_at: datetime
+    is_audited: bool = False
     box_items: List[PickListBoxItemOut] = []
     model_config = ConfigDict(from_attributes=True)
 

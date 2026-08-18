@@ -745,6 +745,24 @@ async def audit_item(
     await db.commit()
     return {"is_audited": item.is_audited, "item_id": item_id}
 
+@router.post("/{picklist_id}/boxes/{box_id}/verify")
+async def verify_box(
+    picklist_id: int,
+    box_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = await db.execute(
+        select(PickListBox)
+        .filter(PickListBox.id == box_id, PickListBox.pick_list_id == picklist_id)
+    )
+    box = result.scalars().first()
+    if not box:
+        raise HTTPException(status_code=404, detail="Box not found")
+        
+    box.is_audited = True
+    await db.commit()
+    return {"message": "Box verified successfully"}
 
 @router.post("/{picklist_id}/complete-picking")
 async def complete_picking(

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Table } from '@/components/ui/Table';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
-import { Download, Users, RefreshCw, Layers, CheckCircle2, AlertCircle, XCircle, CheckSquare, Check, ShieldCheck, ArrowLeftRight, Package } from 'lucide-react';
+import { Download, Users, RefreshCw, Layers, CheckCircle2, AlertCircle, XCircle, CheckSquare, Check, ShieldCheck, ArrowLeftRight, Package, ArrowRight } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { PageLoader } from '@/components/ui/PageLoader';
@@ -360,15 +360,13 @@ export default function PickLists() {
               Inspect Pick
             </Button>
           )}
-          {row.status === 'waiting_verification' && (
-            <Button size="sm" onClick={() => navigate(`/warehouse/picklists/${row.id}`)} className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs font-bold text-xs py-1 flex items-center gap-1 animate-pulse">
-              <ShieldCheck className="w-3.5 h-3.5" /> Audit & Verify →
-            </Button>
-          )}
-          {(row.status === 'draft' || row.status === 'assigned' || row.status === 'verified' || row.status === 'completed') && (
-            <Button size="sm" variant="outline" onClick={() => navigate(`/warehouse/picklists/${row.id}`)} className="font-bold text-xs py-1 flex items-center gap-1">
-              Details →
-            </Button>
+          {(row.status === 'draft' || row.status === 'assigned' || row.status === 'verified' || row.status === 'completed' || row.status === 'waiting_verification') && (
+            <button
+              onClick={() => navigate(`/warehouse/picklists/${row.id}`)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-on-primary hover:bg-primary/90 transition-colors"
+            >
+              Details <ArrowRight className="w-3.5 h-3.5" />
+            </button>
           )}
           {(row.status === 'verified' || row.status === 'completed') ? (
             <Button 

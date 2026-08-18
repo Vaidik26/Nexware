@@ -15,7 +15,7 @@ export default function PickListDetails() {
   const navigate = useNavigate();
   const [picklist, setPicklist] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'audit' | 'sequence'>('audit');
+  const [activeTab, setActiveTab] = useState<'audit' | 'sequence'>('sequence');
   
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
@@ -36,6 +36,8 @@ export default function PickListDetails() {
     try {
       const res = await api.get(`/picklists/${id}`);
       setPicklist(res.data);
+      const auditedIds = res.data.boxes.filter((b: any) => b.is_audited).map((b: any) => b.id);
+      setVerifiedBoxes(new Set(auditedIds));
     } catch (err) {
       toast.error('Failed to load picklist details');
       navigate('/warehouse/picklists');
@@ -93,9 +95,16 @@ export default function PickListDetails() {
           try {
             const data = JSON.parse(code.data);
             if (data.box_id === `BOX-${boxToVerify.id}`) {
-              toast.success(`Successfully verified BOX-${boxToVerify.id}!`);
-              setVerifiedBoxes(prev => new Set(prev).add(boxToVerify.id));
-              setIsVerifyModalOpen(false);
+              // Call API to persist verification
+              api.post(`/picklists/${id}/boxes/${boxToVerify.id}/verify`)
+                .then(() => {
+                  toast.success(`Successfully verified BOX-${boxToVerify.id}!`);
+                  setVerifiedBoxes(prev => new Set(prev).add(boxToVerify.id));
+                  setIsVerifyModalOpen(false);
+                })
+                .catch((err) => {
+                  toast.error(err.response?.data?.detail || 'Failed to verify box on server');
+                });
             } else {
               toast.error(`QR Code belongs to ${data.box_id}, not BOX-${boxToVerify.id}`);
             }
@@ -153,17 +162,6 @@ export default function PickListDetails() {
       <div className="border-b border-outline-variant">
         <nav className="flex space-x-8">
           <button
-            onClick={() => setActiveTab('audit')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
-              activeTab === 'audit'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-on-surface-variant hover:text-on-surface hover:border-outline-variant'
-            }`}
-          >
-            <Package className="w-4 h-4" />
-            Audit & Verify
-          </button>
-          <button
             onClick={() => setActiveTab('sequence')}
             className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
               activeTab === 'sequence'
@@ -173,6 +171,17 @@ export default function PickListDetails() {
           >
             <CheckCircle2 className="w-4 h-4" />
             Picking Sequence
+          </button>
+          <button
+            onClick={() => setActiveTab('audit')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+              activeTab === 'audit'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-on-surface-variant hover:text-on-surface hover:border-outline-variant'
+            }`}
+          >
+            <Package className="w-4 h-4" />
+            Audit & Verify
           </button>
         </nav>
       </div>

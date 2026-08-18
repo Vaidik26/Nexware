@@ -81,6 +81,7 @@ class PickListBox(Base):
     carton_type_id = Column(Integer, ForeignKey("carton_types.id"), nullable=False)
     entered_weight = Column(Float, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_audited = Column(Boolean, default=False)
 
     pick_list = relationship("PickList", back_populates="boxes")
     items = relationship("PickListItem", back_populates="box")  # legacy direct link (full cartons)
