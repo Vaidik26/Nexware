@@ -60,11 +60,15 @@ export default function PickLists() {
   const [assigningPickerId, setAssigningPickerId] = useState<number | null>(null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchData = async (quiet = false) => {
     try {
-      if (!quiet) setIsLoading(true);
+      if (!quiet) {
+        if (pickLists.length === 0) setIsLoading(true);
+        setIsRefreshing(true);
+      }
       const [plRes, usersRes] = await Promise.all([
         api.get('/picklists').catch(() => ({ data: [] })),
         api.get('/users').catch(() => ({ data: [] })),
@@ -79,6 +83,7 @@ export default function PickLists() {
       if (!quiet) toast.error(getErrorMessage(err, 'Failed to connect to active picklist queue'));
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -413,7 +418,7 @@ export default function PickLists() {
           <p className="text-on-surface-variant mt-1">Manage draft orders, track real-time picking operations, and assign tasks to warehouse staff</p>
         </div>
         <Button onClick={() => fetchData(false)} variant="outline" size="sm" className="shadow-xs font-semibold">
-          <RefreshCw className="w-4 h-4 mr-2 text-primary" /> Refresh Operations Feed
+          <RefreshCw className={`w-4 h-4 mr-2 text-primary ${isRefreshing ? 'animate-spin' : ''}`} /> Refresh Operations Feed
         </Button>
       </div>
 

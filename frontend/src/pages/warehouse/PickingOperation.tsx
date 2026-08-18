@@ -10,26 +10,31 @@ import api from '@/lib/api';
 export default function PickingOperation() {
   const [pickLists, setPickLists] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const navigate = useNavigate();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchPickLists = async () => {
+  const fetchPickLists = async (quiet = false) => {
     try {
-      setIsLoading(true);
+      if (!quiet) {
+        if (pickLists.length === 0) setIsLoading(true);
+        setIsRefreshing(true);
+      }
       const res = await api.get('/picklists');
       // Filter for picklists currently in picking or assigned state
       const all = res.data || [];
       setPickLists(all.filter((p: any) => p.status === 'picking' || p.status === 'assigned' || p.status === 'waiting_verification'));
     } catch (error) {
-      toast.error('Failed to load picking operations');
+      if (!quiet) toast.error('Failed to load picking operations');
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
 
   useEffect(() => {
-    fetchPickLists();
-    pollRef.current = setInterval(() => fetchPickLists(), 10000);
+    fetchPickLists(false);
+    pollRef.current = setInterval(() => fetchPickLists(true), 10000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
@@ -56,8 +61,8 @@ export default function PickingOperation() {
           <h1 className="text-2xl font-bold text-on-surface">Picking Operation Floor</h1>
           <p className="text-on-surface-variant mt-1">Monitor real-time warehouse picking progress and active mobile picker assignments</p>
         </div>
-        <Button onClick={fetchPickLists} variant="outline" size="sm">
-          <Activity className="w-4 h-4 mr-2 text-secondary" /> Refresh Floor Status
+        <Button onClick={() => fetchPickLists(false)} variant="outline" size="sm">
+          <Activity className={`w-4 h-4 mr-2 text-secondary ${isRefreshing ? 'animate-spin' : ''}`} /> Refresh Floor Status
         </Button>
       </div>
 

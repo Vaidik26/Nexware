@@ -75,7 +75,13 @@ export default function JobDetailScreen() {
   // ── NEW: Active box state (the box currently being filled) ──
   const [activeBox, setActiveBox] = useState<ActiveBox | null>(null);
   const [showCartonSelectModal, setShowCartonSelectModal] = useState(false);
+  const [cartonSelectMode, setCartonSelectMode] = useState<'new' | 'change'>('new'); // 'change' keeps contents
   const [pendingLooseItem, setPendingLooseItem] = useState<PickItem | null>(null); // item waiting for box selection
+
+  // ── Sealed boxes (completed this session, shown as history strip) ──
+  interface SealedBoxSummary { id: number; carton_name: string; item_count: number; total_qty: number; weight: number; }
+  const [sealedBoxes, setSealedBoxes] = useState<SealedBoxSummary[]>([]);
+  const [sealedItemIds, setSealedItemIds] = useState<Set<string>>(new Set());
 
   // ── Seal box modal state ──
   const [showSealModal, setShowSealModal] = useState(false);
@@ -108,6 +114,15 @@ export default function JobDetailScreen() {
             is_full_carton: item.is_full_carton,
           }));
           setItems(mappedItems);
+
+          // Track items that are already sealed in boxes
+          const boxedIds = new Set<string>();
+          (res.data.boxes || []).forEach((b: any) => {
+            (b.box_items || []).forEach((bi: any) => {
+              boxedIds.add(String(bi.item_id));
+            });
+          });
+          setSealedItemIds(boxedIds);
         }
       } catch (err) {
         setSubmitError('Could not load picklist from server.');
@@ -122,10 +137,41 @@ export default function JobDetailScreen() {
         setCartonTypes(res.data || []);
       } catch (err) {}
     };
+    
+    const fetchActiveBox = async () => {
+      try {
+        const res = await api.get(`/picklists/${id}/active-box`);
+        if (res.data) {
+          setActiveBox(res.data);
+        }
+      } catch (e) {
+      } finally {
+        setIsDraftLoaded(true);
+      }
+    };
 
     fetchPicklistDetails();
     fetchCartonTypes();
+    fetchActiveBox();
   }, [id]);
+
+  // ─── Save Active Box to Server ──────────────────────────────────────────
+
+  const [isDraftLoaded, setIsDraftLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!isDraftLoaded) return;
+    
+    const saveActiveBox = async () => {
+      try {
+        await api.put(`/picklists/${id}/active-box`, activeBox);
+      } catch (err) {
+        console.error('Failed to save active box to server');
+      }
+    };
+    
+    saveActiveBox();
+  }, [activeBox, isDraftLoaded, id]);
 
   // ─── Derived values ────────────────────────────────────────────────────────
 
@@ -145,7 +191,7 @@ export default function JobDetailScreen() {
   // All loose items that have been picked but not yet fully boxed
   const looseItems = items.filter(i => !i.is_full_carton);
   const hasLooseItems = looseItems.length > 0;
-  const hasUnboxedLooseItems = looseItems.some(i => i.picked && !i.missing_reported);
+  const hasUnboxedLooseItems = looseItems.some(i => i.picked && !i.missing_reported && !sealedItemIds.has(i.id));
 
   // Active box: how many total units are staged in current box
   const activeBoxTotal = activeBox?.contents.reduce((sum, c) => sum + c.quantity, 0) ?? 0;
@@ -161,21 +207,22 @@ export default function JobDetailScreen() {
     }
 
     setQtyModalVisible(false);
+    const newPickedQty = qtyTargetItem.picked_qty + val;
 
     // For loose items: if no active box yet, show carton select first
     if (!qtyTargetItem.is_full_carton && !activeBox) {
-      setPendingLooseItem({ ...qtyTargetItem, picked_qty: val });
+      setPendingLooseItem({ ...qtyTargetItem, picked_qty: newPickedQty });
       setShowCartonSelectModal(true);
       return;
     }
 
     // Optimistic update
     setItems(prev =>
-      prev.map(i => i.id === qtyTargetItem.id ? { ...i, picked: true, picked_qty: val } : i)
+      prev.map(i => i.id === qtyTargetItem.id ? { ...i, picked: true, picked_qty: newPickedQty } : i)
     );
 
     try {
-      await api.patch(`/picklists/${id}/items/${qtyTargetItem.id}/pick`, { picked_quantity: val });
+      await api.patch(`/picklists/${id}/items/${qtyTargetItem.id}/pick`, { picked_quantity: newPickedQty });
     } catch (err) {
       setItems(prev =>
         prev.map(i =>
@@ -227,7 +274,14 @@ export default function JobDetailScreen() {
 
   const handleCartonSelect = (carton: CartonType) => {
     setShowCartonSelectModal(false);
-    // Create the new active box
+
+    if (cartonSelectMode === 'change') {
+      // Keep contents, just swap carton type
+      setActiveBox(prev => prev ? { ...prev, carton_type_id: carton.id, carton_name: carton.name } : null);
+      return;
+    }
+
+    // 'new' mode — create fresh active box
     const newBox: ActiveBox = {
       carton_type_id: carton.id,
       carton_name: carton.name,
@@ -278,6 +332,23 @@ export default function JobDetailScreen() {
         contents: activeBox.contents.map(c => ({ item_id: c.item_id, quantity: c.quantity })),
       });
 
+      // Add to sealed history strip
+      const totalQty = activeBox.contents.reduce((s, c) => s + c.quantity, 0);
+      setSealedBoxes(prev => [...prev, {
+        id: res.data.id,
+        carton_name: activeBox.carton_name,
+        item_count: activeBox.contents.length,
+        total_qty: totalQty,
+        weight: parseFloat(sealWeight),
+      }]);
+
+      // Add sealed items to sealedItemIds state so they no longer trigger "New Box"
+      setSealedItemIds(prev => {
+        const next = new Set(prev);
+        activeBox.contents.forEach(c => next.add(String(c.item_id)));
+        return next;
+      });
+
       // Success: generate QR and show it
       const qrPayload = JSON.stringify({
         box_id: `BOX-${res.data.id}`,
@@ -318,7 +389,8 @@ export default function JobDetailScreen() {
       playTickSound();
 
       setQtyTargetItem(scanTargetItem);
-      setQtyInput(String(scanTargetItem.qty)); // default to requested qty
+      const remaining = Math.max(0, scanTargetItem.qty - scanTargetItem.picked_qty);
+      setQtyInput(String(remaining || 1)); // default to remaining qty, or 1 if somehow 0
       setQtyModalVisible(true);
     } else {
       Alert.alert('Scan Failed', 'The scanned barcode does not match this item.', [
@@ -381,28 +453,59 @@ export default function JobDetailScreen() {
         </View>
       </View>
 
+      {/* ── Sealed Boxes History Strip ── */}
+      {sealedBoxes.length > 0 && (
+        <View className="bg-[#f0faf5] border-b border-[#c6e8d8] px-4 py-2 flex-row items-center gap-2">
+          <Package size={13} color="#006c49" />
+          <Text className="text-xs font-bold text-[#006c49] mr-1">Sealed:</Text>
+          {sealedBoxes.map((b, idx) => (
+            <View key={b.id} className="bg-[#003527] rounded-full px-3 py-1 flex-row items-center gap-1">
+              <Text className="text-white text-xs font-bold">BOX-{b.id}</Text>
+              <Text className="text-[#a7f3d0] text-xs">· {b.total_qty} units · {b.weight}kg</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
       {/* ── Active Box Banner ── */}
       {activeBox && (
-        <TouchableOpacity
-          className="bg-blue-600 px-4 py-3 flex-row items-center justify-between"
-          onPress={() => setShowSealModal(true)}
-        >
-          <View className="flex-row items-center gap-2">
-            <Package size={18} color="white" />
+        <View className="bg-[#003527] px-4 py-3 flex-row items-center justify-between">
+          {/* Left — tap to open Seal Box */}
+          <TouchableOpacity
+            className="flex-row items-center gap-2 flex-1"
+            onPress={() => setShowSealModal(true)}
+          >
+            <Package size={18} color="#a7f3d0" />
             <View>
               <Text className="text-white font-bold text-sm">
                 Active Box: {activeBox.carton_name}
               </Text>
-              <Text className="text-blue-100 text-xs">
+              <Text className="text-[#a7f3d0] text-xs">
                 {activeBox.contents.length} item line(s) · {activeBoxTotal} units staged
               </Text>
             </View>
+          </TouchableOpacity>
+
+          {/* Right — two actions: Change | Seal */}
+          <View className="flex-row items-center gap-2">
+            <TouchableOpacity
+              className="bg-[#006c49] px-3 py-1.5 rounded-lg"
+              onPress={() => {
+                setCartonSelectMode('change');
+                setShowCartonSelectModal(true);
+              }}
+            >
+              <Text className="text-[#a7f3d0] text-xs font-bold">Change</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="bg-white/20 px-3 py-1.5 rounded-lg flex-row items-center gap-1"
+              onPress={() => setShowSealModal(true)}
+            >
+              <Text className="text-white text-xs font-bold">SEAL</Text>
+              <ChevronRight size={13} color="white" />
+            </TouchableOpacity>
           </View>
-          <View className="flex-row items-center gap-1">
-            <Text className="text-white font-bold text-sm">SEAL BOX</Text>
-            <ChevronRight size={16} color="white" />
-          </View>
-        </TouchableOpacity>
+        </View>
       )}
 
       {/* ── Items List ── */}
@@ -454,14 +557,17 @@ export default function JobDetailScreen() {
           </View>
         ) : (
           <View className="flex-row gap-2">
-            {/* Show "New Box" button if picker has loose items but no active box and some are picked */}
+            {/* New Box button — green themed */}
             {hasLooseItems && !activeBox && hasUnboxedLooseItems && (
               <TouchableOpacity
-                className="px-4 py-3 rounded-xl flex-row items-center bg-blue-100 border border-blue-200"
-                onPress={() => setShowCartonSelectModal(true)}
+                className="px-4 py-3 rounded-xl flex-row items-center bg-[#ecfdf5] border border-[#a7f3d0]"
+                onPress={() => {
+                  setCartonSelectMode('new');
+                  setShowCartonSelectModal(true);
+                }}
               >
-                <Plus size={18} color="#1d4ed8" />
-                <Text className="font-bold ml-1 text-blue-700">New Box</Text>
+                <Plus size={18} color="#006c49" />
+                <Text className="font-bold ml-1 text-[#006c49]">New Box</Text>
               </TouchableOpacity>
             )}
 
@@ -480,17 +586,21 @@ export default function JobDetailScreen() {
       </View>
 
       {/* ════════════════════════════════════════════════════════════════
-          MODAL: Select Carton Type (shown when first loose item is hit)
+          MODAL: Select Carton Type (shown when first loose item is hit, or Change tapped)
       ════════════════════════════════════════════════════════════════ */}
       <Modal visible={showCartonSelectModal} transparent animationType="slide">
         <View className="flex-1 bg-black/50 justify-end">
           <View className="bg-white rounded-t-3xl p-6 w-full shadow-2xl">
             <View className="flex-row items-center mb-2">
-              <Box size={22} color="#1d4ed8" />
-              <Text className="text-xl font-bold text-gray-800 ml-2">Select Box Type</Text>
+              <Box size={22} color="#006c49" />
+              <Text className="text-xl font-bold text-gray-800 ml-2">
+                {cartonSelectMode === 'change' ? 'Change Box Type' : 'Select Box Type'}
+              </Text>
             </View>
             <Text className="text-sm text-gray-500 mb-5">
-              Grab a physical box and select its type below to begin packing loose items.
+              {cartonSelectMode === 'change'
+                ? 'Select a different carton type. Items staged so far will be kept.'
+                : 'Grab a physical box and select its type below to begin packing loose items.'}
             </Text>
 
             <View className="gap-3 mb-6">
@@ -498,16 +608,23 @@ export default function JobDetailScreen() {
                 <TouchableOpacity
                   key={ct.id}
                   onPress={() => handleCartonSelect(ct)}
-                  className="flex-row items-center justify-between bg-gray-50 border border-gray-200 px-4 py-4 rounded-xl"
+                  className={`flex-row items-center justify-between px-4 py-4 rounded-xl border ${
+                    activeBox?.carton_type_id === ct.id
+                      ? 'bg-[#ecfdf5] border-[#006c49]'
+                      : 'bg-gray-50 border-gray-200'
+                  }`}
                 >
                   <View className="flex-row items-center gap-3">
-                    <Package size={20} color="#1d4ed8" />
+                    <Package size={20} color={activeBox?.carton_type_id === ct.id ? '#006c49' : '#6b7280'} />
                     <View>
-                      <Text className="font-bold text-gray-800 text-base">{ct.name}</Text>
+                      <Text className={`font-bold text-base ${activeBox?.carton_type_id === ct.id ? 'text-[#003527]' : 'text-gray-800'}`}>
+                        {ct.name}
+                        {activeBox?.carton_type_id === ct.id ? ' (current)' : ''}
+                      </Text>
                       <Text className="text-xs text-gray-500">Tare weight: {ct.tare_weight} kg</Text>
                     </View>
                   </View>
-                  <ChevronRight size={20} color="#9ca3af" />
+                  <ChevronRight size={20} color={activeBox?.carton_type_id === ct.id ? '#006c49' : '#9ca3af'} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -536,11 +653,11 @@ export default function JobDetailScreen() {
               {activeBox?.carton_name} · {activeBox?.contents.length} item line(s)
             </Text>
 
-            {/* Show what's in this box */}
-            <View className="bg-blue-50 rounded-xl p-3 mb-4 border border-blue-100">
-              <Text className="text-xs font-bold text-blue-700 mb-2 uppercase tracking-wide">Box Contents</Text>
+            {/* Show what's in this box — green themed */}
+            <View className="bg-[#f0faf5] rounded-xl p-3 mb-4 border border-[#c6e8d8]">
+              <Text className="text-xs font-bold text-[#006c49] mb-2 uppercase tracking-wide">Box Contents</Text>
               {activeBox?.contents.map((c, idx) => (
-                <Text key={idx} className="text-sm text-blue-900">
+                <Text key={idx} className="text-sm text-[#003527]">
                   • {c.item_name} × {c.quantity}
                 </Text>
               ))}
@@ -564,13 +681,13 @@ export default function JobDetailScreen() {
             />
 
             <TouchableOpacity
-              className="bg-blue-600 py-4 rounded-xl items-center mb-3"
+              className="bg-[#003527] py-4 rounded-xl items-center mb-3"
               onPress={handleSealBox}
               disabled={isSealing || !sealWeight}
             >
               {isSealing
                 ? <ActivityIndicator color="white" />
-                : <Text className="text-white font-bold text-base">✓ Seal & Print Label</Text>
+                : <Text className="text-white font-bold text-base">✓ Seal &amp; Print Label</Text>
               }
             </TouchableOpacity>
 
@@ -693,8 +810,8 @@ export default function JobDetailScreen() {
               Item: <Text className="font-bold text-gray-800">{scanTargetItem?.name}</Text>
             </Text>
             {scanTargetItem && !scanTargetItem.is_full_carton && (
-              <View className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-4">
-                <Text className="text-xs text-blue-700 font-semibold">
+              <View className="bg-[#f0faf5] border border-[#c6e8d8] rounded-lg px-3 py-2 mb-4">
+                <Text className="text-xs text-[#006c49] font-semibold">
                   📦 Loose Item — {activeBox ? `Going into: ${activeBox.carton_name}` : 'Will prompt for box selection'}
                 </Text>
               </View>
@@ -806,8 +923,8 @@ export default function JobDetailScreen() {
         <View className="flex-1 bg-black/60 justify-center px-6">
           <View className="bg-white rounded-3xl p-6 shadow-xl">
             <View className="items-center mb-6">
-              <View className="w-16 h-16 bg-blue-100 rounded-full items-center justify-center mb-4">
-                <Box size={28} color="#2563eb" />
+              <View className="w-16 h-16 bg-[#ecfdf5] rounded-full items-center justify-center mb-4">
+                <Box size={28} color="#006c49" />
               </View>
               <Text className="text-xl font-bold text-gray-900 text-center mb-1">
                 Enter Picked Quantity
@@ -816,7 +933,7 @@ export default function JobDetailScreen() {
                 Requested: {qtyTargetItem?.qty} {qtyTargetItem?.uom}
               </Text>
               {qtyTargetItem && !qtyTargetItem.is_full_carton && activeBox && (
-                <Text className="text-xs text-blue-600 font-semibold mt-1">
+                <Text className="text-xs text-[#006c49] font-semibold mt-1">
                   → Will go into: {activeBox.carton_name}
                 </Text>
               )}
@@ -834,7 +951,7 @@ export default function JobDetailScreen() {
             </View>
 
             <TouchableOpacity
-              className="bg-[#2563eb] py-4 rounded-xl items-center mb-3"
+              className="bg-[#003527] py-4 rounded-xl items-center mb-3"
               onPress={handleQtySubmit}
             >
               <Text className="text-white font-bold text-base">Confirm Quantity</Text>

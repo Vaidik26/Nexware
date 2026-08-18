@@ -15,6 +15,11 @@ class PickList(Base):
     delivery_date = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
+    # ── Draft Active Box ──
+    active_box_carton_id = Column(Integer, ForeignKey("carton_types.id"), nullable=True)
+    from sqlalchemy.dialects.postgresql import JSONB
+    active_box_contents = Column(JSONB, nullable=True)
+
     sales_person = relationship("User", foreign_keys=[sales_person_id], lazy="selectin")
 
     

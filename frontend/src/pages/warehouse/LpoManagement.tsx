@@ -31,7 +31,7 @@ export default function LpoManagement() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Use React Query for caching, background syncing, and instant reloads
-  const { data: lpos = [], isFetching } = useQuery<LPO[]>({
+  const { data: lpos = [], isFetching, refetch } = useQuery<LPO[]>({
     queryKey: ['lpos'],
     queryFn: async () => {
       const { data } = await api.get('/lpos');
@@ -40,7 +40,7 @@ export default function LpoManagement() {
   });
 
   const handleManualRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['lpos'] });
+    refetch();
   };
 
   const filteredLpos = lpos.filter((lpo) => {

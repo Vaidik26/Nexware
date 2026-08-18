@@ -888,6 +888,67 @@ async def create_box(
     return box
 
 
+# ---------- Active Draft Box ----------
+
+class ActiveBoxContent(BaseModel):
+    item_id: int
+    quantity: float
+    item_name: str
+
+class ActiveBoxData(BaseModel):
+    carton_type_id: int
+    carton_name: str
+    contents: List[ActiveBoxContent]
+
+@router.get("/{picklist_id}/active-box")
+async def get_active_box(
+    picklist_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    pl_res = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    pl = pl_res.scalars().first()
+    if not pl:
+        raise HTTPException(status_code=404, detail="Pick list not found")
+        
+    if not pl.active_box_carton_id or not pl.active_box_contents:
+        return None
+        
+    carton_res = await db.execute(select(CartonType).filter(CartonType.id == pl.active_box_carton_id))
+    carton = carton_res.scalars().first()
+    if not carton:
+        return None
+
+    return {
+        "carton_type_id": carton.id,
+        "carton_name": carton.name,
+        "contents": pl.active_box_contents
+    }
+
+@router.put("/{picklist_id}/active-box")
+async def set_active_box(
+    picklist_id: int,
+    payload: Optional[ActiveBoxData],
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    pl_res = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    pl = pl_res.scalars().first()
+    if not pl:
+        raise HTTPException(status_code=404, detail="Pick list not found")
+        
+    if not payload:
+        pl.active_box_carton_id = None
+        pl.active_box_contents = None
+    else:
+        pl.active_box_carton_id = payload.carton_type_id
+        pl.active_box_contents = [c.model_dump() for c in payload.contents]
+        
+    await db.commit()
+    return {"status": "ok"}
+
+# ---------- Seal Loose Item Box ----------
+
 @router.post("/{picklist_id}/boxes/seal", response_model=PickListBoxOut)
 async def seal_loose_item_box(
     picklist_id: int,

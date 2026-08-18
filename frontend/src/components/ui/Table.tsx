@@ -1,6 +1,5 @@
 import { ReactNode } from 'react';
 import { motion } from 'framer-motion';
-import { PageLoader } from '@/components/ui/PageLoader';
 
 interface Column<T> {
   header: string;
@@ -17,7 +16,14 @@ interface TableProps<T> {
 
 export function Table<T>({ data, columns, keyExtractor, isLoading }: TableProps<T>) {
   if (isLoading) {
-    return <PageLoader />;
+    return (
+      <div className="w-full bg-surface-container-lowest rounded-xl overflow-hidden border border-outline-variant animate-pulse">
+        <div className="h-12 bg-surface-container" />
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className="h-14 border-t border-outline-variant bg-surface-container-lowest/50" />
+        ))}
+      </div>
+    );
   }
 
   return (
