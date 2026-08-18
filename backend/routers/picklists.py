@@ -754,6 +754,7 @@ async def verify_box(
 ):
     result = await db.execute(
         select(PickListBox)
+        .options(selectinload(PickListBox.box_items).selectinload(PickListBoxItem.item))
         .filter(PickListBox.id == box_id, PickListBox.pick_list_id == picklist_id)
     )
     box = result.scalars().first()
@@ -761,8 +762,33 @@ async def verify_box(
         raise HTTPException(status_code=404, detail="Box not found")
         
     box.is_audited = True
+    
+    # Also update all items inside this box
+    for bi in box.box_items:
+        if bi.item:
+            bi.item.is_audited = True
+
     await db.commit()
     return {"message": "Box verified successfully"}
+
+@router.post("/{picklist_id}/items/{item_id}/verify")
+async def verify_item(
+    picklist_id: int,
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = await db.execute(
+        select(PickListItem)
+        .filter(PickListItem.id == item_id, PickListItem.pick_list_id == picklist_id)
+    )
+    item = result.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+        
+    item.is_audited = True
+    await db.commit()
+    return {"message": "Item verified successfully"}
 
 @router.post("/{picklist_id}/complete-picking")
 async def complete_picking(

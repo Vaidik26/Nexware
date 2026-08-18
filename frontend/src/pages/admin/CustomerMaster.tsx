@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { ActionRestrictedModal } from '@/components/ui/ActionRestrictedModal';
+import { PageLoader } from '@/components/ui/PageLoader';
 import { getErrorMessage } from '@/lib/utils';
 import api from '@/lib/api';
 
@@ -145,9 +146,13 @@ export default function CustomerMaster() {
         </Button>
       </div>
 
-      <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant shadow-sm">
-        <Table data={customers} columns={columns} keyExtractor={(r) => r.id} isLoading={isLoading} />
-      </div>
+      {isLoading ? (
+        <PageLoader message="Loading Customers..." subtitle="Fetching customer master directory" />
+      ) : (
+        <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant shadow-sm">
+          <Table data={customers} columns={columns} keyExtractor={(r) => r.id} />
+        </div>
+      )}
 
       <Modal isOpen={isModalOpen} onClose={closeModal} title={isEditMode ? "Edit Customer" : "Create New Customer"}>
         <form onSubmit={handleSubmitCustomer} className="space-y-4">

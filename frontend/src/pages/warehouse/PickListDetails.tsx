@@ -220,9 +220,16 @@ export default function PickListDetails() {
                             {box.box_items?.map((bi: any) => {
                               const itemDetails = picklist.items.find((i: any) => i.id === bi.item_id);
                               return (
-                                <div key={bi.id} className="flex justify-between text-sm w-full max-w-md">
-                                  <span className="text-on-surface truncate pr-4">{itemDetails?.product_name || `Item #${bi.item_id}`}</span>
-                                  <span className="text-on-surface-variant font-medium whitespace-nowrap">{bi.quantity} {itemDetails?.unit || 'units'}</span>
+                                <div key={bi.id} className="flex items-center justify-between text-sm w-full max-w-2xl py-1">
+                                  <span className="text-on-surface truncate pr-4 flex-1">{itemDetails?.product_name || `Item #${bi.item_id}`}</span>
+                                  <span className="text-on-surface-variant font-medium whitespace-nowrap w-24 text-right">{bi.quantity} {itemDetails?.unit || 'units'}</span>
+                                  <div className="w-28 flex justify-end">
+                                    {isVerified ? (
+                                      <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded text-xs font-bold border border-emerald-100">Scanned</span>
+                                    ) : (
+                                      <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded text-xs font-bold border border-amber-100">Pending</span>
+                                    )}
+                                  </div>
                                 </div>
                               );
                             })}
@@ -241,6 +248,53 @@ export default function PickListDetails() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+            
+            {/* Full Cartons Section */}
+            {picklist.items.filter((i: any) => i.is_full_carton).length > 0 && (
+              <div className="mt-8 space-y-4">
+                <h3 className="font-bold text-lg text-on-surface border-b border-outline-variant pb-2">Full Cartons Pending Audit</h3>
+                <div className="space-y-4">
+                  {picklist.items.filter((i: any) => i.is_full_carton).map((item: any) => {
+                    const isVerified = item.is_audited;
+                    return (
+                      <div key={item.id} className={`border rounded-xl p-5 ${isVerified ? 'bg-emerald-50/50 border-emerald-200' : 'bg-surface border-outline-variant'}`}>
+                        <div className="flex items-center justify-between w-full max-w-4xl py-1">
+                          <div className="flex items-center gap-3 w-1/2">
+                            <span className="text-on-surface font-semibold truncate">{item.product_name}</span>
+                          </div>
+                          <div className="flex items-center gap-6 w-1/2 justify-end">
+                            <span className="text-on-surface-variant font-medium whitespace-nowrap">{item.quantity} {item.unit}</span>
+                            <div className="w-28 flex justify-end">
+                              {isVerified ? (
+                                <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded text-xs font-bold border border-emerald-100">Scanned</span>
+                              ) : (
+                                <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded text-xs font-bold border border-amber-100">Pending</span>
+                              )}
+                            </div>
+                            {!isVerified && (
+                              <Button 
+                                onClick={() => {
+                                  // For now, allow direct verification of full cartons via simple API call without QR since there's no custom box label
+                                  api.post(`/picklists/${id}/items/${item.id}/verify`)
+                                    .then(() => {
+                                      toast.success(`Verified ${item.product_name}`);
+                                      fetchPicklist();
+                                    })
+                                    .catch((err) => toast.error(err.response?.data?.detail || 'Failed to verify item'));
+                                }}
+                                className="bg-[#003527] hover:bg-[#006c49] text-white flex items-center gap-2 h-8 px-3 ml-2"
+                              >
+                                <ScanLine className="w-3.5 h-3.5" /> Verify
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
