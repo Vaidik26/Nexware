@@ -18,6 +18,7 @@ class PickListItemBase(BaseModel):
 class PickListItemOut(PickListItemBase):
     id: int
     pick_list_id: int
+    picked_quantity: float = 0.0
     picked_at: Optional[datetime]
     model_config = ConfigDict(from_attributes=True)
 
@@ -27,17 +28,38 @@ class PickListBase(BaseModel):
     status: str
     delivery_date: Optional[datetime] = None
 
+# ── Boxing schemas ──────────────────────────────────────────────
+
+class BoxContent(BaseModel):
+    """One item line going into a box: which item and how many units."""
+    item_id: int
+    quantity: float
+
+class SealBoxCreate(BaseModel):
+    """Payload sent when the picker seals a loose-item box at the weighing station."""
+    carton_type_id: int
+    entered_weight: float
+    contents: List[BoxContent]  # what went into this specific box
+
+class PickListBoxItemOut(BaseModel):
+    id: int
+    item_id: int
+    quantity: float
+    model_config = ConfigDict(from_attributes=True)
+
 class PickListBoxBase(BaseModel):
     carton_type_id: int
     entered_weight: float
 
 class PickListBoxCreate(PickListBoxBase):
+    """Legacy: used by old full-carton boxing. Kept for backward compatibility."""
     item_ids: List[int]
 
 class PickListBoxOut(PickListBoxBase):
     id: int
     pick_list_id: int
     created_at: datetime
+    box_items: List[PickListBoxItemOut] = []
     model_config = ConfigDict(from_attributes=True)
 
 class PickListOut(PickListBase):
@@ -51,3 +73,4 @@ class PickListOut(PickListBase):
     items: List[PickListItemOut] = []
     boxes: List[PickListBoxOut] = []
     model_config = ConfigDict(from_attributes=True)
+

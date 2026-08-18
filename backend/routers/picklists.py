@@ -18,9 +18,9 @@ from backend.database import get_db
 from backend.dependencies import get_current_admin, get_current_user
 from backend.models.catalogue import CartonType, SalesItem
 from backend.models.order import SalesOrder
-from backend.models.picklist import PickAssignment, PickList, PickListBox, PickListItem
+from backend.models.picklist import PickAssignment, PickList, PickListBox, PickListBoxItem, PickListItem
 from backend.models.user import Notification, User
-from backend.schemas.picklist import PickListBoxCreate, PickListBoxOut, PickListOut
+from backend.schemas.picklist import PickListBoxCreate, PickListBoxOut, PickListOut, SealBoxCreate
 from backend.services.excel_service import generate_branded_picklist_excel, generate_picklist_excel
 from backend.services.notification_service import send_push_notification
 from backend.services.pdf_generator import generate_picklist_pdf
@@ -883,6 +883,126 @@ async def create_box(
         item.box_id = box.id
         item.is_full_carton = False # boxed items are loose items
         
+    await db.commit()
+    await db.refresh(box)
+    return box
+
+
+@router.post("/{picklist_id}/boxes/seal", response_model=PickListBoxOut)
+async def seal_loose_item_box(
+    picklist_id: int,
+    payload: SealBoxCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Seals a loose-item box at the weighing station.
+    
+    The picker calls this after selecting a carton type and scanning items into it.
+    Each entry in `contents` records exactly which item and how many units went
+    into this specific physical box.
+    
+    Weight validation uses the actual box quantities (not the full picked_quantity),
+    so partial splits across multiple boxes work correctly.
+    """
+    # Validate picklist exists
+    pl_res = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    pl = pl_res.scalars().first()
+    if not pl:
+        raise HTTPException(status_code=404, detail="Pick list not found")
+
+    # Validate carton type from master data
+    carton_res = await db.execute(select(CartonType).filter(CartonType.id == payload.carton_type_id))
+    carton = carton_res.scalars().first()
+    if not carton:
+        raise HTTPException(status_code=400, detail="Carton type not found")
+
+    if not payload.contents:
+        raise HTTPException(status_code=400, detail="Box contents cannot be empty")
+
+    # Load all referenced items and validate they belong to this picklist
+    item_ids = [c.item_id for c in payload.contents]
+    items_res = await db.execute(
+        select(PickListItem).filter(
+            PickListItem.id.in_(item_ids),
+            PickListItem.pick_list_id == picklist_id,
+            PickListItem.is_full_carton == False,  # only loose items
+        )
+    )
+    db_items = {item.id: item for item in items_res.scalars().all()}
+
+    # Validate all requested item_ids exist and are loose items
+    missing_ids = [c.item_id for c in payload.contents if c.item_id not in db_items]
+    if missing_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Item IDs not found or are not loose items: {missing_ids}"
+        )
+
+    # Validate box quantities don't exceed what was actually picked
+    for content in payload.contents:
+        item = db_items[content.item_id]
+        # Sum already-boxed quantity for this item across previous boxes
+        existing_res = await db.execute(
+            select(PickListBoxItem).filter(
+                PickListBoxItem.item_id == content.item_id
+            )
+        )
+        already_boxed = sum(bi.quantity for bi in existing_res.scalars().all())
+        available_to_box = (item.picked_quantity or 0.0) - already_boxed
+        if content.quantity > available_to_box + 0.001:  # small float tolerance
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Cannot box {content.quantity} of item '{item.product_name}'. "
+                    f"Only {available_to_box:.2f} units remain unboxed "
+                    f"(picked: {item.picked_quantity}, already boxed: {already_boxed})."
+                )
+            )
+
+    # Calculate expected weight from actual box contents (not full item qty)
+    barcodes = [db_items[c.item_id].barcode for c in payload.contents]
+    cat_res = await db.execute(select(SalesItem).filter(SalesItem.barcode.in_(barcodes)))
+    cat_map = {ci.barcode: ci for ci in cat_res.scalars().all()}
+
+    expected_weight = carton.tare_weight
+    for content in payload.contents:
+        item = db_items[content.item_id]
+        cat_item = cat_map.get(item.barcode)
+        if cat_item and cat_item.packaging_weight:
+            expected_weight += cat_item.packaging_weight * content.quantity
+
+    # Weight tolerance check (±WEIGHT_TOLERANCE_FRACTION, default ±5%)
+    lower_bound = expected_weight * (1 - WEIGHT_TOLERANCE_FRACTION)
+    upper_bound = expected_weight * (1 + WEIGHT_TOLERANCE_FRACTION)
+
+    if payload.entered_weight < lower_bound or payload.entered_weight > upper_bound:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Weight validation failed. Expected ~{expected_weight:.2f} kg "
+                f"(±{WEIGHT_TOLERANCE_FRACTION*100:.0f}%), got {payload.entered_weight:.2f} kg. "
+                "Please reweigh or check for missing items."
+            )
+        )
+
+    # Create the box record
+    box = PickListBox(
+        pick_list_id=picklist_id,
+        carton_type_id=payload.carton_type_id,
+        entered_weight=payload.entered_weight,
+    )
+    db.add(box)
+    await db.flush()  # get box.id
+
+    # Create box-item mapping entries
+    for content in payload.contents:
+        db.add(PickListBoxItem(
+            box_id=box.id,
+            item_id=content.item_id,
+            quantity=content.quantity,
+        ))
+
     await db.commit()
     await db.refresh(box)
     return box

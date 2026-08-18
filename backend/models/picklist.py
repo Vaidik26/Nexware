@@ -66,6 +66,7 @@ class PickListItem(Base):
 
     pick_list = relationship("PickList", back_populates="items")
     box = relationship("PickListBox", back_populates="items")
+    box_item_entries = relationship("PickListBoxItem", back_populates="item", cascade="all, delete-orphan", lazy="selectin")
 
 class PickListBox(Base):
     __tablename__ = "pick_list_boxes"
@@ -77,7 +78,24 @@ class PickListBox(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     pick_list = relationship("PickList", back_populates="boxes")
-    items = relationship("PickListItem", back_populates="box")
+    items = relationship("PickListItem", back_populates="box")  # legacy direct link (full cartons)
+    box_items = relationship("PickListBoxItem", back_populates="box", cascade="all, delete-orphan", lazy="selectin")
+
+
+class PickListBoxItem(Base):
+    """Maps which item (and how much) went into a specific box.
+    Used for loose items that are packed at the weighing station.
+    A single PickListItem can appear in multiple boxes (split quantity).
+    """
+    __tablename__ = "pick_list_box_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    box_id = Column(Integer, ForeignKey("pick_list_boxes.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_id = Column(Integer, ForeignKey("pick_list_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    quantity = Column(Float, nullable=False)
+
+    box = relationship("PickListBox", back_populates="box_items")
+    item = relationship("PickListItem", back_populates="box_item_entries")
 
 class PickAssignment(Base):
     __tablename__ = "pick_assignments"
