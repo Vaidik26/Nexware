@@ -814,22 +814,34 @@ async def complete_picking(
 
     # Auto-mark any remaining items as picked (handles sync glitches gracefully)
     now = datetime.now(timezone.utc)
+    has_loose_items = False
     for item in items:
+        if not item.is_full_carton:
+            has_loose_items = True
         if not item.is_picked:
             item.is_picked = True
             item.picked_at = now
 
-    pl.status = "waiting_verification"
+    if not has_loose_items:
+        # No loose items, skip audit and go straight to verified
+        from backend.services.picklist_service import verify_picklist_service
+        # Commit the item pick statuses first
+        await db.commit()
+        await verify_picklist_service(picklist_id, db)
+        
+        # Refresh pl after verification
+        result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+        pl = result.scalars().first()
+    else:
+        pl.status = "waiting_verification"
+        assignment_res = await db.execute(
+            select(PickAssignment).filter(PickAssignment.pick_list_id == picklist_id)
+        )
+        assignment = assignment_res.scalars().first()
+        if assignment:
+            assignment.completed_at = now
+        await db.commit()
 
-    assignment_res = await db.execute(
-        select(PickAssignment).filter(PickAssignment.pick_list_id == picklist_id)
-    )
-    assignment = assignment_res.scalars().first()
-    if assignment:
-        assignment.completed_at = now
-
-    await db.commit()
-    
     from backend.websockets import manager
     await manager.broadcast({
         "event": "READY_FOR_AUDIT",

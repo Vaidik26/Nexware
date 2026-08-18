@@ -86,6 +86,7 @@ class PickListBox(Base):
     pick_list = relationship("PickList", back_populates="boxes")
     items = relationship("PickListItem", back_populates="box")  # legacy direct link (full cartons)
     box_items = relationship("PickListBoxItem", back_populates="box", cascade="all, delete-orphan", lazy="selectin")
+    carton_type = relationship("CartonType", lazy="selectin")
 
 
 class PickListBoxItem(Base):

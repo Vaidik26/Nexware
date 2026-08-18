@@ -150,7 +150,7 @@ export default function LpoDetails() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64 text-on-surface-variant">
+      <div className="flex justify-center items-center h-64 text-slate-300">
         <RefreshCw className="w-8 h-8 animate-spin text-primary mr-3" />
         <span className="font-medium text-lg">Loading LPO details...</span>
       </div>
@@ -174,13 +174,13 @@ export default function LpoDetails() {
       <div className="flex items-center gap-4">
         <button 
           onClick={() => navigate('/warehouse/lpos')}
-          className="p-2 rounded-full hover:bg-surface-variant transition-colors text-on-surface-variant"
+          className="p-2 rounded-full hover:bg-slate-800 transition-colors text-slate-300"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-on-surface">Order #{lpo.lpo_number}</h1>
+            <h1 className="text-2xl font-bold text-white">Order #{lpo.lpo_number}</h1>
             <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
               lpo.status === 'approved' ? 'bg-emerald-100 text-emerald-700' :
               isProcessed ? 'bg-blue-100 text-blue-700' :
@@ -190,8 +190,8 @@ export default function LpoDetails() {
               {lpo.status}
             </span>
           </div>
-          <p className="text-on-surface-variant mt-1 font-medium">Customer: <span className="font-bold text-on-surface">{lpo.customer_name}</span></p>
-          <p className="text-on-surface-variant mt-0.5 text-sm">Created By: <span className="font-semibold text-slate-800">{lpo.created_by_name || 'System / Admin'}</span></p>
+          <p className="text-slate-300 mt-1 font-medium">Customer: <span className="font-bold text-white">{lpo.customer_name}</span></p>
+          <p className="text-slate-300 mt-0.5 text-sm">Created By: <span className="font-semibold text-slate-800">{lpo.created_by_name || 'System / Admin'}</span></p>
         </div>
         
         <div className="ml-auto flex items-center gap-2">
@@ -243,37 +243,37 @@ export default function LpoDetails() {
         <div className="space-y-6">
           
           {/* Metadata Card */}
-          <div className="bg-surface border border-outline-variant rounded-2xl p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-on-surface mb-4">Order Details</h2>
+          <div className="bg-slate-900 border border-outline-variant rounded-2xl p-6 shadow-sm">
+            <h2 className="text-lg font-bold text-white mb-4">Order Details</h2>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Source</p>
-                <p className="font-semibold text-on-surface mt-1 capitalize">{lpo.source || 'Upload'}</p>
+                <p className="text-xs font-bold text-slate-300 uppercase tracking-wide">Source</p>
+                <p className="font-semibold text-white mt-1 capitalize">{lpo.source || 'Upload'}</p>
               </div>
               <div>
-                <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Delivery Date</p>
+                <p className="text-xs font-bold text-slate-300 uppercase tracking-wide">Delivery Date</p>
                 <input
                   type="date"
-                  className="mt-1 bg-transparent border-none p-0 text-on-surface font-semibold focus:ring-0 cursor-pointer hover:bg-surface-variant/50 rounded px-1 -ml-1 transition-colors"
+                  className="mt-1 bg-transparent border-none p-0 text-white font-semibold focus:ring-0 cursor-pointer hover:bg-slate-800/50 rounded px-1 -ml-1 transition-colors"
                   value={lpo.delivery_date ? new Date(lpo.delivery_date).toISOString().split('T')[0] : ''}
                   onChange={(e) => handleDeliveryDateChange(e.target.value)}
                 />
               </div>
               <div>
-                <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Created At</p>
-                <p className="font-semibold text-on-surface mt-1">
+                <p className="text-xs font-bold text-slate-300 uppercase tracking-wide">Created At</p>
+                <p className="font-semibold text-white mt-1">
                   {lpo.created_at ? new Date(lpo.created_at).toLocaleString() : 'N/A'}
                 </p>
               </div>
               <div>
-                <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wide">Total Items</p>
-                <p className="font-semibold text-on-surface mt-1">{lpo.items?.length || 0}</p>
+                <p className="text-xs font-bold text-slate-300 uppercase tracking-wide">Total Items</p>
+                <p className="font-semibold text-white mt-1">{lpo.items?.length || 0}</p>
               </div>
             </div>
             
             {/* Upload PDF Section */}
             <div className="mt-6 pt-6 border-t border-outline-variant">
-              <h3 className="text-sm font-bold text-on-surface mb-3">Signed Source Document</h3>
+              <h3 className="text-sm font-bold text-white mb-3">Signed Source Document</h3>
               {!lpo.signed_lpo_url ? (
                 <label className={`cursor-pointer flex items-center justify-center gap-2 w-full p-4 rounded-xl border-2 border-dashed border-outline-variant hover:border-primary hover:bg-primary/5 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
                   <UploadCloud className="w-5 h-5 text-primary" />
@@ -297,7 +297,7 @@ export default function LpoDetails() {
                     <p className="text-sm font-bold text-emerald-800">Document Uploaded</p>
                     <p className="text-xs text-emerald-600">The signed PDF has been attached to this order.</p>
                   </div>
-                  <label className={`ml-auto cursor-pointer px-3 py-1.5 rounded-lg text-xs font-bold border border-outline-variant hover:bg-surface-variant transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <label className={`ml-auto cursor-pointer px-3 py-1.5 rounded-lg text-xs font-bold border border-outline-variant hover:bg-slate-800 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
                     Replace
                     <input
                       type="file"
@@ -315,9 +315,9 @@ export default function LpoDetails() {
           </div>
 
           {/* Items Table with Pagination */}
-          <div className="bg-surface border border-outline-variant rounded-2xl shadow-sm overflow-hidden flex flex-col h-[500px]">
-            <div className="p-4 border-b border-outline-variant bg-surface-variant/30 flex justify-between items-center">
-              <h3 className="font-bold text-on-surface flex items-center gap-2">
+          <div className="bg-slate-900 border border-outline-variant rounded-2xl shadow-sm overflow-hidden flex flex-col h-[500px]">
+            <div className="p-4 border-b border-outline-variant bg-slate-800/30 flex justify-between items-center">
+              <h3 className="font-bold text-white flex items-center gap-2">
                 <Package2 className="w-4 h-4 text-primary" />
                 Line Items
               </h3>
@@ -325,26 +325,26 @@ export default function LpoDetails() {
             
             <div className="overflow-y-auto flex-1">
               <table className="w-full text-left text-sm">
-                <thead className="bg-surface-variant/50 border-b border-outline-variant sticky top-0">
+                <thead className="bg-slate-800/50 border-b border-outline-variant sticky top-0">
                   <tr>
-                    <th className="p-3 font-semibold text-on-surface-variant">Barcode</th>
-                    <th className="p-3 font-semibold text-on-surface-variant">Product Name</th>
-                    <th className="p-3 font-semibold text-on-surface-variant text-right">Qty</th>
-                    <th className="p-3 font-semibold text-on-surface-variant">Unit</th>
+                    <th className="p-3 font-semibold text-slate-300">Barcode</th>
+                    <th className="p-3 font-semibold text-slate-300">Product Name</th>
+                    <th className="p-3 font-semibold text-slate-300 text-right">Qty</th>
+                    <th className="p-3 font-semibold text-slate-300">Unit</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant">
                   {paginatedItems.map((item, idx) => (
-                    <tr key={idx} className="hover:bg-surface-variant/20">
-                      <td className="p-3 font-mono text-xs text-on-surface-variant">{item.barcode}</td>
-                      <td className="p-3 font-medium text-on-surface">{item.product_name}</td>
+                    <tr key={idx} className="hover:bg-slate-800/20">
+                      <td className="p-3 font-mono text-xs text-slate-300">{item.barcode}</td>
+                      <td className="p-3 font-medium text-white">{item.product_name}</td>
                       <td className="p-3 text-right font-bold text-primary">{item.quantity}</td>
-                      <td className="p-3 text-on-surface-variant">{item.unit}</td>
+                      <td className="p-3 text-slate-300">{item.unit}</td>
                     </tr>
                   ))}
                   {paginatedItems.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="p-8 text-center text-on-surface-variant">No items found in this order.</td>
+                      <td colSpan={4} className="p-8 text-center text-slate-300">No items found in this order.</td>
                     </tr>
                   )}
                 </tbody>
@@ -353,22 +353,22 @@ export default function LpoDetails() {
 
             {/* Pagination Controls */}
             {totalPages > 1 && (
-              <div className="p-3 border-t border-outline-variant bg-surface-variant/30 flex items-center justify-between">
-                <span className="text-xs font-medium text-on-surface-variant">
+              <div className="p-3 border-t border-outline-variant bg-slate-800/30 flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-300">
                   Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, lpo.items.length)} of {lpo.items.length}
                 </span>
                 <div className="flex gap-1">
                   <button 
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
-                    className="p-1.5 rounded-lg border border-outline-variant bg-surface hover:bg-surface-variant disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="p-1.5 rounded-lg border border-outline-variant bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
                   <button 
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                     disabled={currentPage === totalPages}
-                    className="p-1.5 rounded-lg border border-outline-variant bg-surface hover:bg-surface-variant disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="p-1.5 rounded-lg border border-outline-variant bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
@@ -381,9 +381,9 @@ export default function LpoDetails() {
 
         {/* Right Column: PDF Preview */}
         {lpo.signed_lpo_url && (
-          <div className="bg-surface border border-outline-variant rounded-2xl shadow-sm overflow-hidden flex flex-col h-[calc(100vh-140px)] min-h-[600px]">
-            <div className="p-4 border-b border-outline-variant bg-surface-variant/30 flex justify-between items-center">
-              <h3 className="font-bold text-on-surface flex items-center gap-2">
+          <div className="bg-slate-900 border border-outline-variant rounded-2xl shadow-sm overflow-hidden flex flex-col h-[calc(100vh-140px)] min-h-[600px]">
+            <div className="p-4 border-b border-outline-variant bg-slate-800/30 flex justify-between items-center">
+              <h3 className="font-bold text-white flex items-center gap-2">
                 <FileText className="w-4 h-4 text-primary" />
                 Source PDF Preview
               </h3>
@@ -403,7 +403,7 @@ export default function LpoDetails() {
       {/* Approve Modal */}
       <Modal isOpen={approveModalOpen} onClose={() => setApproveModalOpen(false)} title={`Approve LPO #${lpo.lpo_number}`}>
         <div className="space-y-5">
-          <p className="text-sm text-on-surface-variant font-medium">
+          <p className="text-sm text-slate-300 font-medium">
             Approving this LPO will convert it to a picklist and automatically assign it to the least loaded available warehouse picker.
           </p>
           <div className="flex justify-end gap-3 pt-2 border-t border-outline-variant">

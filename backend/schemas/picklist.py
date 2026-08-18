@@ -61,6 +61,7 @@ class PickListBoxOut(PickListBoxBase):
     created_at: datetime
     is_audited: bool = False
     box_items: List[PickListBoxItemOut] = []
+    carton_type: Optional[dict] = None
     model_config = ConfigDict(from_attributes=True)
 
 class PickListOut(PickListBase):

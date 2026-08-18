@@ -242,7 +242,7 @@ export default function JobDetailScreen() {
 
     // For loose items: if no active box yet, show carton select first
     if (!qtyTargetItem.is_full_carton && !activeBox) {
-      setPendingLooseItem({ ...qtyTargetItem, picked_qty: newPickedQty });
+      setPendingLooseItem({ ...qtyTargetItem, picked_qty: newPickedQty, box_qty: val });
       setShowCartonSelectModal(true);
       return;
     }
@@ -323,24 +323,25 @@ export default function JobDetailScreen() {
     // Now process the pending loose item that triggered the carton select
     if (pendingLooseItem) {
       const item = pendingLooseItem;
-      const qty = item.picked_qty;
+      const totalPickedQty = item.picked_qty;
+      const boxQty = item.box_qty || totalPickedQty;
 
       // Optimistic UI update for picked status
       setItems(prev =>
-        prev.map(i => i.id === item.id ? { ...i, picked: true, picked_qty: qty } : i)
+        prev.map(i => i.id === item.id ? { ...i, picked: true, picked_qty: totalPickedQty } : i)
       );
-      api.patch(`/picklists/${id}/items/${item.id}/pick`, { picked_quantity: qty }).catch(() => {
+      api.patch(`/picklists/${id}/items/${item.id}/pick`, { picked_quantity: totalPickedQty }).catch(() => {
         setItems(prev =>
-          prev.map(i => i.id === item.id ? { ...i, picked: false, picked_qty: 0 } : i)
+          prev.map(i => i.id === item.id ? { ...i, picked: false, picked_qty: totalPickedQty - boxQty } : i)
         );
         Alert.alert('Error', 'Failed to update quantity');
       });
 
       // Add to the newly created box
-      if (qty > 0) {
+      if (boxQty > 0) {
         setActiveBox({
           ...newBox,
-          contents: [{ item_id: parseInt(item.id), quantity: qty, item_name: item.name }],
+          contents: [{ item_id: parseInt(item.id), quantity: boxQty, item_name: item.name }],
         });
       }
       setPendingLooseItem(null);
@@ -349,9 +350,8 @@ export default function JobDetailScreen() {
 
   // ─── Seal box ──────────────────────────────────────────────────────────────
 
-  const handleOpenSealModal = async () => {
+  const fetchEstimate = async () => {
     if (!activeBox) return;
-    setShowSealModal(true);
     setIsEstimating(true);
     try {
       const res = await api.post(`/picklists/${id}/boxes/estimate-weight`, {
@@ -367,6 +367,18 @@ export default function JobDetailScreen() {
       setIsEstimating(false);
     }
   };
+
+  const handleOpenSealModal = async () => {
+    if (!activeBox) return;
+    setShowSealModal(true);
+    await fetchEstimate();
+  };
+
+  useEffect(() => {
+    if (showSealModal && activeBox) {
+      fetchEstimate();
+    }
+  }, [activeBox, showSealModal]);
 
   const handleSealBox = async () => {
     if (!activeBox || !sealWeight) {
