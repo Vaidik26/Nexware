@@ -716,7 +716,7 @@ export default function JobDetailScreen() {
               ) : null}
 
               <Text className="text-amber-700 text-xs mt-1">
-                Place the sealed box on the scale and enter the gross weight (box + items). ±5% tolerance allowed.
+                Place the sealed box on the scale and enter the gross weight (box + items). ±0.5% tolerance allowed.
               </Text>
             </View>
 

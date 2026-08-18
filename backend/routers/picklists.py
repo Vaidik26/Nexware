@@ -1131,7 +1131,7 @@ async def seal_loose_item_box(
             status_code=400,
             detail=(
                 f"Weight validation failed. Expected ~{expected_weight:.2f} kg "
-                f"(±{WEIGHT_TOLERANCE_FRACTION*100:.0f}%), got {payload.entered_weight:.2f} kg. "
+                f"(±{WEIGHT_TOLERANCE_FRACTION*100:.1f}%), got {payload.entered_weight:.2f} kg. "
                 "Please reweigh or check for missing items."
             )
         )

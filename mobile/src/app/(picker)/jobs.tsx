@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { View, Text, FlatList, RefreshControl, TouchableOpacity, TextInput } from 'react-native';
+import { View, Text, FlatList, RefreshControl, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
 import api from '../../lib/api';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, Filter } from 'lucide-react-native';
@@ -13,6 +13,7 @@ export default function JobsScreen() {
  const { picker } = useAuthStore();
  const [jobs, setJobs] = useState<any[]>([]);
  const [refreshing, setRefreshing] = useState(false);
+ const [isLoading, setIsLoading] = useState(true);
  const [searchQuery, setSearchQuery] = useState('');
 
  const fetchAssignedJobs = async () => {
@@ -59,6 +60,8 @@ export default function JobsScreen() {
    }
   } catch (err) {
    console.log('Error fetching live picklists:', err);
+  } finally {
+   setIsLoading(false);
   }
  };
 
@@ -145,20 +148,27 @@ export default function JobsScreen() {
    </View>
 
    {/* Jobs List */}
-   <FlatList
-    data={displayedJobs}
-    keyExtractor={(item) => item.id}
-    contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 28 }}
-    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#003527"]} tintColor="#006c49" />}
-    renderItem={({ item, index }) => (
-     <JobCard job={item} index={index} />
-    )}
-    ListEmptyComponent={
-     <View className="items-center justify-center py-12">
-      <Text className="text-gray-500 text-sm">No active tasks assigned to this terminal.</Text>
-     </View>
-    }
-   />
+   {isLoading ? (
+    <View className="flex-1 items-center justify-center py-12">
+     <ActivityIndicator size="large" color="#006c49" />
+     <Text className="text-gray-500 text-sm mt-3">Loading jobs...</Text>
+    </View>
+   ) : (
+    <FlatList
+     data={displayedJobs}
+     keyExtractor={(item) => item.id}
+     contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 28 }}
+     refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#003527"]} tintColor="#006c49" />}
+     renderItem={({ item, index }) => (
+      <JobCard job={item} index={index} />
+     )}
+     ListEmptyComponent={
+      <View className="items-center justify-center py-12">
+       <Text className="text-gray-500 text-sm">No active tasks assigned to this terminal.</Text>
+      </View>
+     }
+    />
+   )}
   </SafeAreaView>
  );
 }

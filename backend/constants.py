@@ -114,4 +114,4 @@ BARCODE_ITEM_NUMBER_PREFIX = "BC-"
 # ---------------------------------------------------------------------------
 
 #: Acceptable deviation from expected box weight (e.g. 0.05 = ±5 %)
-WEIGHT_TOLERANCE_FRACTION = 0.05
+WEIGHT_TOLERANCE_FRACTION = 0.005
