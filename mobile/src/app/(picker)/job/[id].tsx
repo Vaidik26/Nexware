@@ -89,6 +89,7 @@ export default function JobDetailScreen() {
   const [isSealing, setIsSealing] = useState(false);
   const [weightEstimate, setWeightEstimate] = useState<any>(null);
   const [isEstimating, setIsEstimating] = useState(false);
+  const [showSealedListModal, setShowSealedListModal] = useState(false);
 
   // ── QR modal state ──
   const [showQRModal, setShowQRModal] = useState(false);
@@ -438,6 +439,14 @@ export default function JobDetailScreen() {
   // ─── Complete job ──────────────────────────────────────────────────────────
 
   const handleComplete = () => {
+    if (activeBox) {
+      Alert.alert(
+        'Unsealed Box',
+        'You have an active box that has not been sealed. Please seal it before completing the job.',
+        [{ text: 'OK', style: 'default' }]
+      );
+      return;
+    }
     setSubmitError('');
     setShowConfirm(true);
   };
@@ -478,18 +487,20 @@ export default function JobDetailScreen() {
         </View>
       </View>
 
-      {/* ── Sealed Boxes History Strip ── */}
+      {/* ── Sealed Boxes Summary ── */}
       {sealedBoxes.length > 0 && (
-        <View className="bg-[#f0faf5] border-b border-[#c6e8d8] px-4 py-2 flex-row items-center gap-2">
-          <Package size={13} color="#006c49" />
-          <Text className="text-xs font-bold text-[#006c49] mr-1">Sealed:</Text>
-          {sealedBoxes.map((b, idx) => (
-            <View key={b.id} className="bg-[#003527] rounded-full px-3 py-1 flex-row items-center gap-1">
-              <Text className="text-white text-xs font-bold">BOX-{b.id}</Text>
-              <Text className="text-[#a7f3d0] text-xs">· {b.total_qty} units · {b.weight}kg</Text>
-            </View>
-          ))}
-        </View>
+        <TouchableOpacity 
+          className="bg-[#f0faf5] border-b border-[#c6e8d8] px-4 py-3 flex-row items-center justify-between"
+          onPress={() => setShowSealedListModal(true)}
+        >
+          <View className="flex-row items-center gap-2">
+            <Package size={16} color="#006c49" />
+            <Text className="text-sm font-bold text-[#006c49]">
+              {sealedBoxes.length} Box{sealedBoxes.length > 1 ? 'es' : ''} Sealed
+            </Text>
+          </View>
+          <Text className="text-[#006c49] text-xs font-semibold">View Details ›</Text>
+        </TouchableOpacity>
       )}
 
       {/* ── Active Box Banner ── */}
@@ -663,6 +674,38 @@ export default function JobDetailScreen() {
             >
               <Text className="text-gray-500 font-semibold">Cancel</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ════════════════════════════════════════════════════════════════
+          MODAL: Sealed Boxes List
+      ════════════════════════════════════════════════════════════════ */}
+      <Modal visible={showSealedListModal} transparent animationType="slide">
+        <View className="flex-1 bg-black/50 justify-end">
+          <View className="bg-white rounded-t-3xl p-6 w-full shadow-2xl max-h-[70%]">
+            <View className="flex-row items-center justify-between mb-4">
+              <Text className="text-xl font-bold text-gray-800">Sealed Boxes</Text>
+              <TouchableOpacity onPress={() => setShowSealedListModal(false)}>
+                <Text className="text-gray-500 font-bold px-2 py-1">Close</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} className="mb-2">
+              {sealedBoxes.map((b, idx) => (
+                <View key={b.id} className="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-3 flex-row items-center justify-between">
+                  <View>
+                    <Text className="font-extrabold text-gray-800 text-lg mb-1">BOX-{b.id}</Text>
+                    <Text className="text-gray-500 text-xs">{b.carton_name}</Text>
+                  </View>
+                  <View className="items-end">
+                    <View className="bg-[#e6f4ea] px-2 py-1 rounded mb-1">
+                      <Text className="text-[#006c49] font-bold text-xs">{b.weight} kg</Text>
+                    </View>
+                    <Text className="text-gray-400 text-xs">{b.total_qty} units</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
           </View>
         </View>
       </Modal>

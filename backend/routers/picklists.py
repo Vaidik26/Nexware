@@ -757,6 +757,12 @@ async def complete_picking(
     if not pl:
         raise HTTPException(status_code=404, detail="Pick list not found")
 
+    if pl.active_box_carton_id is not None or pl.active_box_contents:
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot complete job: you have an active box that must be sealed first."
+        )
+
     items_res = await db.execute(
         select(PickListItem).filter(PickListItem.pick_list_id == picklist_id)
     )
