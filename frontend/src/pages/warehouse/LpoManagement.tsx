@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 import { RefreshCw, Search, FileText, ArrowRight } from 'lucide-react';
+import { PageLoader } from '@/components/ui/PageLoader';
 
 interface LPOItem {
   barcode: string;
@@ -85,65 +86,72 @@ export default function LpoManagement() {
           </span>
         </div>
         
-        <div className="overflow-y-auto flex-1">
-          <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead className="bg-surface-variant/50 border-b border-outline-variant sticky top-0 z-10">
-              <tr>
-                <th className="p-4 font-semibold text-on-surface-variant">Order #</th>
-                <th className="p-4 font-semibold text-on-surface-variant">Customer</th>
-                <th className="p-4 font-semibold text-on-surface-variant">Source</th>
-                <th className="p-4 font-semibold text-on-surface-variant">Created By</th>
-                <th className="p-4 font-semibold text-on-surface-variant">Status</th>
-                <th className="p-4 font-semibold text-on-surface-variant">Date Created</th>
-                <th className="p-4 font-semibold text-on-surface-variant text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-outline-variant">
-              {filteredLpos.length === 0 ? (
+        {isFetching && lpos.length === 0 ? (
+          <PageLoader 
+            message="Loading LPOs..." 
+            subtitle="Fetching latest purchase orders" 
+          />
+        ) : (
+          <div className="overflow-y-auto flex-1">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead className="bg-surface-variant/50 border-b border-outline-variant sticky top-0 z-10">
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-on-surface-variant">
-                    No orders found matching your search.
-                  </td>
+                  <th className="p-4 font-semibold text-on-surface-variant">Order #</th>
+                  <th className="p-4 font-semibold text-on-surface-variant">Customer</th>
+                  <th className="p-4 font-semibold text-on-surface-variant">Source</th>
+                  <th className="p-4 font-semibold text-on-surface-variant">Created By</th>
+                  <th className="p-4 font-semibold text-on-surface-variant">Status</th>
+                  <th className="p-4 font-semibold text-on-surface-variant">Date Created</th>
+                  <th className="p-4 font-semibold text-on-surface-variant text-right">Actions</th>
                 </tr>
-              ) : (
-                filteredLpos.map((lpo) => (
-                  <tr key={lpo.id} className="hover:bg-surface-variant/20 group">
-                    <td className="p-4 font-bold text-on-surface">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-primary" />
-                        {lpo.lpo_number}
-                      </div>
-                    </td>
-                    <td className="p-4 text-on-surface">{lpo.customer_name}</td>
-                    <td className="p-4 text-on-surface-variant capitalize">{lpo.source || 'upload'}</td>
-                    <td className="p-4 text-on-surface font-semibold">{lpo.created_by_name || 'System'}</td>
-                    <td className="p-4">
-                      <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${
-                        lpo.status === 'approved' ? 'bg-emerald-100 text-emerald-700' :
-                        lpo.status === 'processed' ? 'bg-blue-100 text-blue-700' :
-                        lpo.status === 'disapproved' ? 'bg-red-100 text-red-700' :
-                        'bg-amber-100 text-amber-700'
-                      }`}>
-                        {lpo.status}
-                      </span>
-                    </td>
-                    <td className="p-4 text-on-surface-variant">
-                      {lpo.created_at ? new Date(lpo.created_at).toLocaleDateString() : 'N/A'}
-                    </td>
-                    <td className="p-4 text-right">
-                      <button
-                        onClick={() => navigate(`/warehouse/lpos/${lpo.id}`)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-on-primary hover:bg-primary/90 transition-colors"
-                      >
-                        Details <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
+              </thead>
+              <tbody className="divide-y divide-outline-variant">
+                {filteredLpos.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-on-surface-variant">
+                      No orders found matching your search.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  filteredLpos.map((lpo) => (
+                    <tr key={lpo.id} className="hover:bg-surface-variant/20 group">
+                      <td className="p-4 font-bold text-on-surface">
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-primary" />
+                          {lpo.lpo_number}
+                        </div>
+                      </td>
+                      <td className="p-4 text-on-surface">{lpo.customer_name}</td>
+                      <td className="p-4 text-on-surface-variant capitalize">{lpo.source || 'upload'}</td>
+                      <td className="p-4 text-on-surface font-semibold">{lpo.created_by_name || 'System'}</td>
+                      <td className="p-4">
+                        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${
+                          lpo.status === 'approved' ? 'bg-emerald-100 text-emerald-700' :
+                          lpo.status === 'processed' ? 'bg-blue-100 text-blue-700' :
+                          lpo.status === 'disapproved' ? 'bg-red-100 text-red-700' :
+                          'bg-amber-100 text-amber-700'
+                        }`}>
+                          {lpo.status}
+                        </span>
+                      </td>
+                      <td className="p-4 text-on-surface-variant">
+                        {lpo.created_at ? new Date(lpo.created_at).toLocaleDateString() : 'N/A'}
+                      </td>
+                      <td className="p-4 text-right">
+                        <button
+                          onClick={() => navigate(`/warehouse/lpos/${lpo.id}`)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-on-primary hover:bg-primary/90 transition-colors"
+                        >
+                          Details <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

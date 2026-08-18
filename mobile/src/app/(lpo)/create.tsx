@@ -171,7 +171,7 @@ export default function LpoCreateScreen() {
 
  const confirmQuantity = () => {
   if (!selectedItemForQuantity) return;
-  let qty = parseInt(tempQuantity);
+  let qty = parseInt(tempQuantity, 10);
   if (isNaN(qty) || qty < 1) qty = 1;
   
   const maxQty = selectedItemForQuantity.max_order_quantity;
@@ -202,8 +202,9 @@ export default function LpoCreateScreen() {
  const updateQuantity = useCallback((id: number, qtyStr: string) => {
   setCart(prev => prev.map(c => {
    if (c.id !== id) return c;
-   if (qtyStr === '') return { ...c, quantity: '' as any };
-   let qty = parseInt(qtyStr);
+   const cleanStr = qtyStr.replace(/[^0-9]/g, '').replace(/^0+/, '');
+   if (cleanStr === '') return { ...c, quantity: '' as any };
+   let qty = parseInt(cleanStr, 10);
    if (isNaN(qty)) return c;
    const maxQty = c.max_order_quantity;
    if (maxQty !== null && maxQty !== undefined && qty > maxQty) {
@@ -292,11 +293,6 @@ export default function LpoCreateScreen() {
     });
    }
 
-   if (file) {
-    Alert.alert('✅ Success', 'LPO Document uploaded successfully!');
-   } else {
-    Alert.alert('✅ Success', 'Order saved successfully!');
-   }
    setIsConfirmed(true);
    
   } catch (err: any) {
@@ -319,6 +315,10 @@ export default function LpoCreateScreen() {
    setOrderNumber(generateAutoLpoNumber());
    setSelectedLpoFile(null);
    setIsConfirmed(false);
+   setHasDownloadedPDF(false);
+  } else {
+   setHasDownloadedPDF(false);
+   setSelectedLpoFile(null);
   }
  };
 
@@ -330,6 +330,18 @@ export default function LpoCreateScreen() {
   setOrderNumber(generateAutoLpoNumber());
   setSelectedLpoFile(null);
   setIsConfirmed(false);
+  setHasDownloadedPDF(false);
+ };
+
+ const confirmResetOrder = () => {
+  Alert.alert(
+   "Reset Order",
+   "Are you sure you want to clear the current order? All selected items will be lost.",
+   [
+    { text: "Cancel", style: "cancel" },
+    { text: "Reset", style: "destructive", onPress: resetFormExplicitly }
+   ]
+  );
  };
 
 
@@ -340,11 +352,15 @@ export default function LpoCreateScreen() {
  };
 
  const handleConfirmPhotos = (fileData: any) => {
-    setSelectedLpoFile(fileData);
-    setShowCameraModal(false);
-    // Success alert for photos attached
-    Alert.alert('✅ Success', 'LPO Photos attached successfully!');
-   };
+  setSelectedLpoFile(fileData);
+  setShowCameraModal(false);
+  Alert.alert('✅ Success', 'LPO Photos attached successfully!');
+ };
+
+ const handleCameraClose = () => {
+  setShowCameraModal(false);
+ };
+
 
   const handleDownloadPDF = async (share: boolean = false) => {
   if (isSharing) return;
@@ -450,14 +466,17 @@ export default function LpoCreateScreen() {
      <Text className="text-xl font-black text-onSurface ">Create Order</Text>
      <Text className="text-xs text-primary font-bold mt-0.5">Welcome, {picker?.full_name}</Text>
     </View>
-    <View className="flex-row gap-2">
-     <TouchableOpacity onPress={() => router.push('/history')} className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-100">
-      <Text className="font-bold text-emerald-700 text-xs">My Orders</Text>
-     </TouchableOpacity>
-     <TouchableOpacity onPress={handleLogout} className="bg-rose-50 p-2.5 rounded-xl border border-rose-100">
-      <LogOut size={18} color="#e11d48" />
-     </TouchableOpacity>
-    </View>
+      <View className="flex-row gap-2">
+       <TouchableOpacity onPress={confirmResetOrder} className="bg-rose-50 p-2.5 rounded-xl border border-rose-100 mr-1">
+        <Text className="font-bold text-rose-700 text-xs">Reset Order</Text>
+       </TouchableOpacity>
+       <TouchableOpacity onPress={() => router.push('/history')} className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-100">
+        <Text className="font-bold text-emerald-700 text-xs">My Orders</Text>
+       </TouchableOpacity>
+       <TouchableOpacity onPress={handleLogout} className="bg-rose-50 p-2.5 rounded-xl border border-rose-100">
+        <LogOut size={18} color="#e11d48" />
+       </TouchableOpacity>
+      </View>
    </View>
 
    {/* Main Form */}
@@ -609,7 +628,7 @@ export default function LpoCreateScreen() {
        className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-4 text-center text-3xl font-black text-gray-800 mb-6"
        keyboardType="number-pad"
        value={tempQuantity}
-       onChangeText={setTempQuantity}
+       onChangeText={(val) => setTempQuantity(val.replace(/[^0-9]/g, '').replace(/^0+/, ''))}
        autoFocus
        selectTextOnFocus
       />
@@ -739,7 +758,7 @@ export default function LpoCreateScreen() {
            {isGenerating ? (
             <>
              <ActivityIndicator color="white" />
-             <Text className="font-bold text-white text-base ml-2">{selectedLpoFile ? 'Uploading...' : 'Saving...'}</Text>
+             <Text className="font-bold text-white text-base ml-2">{selectedLpoFile ? 'Confirming...' : 'Saving...'}</Text>
             </>
            ) : (
              <Text className="font-bold text-white text-base">
@@ -778,7 +797,7 @@ export default function LpoCreateScreen() {
     
     <MultiPhotoModal 
       visible={showCameraModal} 
-      onClose={() => setShowCameraModal(false)} 
+      onClose={handleCameraClose} 
       onConfirm={handleConfirmPhotos} 
     />
   </SafeAreaView>

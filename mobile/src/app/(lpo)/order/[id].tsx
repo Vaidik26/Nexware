@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Linking, Modal, TextInput, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -89,7 +89,6 @@ export default function LpoOrderDetailsScreen() {
 
  useEffect(() => {
   if (id) {
-   setSelectedLpoFile(null);
    fetchLpoDetails();
    fetchCatalogue();
   }
@@ -176,7 +175,7 @@ export default function LpoOrderDetailsScreen() {
 
  const confirmQuantity = () => {
   if (!selectedItemForQuantity) return;
-  let qty = parseInt(tempQuantity);
+  let qty = parseInt(tempQuantity, 10);
   if (isNaN(qty) || qty < 1) qty = 1;
   
   const maxQty = selectedItemForQuantity.max_order_quantity;
@@ -203,8 +202,9 @@ export default function LpoOrderDetailsScreen() {
  const updateQuantity = useCallback((barcode: string, qtyStr: string) => {
   setCart(prev => prev.map(c => {
    if (c.barcode !== barcode) return c;
-   if (qtyStr === '') return { ...c, quantity: '' as any };
-   let qty = parseInt(qtyStr);
+   const cleanStr = qtyStr.replace(/[^0-9]/g, '').replace(/^0+/, '');
+   if (cleanStr === '') return { ...c, quantity: '' as any };
+   let qty = parseInt(cleanStr, 10);
    if (isNaN(qty)) return c;
    const maxQty = c.max_order_quantity;
    if (maxQty !== null && maxQty !== undefined && qty > maxQty) {
@@ -356,10 +356,10 @@ export default function LpoOrderDetailsScreen() {
     headers: { 'Content-Type': 'multipart/form-data' },
    });
 
-   Alert.alert('✅ Success', 'LPO Document uploaded successfully!');
+   Alert.alert('✅ Success', 'LPO Photos Confirmed successfully!');
    fetchLpoDetails(); // refresh to get the url and lock the UI
   } catch (err: any) {
-   Alert.alert('Upload Failed', err.response?.data?.detail || err.message || 'Could not upload document.');
+   Alert.alert('Confirmation Failed', err.response?.data?.detail || err.message || 'Could not confirm photos.');
   } finally {
    setIsUploading(false);
   }
@@ -501,7 +501,7 @@ export default function LpoOrderDetailsScreen() {
             {isUploading ? (
              <>
               <ActivityIndicator color="#fff" />
-              <Text className="text-white font-black text-base ml-2">Uploading...</Text>
+              <Text className="text-white font-black text-base ml-2">Confirming...</Text>
              </>
             ) : (
              <>
@@ -604,7 +604,7 @@ export default function LpoOrderDetailsScreen() {
     <View className="flex-1 bg-black/50 items-center justify-center">
      <View className="bg-white p-6 rounded-2xl items-center flex-row shadow-lg">
       <ActivityIndicator size="large" color="#059669" />
-      <Text className="ml-4 font-bold text-gray-800 text-base">Uploading LPO...</Text>
+      <Text className="ml-4 font-bold text-gray-800 text-base">Confirming LPO Photos...</Text>
      </View>
     </View>
    </Modal>
@@ -631,7 +631,7 @@ export default function LpoOrderDetailsScreen() {
        className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-4 text-center text-3xl font-black text-gray-800 mb-6"
        keyboardType="numeric"
        value={tempQuantity}
-       onChangeText={setTempQuantity}
+       onChangeText={(val) => setTempQuantity(val.replace(/[^0-9]/g, '').replace(/^0+/, ''))}
        autoFocus
        selectTextOnFocus
       />

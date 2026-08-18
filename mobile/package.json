@@ -21,6 +21,7 @@
     "expo-constants": "~16.0.2",
     "expo-document-picker": "~12.0.2",
     "expo-font": "~12.0.7",
+    "expo-image": "^57.0.3",
     "expo-image-picker": "~15.1.0",
     "expo-linking": "~6.3.1",
     "expo-notifications": "~0.28.9",
