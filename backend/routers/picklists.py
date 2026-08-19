@@ -116,6 +116,51 @@ async def my_picklists(
     return result.scalars().all()
 
 
+@router.get("/my/stats")
+async def my_picklist_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Returns picking statistics for the logged-in picker."""
+    import datetime
+    from sqlalchemy import select, func
+    
+    # Base query for picklists assigned to this user
+    # We only count picklists that are in waiting_verification, verified, completed, or dispatched
+    base_pl_query = select(PickList).join(PickAssignment).filter(
+        PickAssignment.picker_id == current_user.id,
+        PickList.status.in_(["waiting_verification", "verified", "completed", "dispatched"])
+    )
+    
+    # 1. Lifetime Orders Picked
+    completed_pls = await db.execute(base_pl_query)
+    completed_pls_list = completed_pls.scalars().all()
+    lifetime_orders = len(completed_pls_list)
+    
+    # 2. Lifetime Items Picked
+    # Sum of picked_quantity for all items in these completed picklists
+    lifetime_items = 0
+    today_items = 0
+    today_date = datetime.datetime.utcnow().date()
+    
+    for pl in completed_pls_list:
+        # Load items
+        items_res = await db.execute(select(PickListItem).filter(PickListItem.pick_list_id == pl.id))
+        items = items_res.scalars().all()
+        pl_picked_qty = sum((i.picked_quantity or 0) for i in items if i.is_picked)
+        
+        lifetime_items += pl_picked_qty
+        
+        # If updated today, count towards today
+        if pl.updated_at and pl.updated_at.date() == today_date:
+            today_items += pl_picked_qty
+            
+    return {
+        "today_items_picked": int(today_items),
+        "lifetime_items_picked": int(lifetime_items),
+        "lifetime_orders_picked": lifetime_orders
+    }
+
 @router.get("/{picklist_id}", response_model=PickListOut)
 async def get_picklist(
     picklist_id: int,
@@ -531,15 +576,33 @@ async def start_picklist(
     if pl.status != "assigned":
         raise HTTPException(status_code=400, detail=f"Cannot start picklist with status {pl.status}")
         
-    # Check for any older incomplete job (assigned, picking only)
-    older_query = await db.execute(select(PickList).join(PickAssignment).filter(
-        PickAssignment.picker_id == current_user.id,
-        PickList.status.in_(["assigned", "picking"]),
-        PickList.id < picklist_id
-    ).order_by(PickList.id.asc()))
-    older_job = older_query.scalars().first()
-    if older_job:
-        raise HTTPException(status_code=400, detail=f"Please complete your previous picking job ({older_job.order_number}) first.")
+    # Check for any older incomplete job (assigned, picking, or waiting_verification that is NOT fully audited)
+    older_query = await db.execute(
+        select(PickList).join(PickAssignment)
+        .options(selectinload(PickList.boxes), selectinload(PickList.items))
+        .filter(
+            PickAssignment.picker_id == current_user.id,
+            PickList.status.in_(["assigned", "picking", "waiting_verification"]),
+            PickList.id < picklist_id
+        ).order_by(PickList.id.asc())
+    )
+    older_jobs = older_query.scalars().all()
+    
+    for older_job in older_jobs:
+        if older_job.status in ["assigned", "picking"]:
+            raise HTTPException(status_code=400, detail=f"Please complete your previous picking job ({older_job.order_number}) first.")
+        if older_job.status == "waiting_verification":
+            # Check if WM has scanned all boxes
+            is_fully_audited = True
+            if older_job.boxes:
+                if any(not b.is_audited for b in older_job.boxes):
+                    is_fully_audited = False
+            elif older_job.items:
+                if any(not i.is_audited for i in older_job.items):
+                    is_fully_audited = False
+                    
+            if not is_fully_audited:
+                raise HTTPException(status_code=400, detail=f"Please wait for WM to scan boxes for previous job ({older_job.order_number}) first.")
 
     # Even if not older, block if picker is actively picking another job right now
     active_query = await db.execute(select(PickList).join(PickAssignment).filter(

@@ -164,10 +164,26 @@ export default function JobDetailScreen() {
           try {
             const myJobsRes = await api.get('/picklists/my');
             if (myJobsRes && myJobsRes.data && Array.isArray(myJobsRes.data)) {
-              // ONLY look at jobs that are 'assigned' or 'picking'.
-              // We IGNORE 'waiting_verification', so completed jobs don't block.
+              // Look at jobs that are 'assigned', 'picking', or 'waiting_verification' (if not fully audited)
               const myJobs = myJobsRes.data
-                .filter((p: any) => p.status === 'assigned' || p.status === 'picking')
+                .filter((p: any) => {
+                   if (p.status === 'assigned' || p.status === 'picking') return true;
+                   if (p.status === 'waiting_verification') {
+                      // Check if WM has scanned the boxes/items (audited them)
+                      const boxes = p.boxes || [];
+                      const items = p.items || [];
+                      // If it has boxes, it's blocking if ANY box is NOT audited
+                      if (boxes.length > 0) {
+                         return boxes.some((b: any) => !b.is_audited);
+                      }
+                      // Otherwise, it's blocking if ANY item is NOT audited
+                      if (items.length > 0) {
+                         return items.some((i: any) => !i.is_audited);
+                      }
+                      return false; // fully audited (empty)
+                   }
+                   return false;
+                })
                 .sort((a: any, b: any) => a.id - b.id);
 
               // Block if there is any older incomplete job

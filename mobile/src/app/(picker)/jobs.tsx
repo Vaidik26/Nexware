@@ -15,6 +15,7 @@ export default function JobsScreen() {
  const [refreshing, setRefreshing] = useState(false);
  const [isLoading, setIsLoading] = useState(true);
  const [searchQuery, setSearchQuery] = useState('');
+ const [stats, setStats] = useState({ today_items_picked: 0, lifetime_items_picked: 0, lifetime_orders_picked: 0 });
 
  const fetchAssignedJobs = async () => {
   try {
@@ -29,6 +30,15 @@ export default function JobsScreen() {
     }
    }
    
+   try {
+    const statsRes = await api.get('/picklists/my/stats');
+    if (statsRes && statsRes.data) {
+     setStats(statsRes.data);
+    }
+   } catch (err) {
+    console.error("Failed to load stats", err);
+   }
+
    if (res && res.data && Array.isArray(res.data)) {
     const mapped = res.data
      .filter((p: any) => p.status === 'assigned' || p.status === 'picking')
@@ -155,21 +165,39 @@ export default function JobsScreen() {
    </View>
 
    {/* KPI Metrics */}
-   <View className="flex-row px-4 mb-4 justify-between space-x-3">
-    <View className="flex-1 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm items-center border-t-2 border-t-[#006c49]">
-     <Text className="text-gray-500 text-xs font-bold uppercase mb-1">Items Picked</Text>
-     <Text className="text-2xl font-black text-[#003527]">
-      {jobs.reduce((sum, j) => sum + j.pickedItems, 0)}
-     </Text>
-     <Text className="text-gray-400 text-[10px] mt-1 font-semibold">Today</Text>
-    </View>
-    <View className="flex-1 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm items-center border-t-2 border-t-emerald-500">
-     <Text className="text-gray-500 text-xs font-bold uppercase mb-1">Queue Total</Text>
-     <Text className="text-2xl font-black text-[#0b1c30]">
-      {jobs.reduce((sum, j) => sum + j.totalItems, 0)}
-     </Text>
-     <Text className="text-gray-400 text-[10px] mt-1 font-semibold">Items Pending</Text>
-    </View>
+   <View className="px-4 mb-4 space-y-3">
+     <View className="flex-row justify-between space-x-3">
+      <View className="flex-1 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm items-center border-t-2 border-t-[#006c49]">
+       <Text className="text-gray-500 text-xs font-bold uppercase mb-1 text-center">Items Picked Today</Text>
+       <Text className="text-2xl font-black text-[#003527]">
+        {stats.today_items_picked}
+       </Text>
+      </View>
+      <View className="flex-1 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm items-center border-t-2 border-t-emerald-500">
+       <Text className="text-gray-500 text-xs font-bold uppercase mb-1 text-center">Queue Total</Text>
+       <Text className="text-2xl font-black text-[#0b1c30]">
+        {jobs.reduce((sum, j) => sum + j.totalItems, 0)}
+       </Text>
+       <Text className="text-gray-400 text-[10px] mt-1 font-semibold">Items Pending</Text>
+      </View>
+     </View>
+     
+     <View className="flex-row justify-between space-x-3">
+      <View className="flex-1 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm items-center border-t-2 border-t-[#0b1c30]">
+       <Text className="text-gray-500 text-xs font-bold uppercase mb-1 text-center">Lifetime Items</Text>
+       <Text className="text-xl font-black text-[#0b1c30]">
+        {stats.lifetime_items_picked}
+       </Text>
+       <Text className="text-gray-400 text-[10px] mt-1 font-semibold">Total Picked</Text>
+      </View>
+      <View className="flex-1 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm items-center border-t-2 border-t-purple-600">
+       <Text className="text-gray-500 text-xs font-bold uppercase mb-1 text-center">Lifetime Orders</Text>
+       <Text className="text-xl font-black text-purple-700">
+        {stats.lifetime_orders_picked}
+       </Text>
+       <Text className="text-gray-400 text-[10px] mt-1 font-semibold">Total Picked</Text>
+      </View>
+     </View>
    </View>
 
    {/* Progress Summary Card with Elegant Green Border Accent */}
