@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -196,58 +196,106 @@ function ManifestBadge({ status }: { status: string }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// SVG ROUTE MAP (Fallback for Demo)
-// ─────────────────────────────────────────────────────────────
-function RouteMapSVG({ route }: { route: typeof ALL_MANIFESTS[0]['route'] }) {
-  // Map lat/lng to arbitrary SVG coordinates for demo purposes
-  const minLat = Math.min(...route.map(r => r.lat));
-  const maxLat = Math.max(...route.map(r => r.lat));
-  const minLng = Math.min(...route.map(r => r.lng));
-  const maxLng = Math.max(...route.map(r => r.lng));
+import 'leaflet/dist/leaflet.css';
+import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet';
+import L from 'leaflet';
 
-  const pts = route.map(r => ({
-    x: 40 + ((r.lng - minLng) / (maxLng - minLng || 1)) * 320,
-    y: 200 - ((r.lat - minLat) / (maxLat - minLat || 1)) * 160,
-    name: r.name,
-    label: r.label,
-  }));
+// ─────────────────────────────────────────────────────────────
+// MAP ICONS
+// ─────────────────────────────────────────────────────────────
+const createNumberedIcon = (number: number | string, color = '#006c49') =>
+  L.divIcon({
+    className: 'custom-number-pin',
+    html: `<div style="background:${color};width:24px;height:24px;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;color:white;font-weight:800;font-size:11px;">${number}</div>`,
+    iconSize: [24, 24], iconAnchor: [12, 12], popupAnchor: [0, -12],
+  });
 
-  const pathD = `M ${pts[0].x},${pts[0].y} ` + pts.slice(1).map(p => `L ${p.x},${p.y}`).join(' ');
+const depotIcon = L.divIcon({
+  className: 'depot-pin',
+  html: `<div style="background:#003527;width:30px;height:30px;border-radius:8px;border:2px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-size:16px;">🏢</div>`,
+  iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -15],
+});
+
+// ─────────────────────────────────────────────────────────────
+// OSRM ROUTING COMPONENT
+// ─────────────────────────────────────────────────────────────
+function OSRMRoute({ waypoints, color }: { waypoints: [number, number][], color: string }) {
+  const [routeGeoJSON, setRouteGeoJSON] = useState<[number, number][] | null>(null);
+
+  useEffect(() => {
+    if (waypoints.length < 2) return;
+    
+    // OSRM expects lng,lat
+    const coordsStr = waypoints.map(wp => `${wp[1]},${wp[0]}`).join(';');
+    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`;
+
+    fetch(osrmUrl)
+      .then(res => res.json())
+      .then(data => {
+        if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+          // Leaflet expects lat,lng
+          const coords = data.routes[0].geometry.coordinates.map((c: any) => [c[1], c[0]]);
+          setRouteGeoJSON(coords);
+        }
+      })
+      .catch(err => console.error("OSRM Routing Error:", err));
+  }, [waypoints]);
+
+  if (!routeGeoJSON) {
+    return (
+      <Polyline positions={waypoints} color={color} weight={4} opacity={0.6} dashArray="5, 10" />
+    );
+  }
 
   return (
-    <svg viewBox="0 0 400 240" className="w-full h-[260px] bg-slate-50">
-      <defs>
-        <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e2e8f0" strokeWidth="0.5" />
-        </pattern>
-        <filter id="shadow-dm" x="-10%" y="-10%" width="120%" height="120%">
-          <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.2" />
-        </filter>
-      </defs>
-      <rect width="100%" height="100%" fill="url(#grid)" />
-      
-      {/* Route Line */}
-      <path d={pathD} fill="none" stroke="#006c49" strokeWidth="3" strokeDasharray="6,6" opacity="0.8" />
-      
-      {/* Stops */}
-      {pts.map((p, i) => {
-        const isWarehouse = i === 0;
-        return (
-          <g key={i} filter="url(#shadow-dm)">
-            <circle cx={p.x} cy={p.y} r={isWarehouse ? 16 : 13} fill={isWarehouse ? '#003527' : '#006c49'} />
-            <circle cx={p.x} cy={p.y} r={isWarehouse ? 16 : 13} fill="none" stroke="white" strokeWidth="2.5" />
-            <text x={p.x} y={p.y} fill="white" fontSize={isWarehouse ? "14" : "12"} fontWeight="bold" textAnchor="middle" dominantBaseline="central">
-              {p.label}
-            </text>
-            <rect x={p.x - 30} y={p.y + 18} width="60" height="14" rx="4" fill="white" fillOpacity="0.9" />
-            <text x={p.x} y={p.y + 25} fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">
-              {p.name.substring(0, 15)}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
+    <>
+      <Polyline positions={routeGeoJSON} color={color} weight={5} opacity={0.8} />
+      <Polyline positions={routeGeoJSON} color="#ffffff" weight={1.5} opacity={0.6} dashArray="4 8" />
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// LEAFLET ROUTE MAP (MoveIQ implementation)
+// ─────────────────────────────────────────────────────────────
+function RouteMapLeaflet({ route }: { route: typeof ALL_MANIFESTS[0]['route'] }) {
+  // Use actual lat/lng from the route data
+  const depotPos: [number, number] = [route[0].lat, route[0].lng];
+  const waypoints = route.map(r => [r.lat, r.lng] as [number, number]);
+
+  return (
+    <div className="w-full h-[260px] relative z-0">
+      <MapContainer center={depotPos} zoom={11} style={{ width: '100%', height: '100%' }}>
+        <TileLayer
+          attribution="&copy; Google Maps"
+          url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=en"
+        />
+        
+        <OSRMRoute waypoints={waypoints} color="#006c49" />
+        
+        {route.map((stop, i) => {
+          const isDepot = i === 0;
+          return (
+            <Marker 
+              key={i} 
+              position={[stop.lat, stop.lng]} 
+              icon={isDepot ? depotIcon : createNumberedIcon(stop.label, '#006c49')}
+            >
+              <Popup>
+                <div className="p-1 min-w-[140px] text-slate-800">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-1 mb-1">
+                    <span className="text-[10px] font-black text-white px-1.5 py-0.5 rounded bg-[#006c49]">
+                      {isDepot ? 'DEPOT' : `Stop #${stop.label}`}
+                    </span>
+                  </div>
+                  <h4 className="font-extrabold text-xs text-slate-900">{stop.name}</h4>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
+      </MapContainer>
+    </div>
   );
 }
 
@@ -685,8 +733,8 @@ export default function DeliveryManifest() {
               </a>
             </div>
 
-            <div className="rounded-xl overflow-hidden border border-outline-variant">
-              <RouteMapSVG route={selected.route} />
+            <div className="rounded-xl overflow-hidden border border-outline-variant relative z-0">
+              <RouteMapLeaflet route={selected.route} />
             </div>
 
             {/* Stop list */}
