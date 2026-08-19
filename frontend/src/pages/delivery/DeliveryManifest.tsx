@@ -7,6 +7,7 @@ import {
   Navigation2, Layers, RefreshCw, FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { GoogleMap, useJsApiLoader, Marker, Polyline } from '@react-google-maps/api';
 
 // ─────────────────────────────────────────────────────────────
 // HARDCODED DATA
@@ -197,69 +198,75 @@ function ManifestBadge({ status }: { status: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// SVG ROUTE MAP
+// GOOGLE ROUTE MAP
 // ─────────────────────────────────────────────────────────────
-function RouteMapSVG({ route }: { route: typeof ALL_MANIFESTS[0]['route'] }) {
-  const W = 480, H = 260, PAD = 44;
-  const lats = route.map(r => r.lat);
-  const lngs = route.map(r => r.lng);
-  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-  const latRange = maxLat - minLat || 0.01;
-  const lngRange = maxLng - minLng || 0.01;
-  const toX = (lng: number) => PAD + ((lng - minLng) / lngRange) * (W - 2 * PAD);
-  const toY = (lat: number) => H - PAD - ((lat - minLat) / latRange) * (H - 2 * PAD);
-  const pts = route.map(r => ({ x: toX(r.lng), y: toY(r.lat), ...r }));
-  const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+function RouteMapGoogle({ route }: { route: typeof ALL_MANIFESTS[0]['route'] }) {
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
+  });
+
+  const center = {
+    lat: (Math.min(...route.map(r => r.lat)) + Math.max(...route.map(r => r.lat))) / 2,
+    lng: (Math.min(...route.map(r => r.lng)) + Math.max(...route.map(r => r.lng))) / 2
+  };
+  
+  const path = route.map(r => ({ lat: r.lat, lng: r.lng }));
+
+  if (!isLoaded) {
+    return (
+      <div className="w-full h-[260px] bg-slate-100 animate-pulse flex items-center justify-center text-slate-400 font-semibold text-sm rounded-xl">
+        Loading Map...
+      </div>
+    );
+  }
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" style={{ fontFamily: 'Inter, sans-serif' }}>
-      <defs>
-        <pattern id="grid-dm" width="24" height="24" patternUnits="userSpaceOnUse">
-          <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e2e8f0" strokeWidth="0.6" />
-        </pattern>
-        <filter id="shadow-dm" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.18" />
-        </filter>
-        <marker id="arrow-dm" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
-          <polygon points="0 0, 7 3.5, 0 7" fill="#006c49" fillOpacity="0.7" />
-        </marker>
-      </defs>
-      <rect width={W} height={H} fill="#f8fafc" rx="12" />
-      <rect width={W} height={H} fill="url(#grid-dm)" rx="12" />
-
-      {/* Road path background (thick white) */}
-      <path d={pathD} fill="none" stroke="white" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
-      {/* Route line */}
-      <path
-        d={pathD}
-        fill="none"
-        stroke="#006c49"
-        strokeWidth="2.5"
-        strokeDasharray="8 5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        markerMid="url(#arrow-dm)"
+    <GoogleMap
+      mapContainerStyle={{ width: '100%', height: '260px' }}
+      center={center}
+      zoom={11}
+      options={{ 
+        disableDefaultUI: true, 
+        zoomControl: true,
+        styles: [
+          { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+          { featureType: 'transit', stylers: [{ visibility: 'off' }] }
+        ]
+      }}
+    >
+      <Polyline
+        path={path}
+        options={{
+          strokeColor: '#006c49',
+          strokeOpacity: 0.8,
+          strokeWeight: 4,
+        }}
       />
-
-      {/* Stops */}
-      {pts.map((p, i) => {
-        const isWarehouse = i === 0;
+      {route.map((r, i) => {
+        const isDepot = i === 0;
         return (
-          <g key={i} filter="url(#shadow-dm)">
-            <circle cx={p.x} cy={p.y} r={isWarehouse ? 16 : 13} fill={isWarehouse ? '#003527' : '#006c49'} />
-            <text x={p.x} y={p.y + 0.5} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize={isWarehouse ? 9 : 8} fontWeight="800">
-              {p.label}
-            </text>
-            {/* Name tag */}
-            <rect x={p.x - 38} y={p.y + (isWarehouse ? 20 : 16)} width={76} height={14} rx={4} fill="white" fillOpacity="0.9" />
-            <text x={p.x} y={p.y + (isWarehouse ? 29 : 25)} textAnchor="middle" dominantBaseline="middle" fill="#1e293b" fontSize={6.5} fontWeight={600}>
-              {p.name.length > 18 ? p.name.slice(0, 17) + '…' : p.name}
-            </text>
-          </g>
+          <Marker 
+            key={i} 
+            position={{ lat: r.lat, lng: r.lng }} 
+            label={{ 
+              text: r.label, 
+              color: 'white', 
+              fontWeight: 'bold',
+              fontSize: '11px'
+            }}
+            icon={{
+              path: (window as any).google.maps.SymbolPath.CIRCLE,
+              fillColor: isDepot ? '#003527' : '#006c49',
+              fillOpacity: 1,
+              strokeWeight: 2,
+              strokeColor: 'white',
+              scale: isDepot ? 14 : 11
+            }}
+          />
         );
       })}
-    </svg>
+    </GoogleMap>
   );
 }
 
@@ -693,7 +700,7 @@ export default function DeliveryManifest() {
             </div>
 
             <div className="rounded-xl overflow-hidden border border-outline-variant">
-              <RouteMapSVG route={selected.route} />
+              <RouteMapGoogle route={selected.route} />
             </div>
 
             {/* Stop list */}
