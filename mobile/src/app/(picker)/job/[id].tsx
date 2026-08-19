@@ -54,6 +54,7 @@ export default function JobDetailScreen() {
   const [items, setItems] = useState<PickItem[]>([]);
   const [picklistInfo, setPicklistInfo] = useState<any>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [isStarting, setIsStarting] = useState(false);
   const [cartonTypes, setCartonTypes] = useState<CartonType[]>([]);
   const [blockingJob, setBlockingJob] = useState<string | null>(null);
 
@@ -597,8 +598,10 @@ export default function JobDetailScreen() {
             </View>
           ) : (
             <TouchableOpacity
-              className="bg-[#003527] w-full py-4 rounded-xl items-center shadow-sm"
+              className={`w-full py-4 rounded-xl items-center shadow-sm flex-row justify-center space-x-2 ${isStarting ? 'bg-gray-400' : 'bg-[#003527]'}`}
+              disabled={isStarting}
               onPress={async () => {
+                setIsStarting(true);
                 try {
                   await api.patch(`/picklists/${id}/start`);
                   setPicklistInfo((prev: any) => ({...prev, status: 'picking'}));
@@ -607,10 +610,15 @@ export default function JobDetailScreen() {
                 } catch (e: any) {
                   const msg = e.response?.data?.detail || 'Could not start picking';
                   Alert.alert('Hold on', typeof msg === 'string' ? msg : JSON.stringify(msg));
+                } finally {
+                  setIsStarting(false);
                 }
               }}
             >
-              <Text className="text-white font-black text-base uppercase tracking-wider">Start Picking</Text>
+              {isStarting && <ActivityIndicator color="#fff" size="small" />}
+              <Text className="text-white font-black text-base uppercase tracking-wider">
+                {isStarting ? "Starting..." : "Start Picking"}
+              </Text>
             </TouchableOpacity>
           )}
         </View>

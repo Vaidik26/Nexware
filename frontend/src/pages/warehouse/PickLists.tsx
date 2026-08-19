@@ -20,6 +20,9 @@ export default function PickLists() {
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedList, setSelectedList] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'draft' | 'picking' | 'waiting_verification' | 'verified'>('all');
+  const [assignedStaffFilter, setAssignedStaffFilter] = useState<string>('all');
+  const [floorStatusFilter, setFloorStatusFilter] = useState<string>('all');
+  const [createdDateFilter, setCreatedDateFilter] = useState<string>('');
   
   // Item-level verification audit states
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
@@ -203,8 +206,40 @@ export default function PickLists() {
     }
   };
 
+  const getComputedStatus = (item: any) => {
+    if (item.status === 'waiting_verification') {
+      let fullyAudited = true;
+      if (item.boxes && item.boxes.length > 0) {
+        fullyAudited = item.boxes.every((b: any) => b.is_audited);
+      } else if (item.items && item.items.length > 0) {
+        fullyAudited = item.items.every((i: any) => i.is_audited);
+      }
+      if (fullyAudited) return 'ready_for_dispatch';
+    }
+    return item.status || 'draft';
+  };
+
   const filteredLists = pickLists.filter((item) => {
     if (item.status === 'verified' || item.status === 'completed') return false;
+    
+    // Custom Filters
+    if (assignedStaffFilter !== 'all') {
+      const pickerName = item.assigned_picker_name || (item.assigned_to_id || item.assigned_picker_id ? 'Picker #' + (item.assigned_to_id || item.assigned_picker_id) : 'Unassigned');
+      if (assignedStaffFilter === 'Unassigned') {
+        if (pickerName !== 'Unassigned') return false;
+      } else {
+        if (!pickerName.toLowerCase().includes(assignedStaffFilter.toLowerCase())) return false;
+      }
+    }
+    
+    if (floorStatusFilter !== 'all') {
+      if (getComputedStatus(item) !== floorStatusFilter) return false;
+    }
+    
+    if (createdDateFilter) {
+      if (!item.created_at || !item.created_at.startsWith(createdDateFilter)) return false;
+    }
+
     if (activeTab === 'all') return true;
     if (activeTab === 'draft') return item.status === 'draft' || item.status === 'assigned';
     if (activeTab === 'picking') return item.status === 'picking';
@@ -334,7 +369,7 @@ export default function PickLists() {
         <span className="text-slate-400 italic text-xs">Unassigned</span>
       )
     },
-    { header: 'Floor Status', accessor: (row: any) => <StatusBadge status={row.status || 'draft'} /> },
+    { header: 'Floor Status', accessor: (row: any) => <StatusBadge status={getComputedStatus(row)} /> },
     { header: 'Created Date', accessor: (row: any) => new Date(row.created_at || Date.now()).toLocaleDateString() },
     {
       header: 'Operations & Actions',
@@ -464,7 +499,51 @@ export default function PickLists() {
             </span>
           </div>
 
-          <Table data={filteredLists} columns={columns} keyExtractor={(r) => String(r.id)} />
+                    
+          {/* Advanced Filters */}
+          <div className="flex flex-wrap items-center gap-4 bg-surface-container-lowest p-4 rounded-xl border border-outline-variant mb-4">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Assigned Staff</label>
+              <select 
+                className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white text-slate-700 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                value={assignedStaffFilter}
+                onChange={e => setAssignedStaffFilter(e.target.value)}
+              >
+                <option value="all">All Staff</option>
+                <option value="Unassigned">Unassigned</option>
+                {Array.from(new Set(pickLists.filter(p => p.assigned_picker_name).map(p => p.assigned_picker_name))).map(name => (
+                  <option key={name as string} value={name as string}>{name as string}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Floor Status</label>
+              <select 
+                className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white text-slate-700 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                value={floorStatusFilter}
+                onChange={e => setFloorStatusFilter(e.target.value)}
+              >
+                <option value="all">All Statuses</option>
+                <option value="draft">Draft</option>
+                <option value="assigned">Assigned</option>
+                <option value="picking">Picking</option>
+                <option value="waiting_verification">Waiting Verification</option>
+                <option value="ready_for_dispatch">Ready for Dispatch</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Created Date</label>
+              <input 
+                type="date"
+                className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white text-slate-700 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                value={createdDateFilter}
+                onChange={e => setCreatedDateFilter(e.target.value)}
+              />
+            </div>
+          </div>
+<Table data={filteredLists} columns={columns} keyExtractor={(r) => String(r.id)} />
         </div>
       )}
 

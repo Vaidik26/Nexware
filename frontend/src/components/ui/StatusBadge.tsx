@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 
-export type StatusType = 'draft' | 'assigned' | 'picking' | 'waiting_verification' | 'verified' | 'success' | 'warning' | 'error';
+export type StatusType = 'draft' | 'assigned' | 'picking' | 'waiting_verification' | 'ready_for_dispatch' | 'verified' | 'success' | 'warning' | 'error';
 
 interface StatusBadgeProps {
   status: StatusType;
@@ -13,6 +13,7 @@ export function StatusBadge({ status, label }: StatusBadgeProps) {
     assigned: 'bg-blue-100 text-blue-800 border-blue-200',
     picking: 'bg-purple-100 text-purple-800 border-purple-200',
     waiting_verification: 'bg-orange-100 text-orange-800 border-orange-200',
+    ready_for_dispatch: 'bg-emerald-100 text-emerald-800 border-emerald-200',
     verified: 'bg-secondary-container text-[#003c28] border-secondary',
     success: 'bg-secondary-container text-[#003c28] border-secondary',
     warning: 'bg-orange-100 text-orange-800 border-orange-200',
@@ -24,6 +25,7 @@ export function StatusBadge({ status, label }: StatusBadgeProps) {
     assigned: 'Assigned',
     picking: 'Picking',
     waiting_verification: 'Waiting Verification',
+    ready_for_dispatch: 'Ready for Dispatch',
     verified: 'Verified',
     success: 'Success',
     warning: 'Warning',

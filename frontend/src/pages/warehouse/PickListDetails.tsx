@@ -159,7 +159,18 @@ export default function PickListDetails() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-on-surface">Order {picklist.order_number}</h1>
-              <StatusBadge status={picklist.status} />
+              <StatusBadge status={(() => {
+                if (picklist.status === 'waiting_verification') {
+                  let fullyAudited = true;
+                  if (picklist.boxes && picklist.boxes.length > 0) {
+                    fullyAudited = picklist.boxes.every((b: any) => b.is_audited);
+                  } else if (picklist.items && picklist.items.length > 0) {
+                    fullyAudited = picklist.items.every((i: any) => i.is_audited);
+                  }
+                  if (fullyAudited) return 'ready_for_dispatch';
+                }
+                return picklist.status;
+              })()} />
             </div>
             <p className="text-on-surface-variant text-sm mt-1">
               Customer: <span className="font-medium text-on-surface">{picklist.customer_name}</span>
