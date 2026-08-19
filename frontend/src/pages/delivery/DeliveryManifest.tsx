@@ -519,15 +519,15 @@ export default function DeliveryManifest() {
   );
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6">
 
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-on-surface flex items-center gap-2.5">
+          <h1 className="text-2xl font-semibold text-on-surface flex items-center gap-2.5">
             <Truck className="w-6 h-6 text-primary" />
             <span>Delivery Manifest</span>
-            <span className="bg-primary/10 text-primary border border-primary/20 text-xs px-2.5 py-1 rounded-full font-semibold">
+            <span className="bg-primary-container text-on-primary-container text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
               Auto-Clustering Demo
             </span>
           </h1>
@@ -592,16 +592,16 @@ export default function DeliveryManifest() {
       </div>
 
       {/* ── Manifest Table ── */}
-      <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant shadow-sm overflow-hidden">
+      <div className="bg-surface-container-lowest p-6 rounded-3xl border border-outline-variant shadow-sm space-y-6">
         {/* Tab bar */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant">
-          <div className="flex bg-surface-container p-1.5 rounded-xl border border-outline-variant gap-1">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-outline-variant pb-4">
+          <div className="flex bg-surface-container-low p-1.5 rounded-xl border border-outline-variant flex-wrap gap-1">
             {(['all', 'today', 'pending'] as const).map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase transition-all ${
-                  activeTab === tab ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-lowest'
+                className={`px-3.5 py-2 rounded-lg text-xs font-bold uppercase transition-all ${
+                  activeTab === tab ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
                 }`}
               >
                 {tab === 'all' ? 'All Manifests' : tab === 'today' ? "Today's Route" : 'Pending Dispatch'}
@@ -609,63 +609,68 @@ export default function DeliveryManifest() {
             ))}
           </div>
           <span className="text-xs text-on-surface-variant font-semibold">
-            {filtered.length} manifests · Aug 19, 2026
+            Showing <strong>{filtered.length}</strong> manifests
           </span>
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-surface-container text-on-surface-variant text-xs font-bold uppercase tracking-wider">
+        <div className="w-full overflow-x-auto rounded-xl border border-outline-variant bg-surface-container-lowest shadow-sm">
+          <table className="w-full text-left text-sm text-on-surface">
+            <thead className="bg-surface text-on-surface-variant text-xs uppercase font-medium">
+              <tr>
                 {['Manifest #', 'Vehicle', 'Driver & Incharge', 'Stops', 'Orders', 'Cartons', 'Distance', 'Departure', 'Status', ''].map(h => (
-                  <th key={h} className="px-4 py-3 text-left whitespace-nowrap">{h}</th>
+                  <th key={h} className="px-6 py-4 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-outline-variant">
-              {filtered.map((m) => (
-                <tr
+            <tbody>
+              {filtered.map((m, i) => (
+                <motion.tr
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.05 }}
                   key={m.id}
                   onClick={() => setSelectedId(m.id)}
-                  className={`cursor-pointer transition-colors ${selectedId === m.id ? 'bg-primary/5 ring-1 ring-inset ring-primary/20' : 'hover:bg-surface-container/50'}`}
+                  className={`border-t border-outline-variant transition-colors cursor-pointer ${
+                    selectedId === m.id ? 'bg-primary/5' : 'hover:bg-surface/50'
+                  }`}
                 >
-                  <td className="px-4 py-3.5 font-extrabold text-primary whitespace-nowrap">
-                    {selectedId === m.id && <span className="mr-1.5 text-secondary">▸</span>}
+                  <td className="px-6 py-4 font-semibold text-primary whitespace-nowrap">
                     {m.number}
                   </td>
-                  <td className="px-4 py-3.5">
-                    <div className="font-bold text-on-surface">{m.vehicle.plate}</div>
+                  <td className="px-6 py-4">
+                    <div className="font-medium text-on-surface">{m.vehicle.plate}</div>
                     <div className="text-xs text-on-surface-variant">{m.vehicle.type}</div>
                   </td>
-                  <td className="px-4 py-3.5">
-                    <div className="font-semibold text-on-surface">{m.driver}</div>
+                  <td className="px-6 py-4">
+                    <div className="font-medium text-on-surface">{m.driver}</div>
                     <div className="text-xs text-on-surface-variant">IC: {m.incharge}</div>
                   </td>
-                  <td className="px-4 py-3.5 font-bold text-on-surface">{m.route.length - 1}</td>
-                  <td className="px-4 py-3.5">
-                    <span className="inline-flex items-center gap-1 bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full text-xs font-bold">
-                      <Package2 className="w-3 h-3" />
+                  <td className="px-6 py-4 font-medium">{m.route.length - 1}</td>
+                  <td className="px-6 py-4">
+                    <span className="inline-flex items-center gap-1 bg-surface-container-highest px-2.5 py-1 rounded-md text-xs font-semibold">
+                      <Package2 className="w-3.5 h-3.5 text-primary" />
                       {m.orders.length}
                     </span>
                   </td>
-                  <td className="px-4 py-3.5 font-bold text-on-surface">{m.cartons.length}</td>
-                  <td className="px-4 py-3.5 text-on-surface-variant font-semibold whitespace-nowrap">{m.distance}</td>
-                  <td className="px-4 py-3.5">
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-on-surface-variant whitespace-nowrap">
+                  <td className="px-6 py-4 font-medium">{m.cartons.length}</td>
+                  <td className="px-6 py-4 text-on-surface-variant whitespace-nowrap">{m.distance}</td>
+                  <td className="px-6 py-4">
+                    <span className="inline-flex items-center gap-1 text-xs text-on-surface-variant whitespace-nowrap">
                       <Clock className="w-3.5 h-3.5" />{m.departure}
                     </span>
                   </td>
-                  <td className="px-4 py-3.5"><ManifestBadge status={m.status} /></td>
-                  <td className="px-4 py-3.5">
-                    <button
+                  <td className="px-6 py-4"><ManifestBadge status={m.status} /></td>
+                  <td className="px-6 py-4">
+                    <Button
+                      size="sm"
                       onClick={(e) => { e.stopPropagation(); navigate(`/delivery/loading/${m.id}`); }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-white hover:bg-secondary transition-colors"
+                      className="gap-1.5"
                     >
                       <Truck className="w-3.5 h-3.5" /> Load <ArrowRight className="w-3 h-3" />
-                    </button>
+                    </Button>
                   </td>
-                </tr>
+                </motion.tr>
               ))}
             </tbody>
           </table>
