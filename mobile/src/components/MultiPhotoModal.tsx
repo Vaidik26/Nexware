@@ -22,11 +22,8 @@ export default function MultiPhotoModal({ visible, onClose, onConfirm }: {
   const [showWarningPopup, setShowWarningPopup] = useState(false);
   const { top, bottom } = useSafeAreaInsets();
 
-  // Reset on close
   useEffect(() => {
     if (!visible) {
-      photos.forEach(uri => FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {}));
-      setPhotos([]);
       setIsProcessing(false);
       setShowWarningPopup(false);
     }
@@ -80,8 +77,6 @@ export default function MultiPhotoModal({ visible, onClose, onConfirm }: {
       const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>body{margin:0;padding:20px;background:#fff;} img { width: 100%; max-height: 90vh; object-fit: contain; margin-bottom: 20px; border-radius: 8px; display: block; page-break-inside: avoid; break-inside: avoid; }</style></head><body>${imgTags}</body></html>`;
       const { uri: pdfUri } = await Print.printToFileAsync({ html, base64: false });
       onConfirm({ uri: pdfUri, mimeType: "application/pdf", filename: `lpo-photos-${Date.now()}.pdf` });
-      photos.forEach(uri => FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {}));
-      setPhotos([]);
       onClose();
     } catch (err) {
       console.error(err);

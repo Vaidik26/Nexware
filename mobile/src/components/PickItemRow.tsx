@@ -9,7 +9,7 @@ export default function PickItemRow({ item, onScanStart, onMissing, onToggleCart
  
  const animatedStyle = useAnimatedStyle(() => {
   return {
-   opacity: withTiming(item.picked ? 0.65 : 1, { duration: 200 }),
+   opacity: withTiming(disabled ? 0.4 : (item.picked ? 0.65 : 1), { duration: 200 }),
   };
  });
 

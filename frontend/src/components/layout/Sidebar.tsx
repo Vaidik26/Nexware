@@ -15,7 +15,9 @@ import {
   LogOut,
   ChevronDown,
   Database,
-  Shield
+  Shield,
+  Truck,
+  FileText,
 } from 'lucide-react';
 
 const groups = [
@@ -41,6 +43,14 @@ const groups = [
       { name: 'Order Upload', path: '/warehouse/upload', icon: Package2 },
       { name: 'LPO Management', path: '/warehouse/lpos', icon: Package2 },
       { name: 'Picklists & Dispatch', path: '/warehouse/picklists', icon: CheckSquare },
+    ],
+  },
+  {
+    label: 'Delivery & Logistics',
+    icon: Truck,
+    items: [
+      { name: 'Delivery Manifest', path: '/delivery/manifest', icon: FileText },
+      { name: 'Vehicle Loading', path: '/delivery/loading/1', icon: Truck },
     ],
   },
   {

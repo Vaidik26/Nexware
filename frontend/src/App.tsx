@@ -29,6 +29,8 @@ const PriceManagement = React.lazy(() => import('@/pages/market/PriceManagement'
 const MarketOverview = React.lazy(() => import('@/pages/market/MarketOverview'));
 const UserManagement = React.lazy(() => import('@/pages/admin/UserManagement'));
 const CustomerMaster = React.lazy(() => import('@/pages/admin/CustomerMaster'));
+const DeliveryManifest = React.lazy(() => import('@/pages/delivery/DeliveryManifest'));
+const VehicleLoading = React.lazy(() => import('@/pages/delivery/VehicleLoading'));
 
 interface Props {
   children?: ReactNode;
@@ -141,6 +143,8 @@ export default function App() {
                 <Route path="warehouse/picklists" element={<PickLists />} />
                 <Route path="warehouse/picklists/:id" element={<PickListDetails />} />
                 <Route path="warehouse/verification" element={<Navigate to="/warehouse/picklists" replace />} />
+                <Route path="delivery/manifest" element={<DeliveryManifest />} />
+                <Route path="delivery/loading/:id" element={<VehicleLoading />} />
                 <Route path="market/materials" element={<RawMaterials />} />
                 <Route path="market/prices" element={<PriceManagement />} />
                 <Route path="market/overview" element={<MarketOverview />} />

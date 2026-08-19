@@ -55,6 +55,7 @@ export default function JobDetailScreen() {
   const [picklistInfo, setPicklistInfo] = useState<any>({});
   const [isLoading, setIsLoading] = useState(true);
   const [cartonTypes, setCartonTypes] = useState<CartonType[]>([]);
+  const [blockingJob, setBlockingJob] = useState<string | null>(null);
 
   // ── Submission state ──
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -150,6 +151,28 @@ export default function JobDetailScreen() {
             });
           });
           setSealedItemIds(boxedIds);
+
+          // Check for FIFO blocking
+          try {
+            const myJobsRes = await api.get('/picklists');
+            if (myJobsRes && myJobsRes.data && Array.isArray(myJobsRes.data)) {
+              const myJobs = myJobsRes.data
+                .filter((p: any) => p.status === 'assigned' || p.status === 'picking')
+                .sort((a: any, b: any) => a.id - b.id);
+
+              const activeJob = myJobs.find((p: any) => p.status === 'picking');
+              if (activeJob && String(activeJob.id) !== String(id)) {
+                  setBlockingJob(activeJob.lpo_number || `P-${activeJob.id}`);
+              } else {
+                  const firstAssigned = myJobs.find((p: any) => p.status === 'assigned');
+                  if (firstAssigned && String(firstAssigned.id) !== String(id) && firstAssigned.id < Number(id)) {
+                      setBlockingJob(firstAssigned.lpo_number || `P-${firstAssigned.id}`);
+                  }
+              }
+            }
+          } catch (e) {
+            console.log('Could not fetch queue for FIFO check', e);
+          }
         }
       } catch (err) {
         setSubmitError('Could not load picklist from server.');
@@ -513,38 +536,6 @@ export default function JobDetailScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
-      {picklistInfo?.status === 'assigned' ? (
-        <View className="flex-1 p-6 justify-center bg-white">
-          <TouchableOpacity onPress={() => router.back()} className="absolute top-4 left-4 p-2 bg-gray-50 rounded-full">
-            <ArrowLeft size={24} color="#0b1c30" />
-          </TouchableOpacity>
-          <View className="items-center mb-10 mt-10">
-            <Package size={64} color="#006c49" className="mb-4" />
-            <Text className="text-2xl font-black text-[#0b1c30] text-center mb-2">Order {picklistInfo?.order_number}</Text>
-            <Text className="text-gray-500 text-center text-lg font-medium">{picklistInfo?.customer_name}</Text>
-            <View className="bg-gray-100 rounded-full px-4 py-2 mt-4">
-              <Text className="text-gray-600 font-bold">{items.length} Items to Pick</Text>
-            </View>
-          </View>
-          
-          <TouchableOpacity 
-            className="bg-[#003527] w-full py-5 rounded-2xl items-center shadow-md"
-            onPress={async () => {
-              try {
-                await api.patch(`/picklists/${id}/start`);
-                setPicklistInfo((prev: any) => ({...prev, status: 'picking'}));
-                const { useAuthStore } = require('../../../store/authStore');
-                useAuthStore.getState().setIsPicking(true);
-              } catch (e) {
-                Alert.alert('Error', 'Could not start picking');
-              }
-            }}
-          >
-            <Text className="text-white font-black text-lg uppercase tracking-wider">Start Picking</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <>
 
       {/* ── Header ── */}
       <View className="flex-row items-center px-4 py-3 bg-white border-b border-gray-200">
@@ -563,6 +554,36 @@ export default function JobDetailScreen() {
           </Text>
         </View>
       </View>
+
+      {/* ── Start Picking Button / FIFO Message ── */}
+      {picklistInfo?.status === 'assigned' && (
+        <View className="px-4 py-3 bg-white border-b border-gray-200">
+          {blockingJob ? (
+            <View className="bg-yellow-50 p-4 border border-yellow-200 rounded-xl flex-row items-center gap-3">
+              <Text className="text-yellow-800 font-bold flex-1 text-center">
+                Please complete your previous picking job ({blockingJob}) first to unlock this order.
+              </Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              className="bg-[#003527] w-full py-4 rounded-xl items-center shadow-sm"
+              onPress={async () => {
+                try {
+                  await api.patch(`/picklists/${id}/start`);
+                  setPicklistInfo((prev: any) => ({...prev, status: 'picking'}));
+                  const { useAuthStore } = require('../../../store/authStore');
+                  useAuthStore.getState().setIsPicking(true);
+                } catch (e: any) {
+                  const msg = e.response?.data?.detail || 'Could not start picking';
+                  Alert.alert('Hold on', typeof msg === 'string' ? msg : JSON.stringify(msg));
+                }
+              }}
+            >
+              <Text className="text-white font-black text-base uppercase tracking-wider">Start Picking</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {/* ── Sealed Boxes Summary ── */}
       {sealedBoxes.length > 0 && (
@@ -643,7 +664,7 @@ export default function JobDetailScreen() {
                 setScanModalVisible(true);
               }}
               onMissing={() => handleMissing(item.id)}
-              disabled={isSubmitted}
+              disabled={isSubmitted || picklistInfo?.status === 'assigned'}
             />
           )}
           ListEmptyComponent={

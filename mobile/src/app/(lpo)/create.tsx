@@ -796,6 +796,7 @@ export default function LpoCreateScreen() {
     </Modal>
     
     <MultiPhotoModal 
+      key={orderNumber}
       visible={showCameraModal} 
       onClose={handleCameraClose} 
       onConfirm={handleConfirmPhotos} 
