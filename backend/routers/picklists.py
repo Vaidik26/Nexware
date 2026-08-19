@@ -531,23 +531,13 @@ async def start_picklist(
     if pl.status != "assigned":
         raise HTTPException(status_code=400, detail=f"Cannot start picklist with status {pl.status}")
         
-    # Check if picker has an active job
-    active_query = await db.execute(select(PickList).filter(
-        PickList.assigned_to == current_user.id, 
+    # Only block if picker already has another job actively being picked
+    active_query = await db.execute(select(PickList).join(PickAssignment).filter(
+        PickAssignment.picker_id == current_user.id,
         PickList.status == "picking"
     ))
     if active_query.scalars().first():
         raise HTTPException(status_code=400, detail="You already have a picking job in progress. Please complete it first.")
-
-    # Check for older assigned jobs (FIFO)
-    older_query = await db.execute(select(PickList).filter(
-        PickList.assigned_to == current_user.id,
-        PickList.status == "assigned",
-        PickList.id < picklist_id
-    ).order_by(PickList.id.asc()))
-    older_job = older_query.scalars().first()
-    if older_job:
-        raise HTTPException(status_code=400, detail=f"Please complete your previous assigned picking job ({older_job.lpo_number}) first.")
 
     pl.status = "picking"
     await db.commit()

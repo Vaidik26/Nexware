@@ -156,23 +156,27 @@ export default function JobDetailScreen() {
           try {
             const myJobsRes = await api.get('/picklists');
             if (myJobsRes && myJobsRes.data && Array.isArray(myJobsRes.data)) {
+              // ONLY look at jobs that are 'assigned' or 'picking'.
+              // We IGNORE 'waiting_verification', so completed jobs don't block.
               const myJobs = myJobsRes.data
                 .filter((p: any) => p.status === 'assigned' || p.status === 'picking')
                 .sort((a: any, b: any) => a.id - b.id);
 
               const activeJob = myJobs.find((p: any) => p.status === 'picking');
               if (activeJob && String(activeJob.id) !== String(id)) {
-                  setBlockingJob(activeJob.lpo_number || `P-${activeJob.id}`);
+                  setBlockingJob(activeJob.order_number || `P-${activeJob.id}`);
               } else {
                   const firstAssigned = myJobs.find((p: any) => p.status === 'assigned');
+                  // If this is NOT the first assigned job, block it with the first one's name
                   if (firstAssigned && String(firstAssigned.id) !== String(id) && firstAssigned.id < Number(id)) {
-                      setBlockingJob(firstAssigned.lpo_number || `P-${firstAssigned.id}`);
+                      setBlockingJob(firstAssigned.order_number || `P-${firstAssigned.id}`);
                   }
               }
             }
           } catch (e) {
             console.log('Could not fetch queue for FIFO check', e);
           }
+
         }
       } catch (err) {
         setSubmitError('Could not load picklist from server.');
@@ -556,7 +560,7 @@ export default function JobDetailScreen() {
       </View>
 
       {/* ── Start Picking Button / FIFO Message ── */}
-      {picklistInfo?.status === 'assigned' && (
+      {picklistInfo?.status === 'assigned' && !isLoading && (
         <View className="px-4 py-3 bg-white border-b border-gray-200">
           {blockingJob ? (
             <View className="bg-yellow-50 p-4 border border-yellow-200 rounded-xl flex-row items-center gap-3">
@@ -1188,9 +1192,6 @@ export default function JobDetailScreen() {
           </View>
         </View>
       </Modal>
-
-            </>
-      )}
     </SafeAreaView>
   );
 }
