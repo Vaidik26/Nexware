@@ -154,7 +154,7 @@ export default function JobDetailScreen() {
 
           // Check for FIFO blocking
           try {
-            const myJobsRes = await api.get('/picklists');
+            const myJobsRes = await api.get('/picklists/my');
             if (myJobsRes && myJobsRes.data && Array.isArray(myJobsRes.data)) {
               // ONLY look at jobs that are 'assigned' or 'picking'.
               // We IGNORE 'waiting_verification', so completed jobs don't block.
