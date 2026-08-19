@@ -6,12 +6,17 @@ import { Platform } from 'react-native';
 import { api } from '../../lib/api';
 import { playPickerAlertSound } from '../../lib/alertSound';
 
+import { useAuthStore } from '../../store/authStore';
+
 Notifications.setNotificationHandler({
- handleNotification: async () => ({
-  shouldShowAlert: true,
-  shouldPlaySound: true,
-  shouldSetBadge: true,
- }),
+ handleNotification: async () => {
+  const isPicking = useAuthStore.getState().isPicking;
+  return {
+   shouldShowAlert: !isPicking,
+   shouldPlaySound: !isPicking,
+   shouldSetBadge: true,
+  };
+ },
 });
 
 export default function PickerLayout() {
@@ -24,7 +29,8 @@ export default function PickerLayout() {
 
   // Automatically trigger custom warehouse alert bell when push notifications arrive
   const subscription = Notifications.addNotificationReceivedListener(() => {
-   playPickerAlertSound();
+   const isPicking = useAuthStore.getState().isPicking;
+   if (!isPicking) playPickerAlertSound();
   });
 
   return () => subscription.remove();

@@ -24,15 +24,21 @@ const PriorityBgColors: Record<string, string> = {
  SCHEDULED: 'bg-gray-100',
 };
 
-export default function JobCard({ job, index }: { job: any, index: number }) {
+import { Lock } from 'lucide-react-native';
+
+export default function JobCard({ job, index, hasActiveJob }: { job: any, index: number, hasActiveJob?: boolean }) {
  const router = useRouter();
  const progress = job.totalItems > 0 ? (job.pickedItems / job.totalItems) * 100 : 0;
+ const isLocked = hasActiveJob && job.status !== 'in_progress';
  
  return (
   <Animated.View entering={FadeInDown.delay(index * 100).springify()}>
    <TouchableOpacity 
-    className="bg-white rounded-xl mb-4 shadow-sm overflow-hidden flex-row"
-    onPress={() => router.push(`/(picker)/job/${job.id}`)}
+    className={`bg-white rounded-xl mb-4 shadow-sm overflow-hidden flex-row ${isLocked ? 'opacity-60' : ''}`}
+    onPress={() => {
+      if (!isLocked) router.push(`/(picker)/job/${job.id}`);
+    }}
+    disabled={isLocked}
    >
     <View className={`w-1.5 ${PriorityColors[job.priority] || 'bg-gray-400'}`} />
     <View className="flex-1 p-4">
@@ -60,7 +66,7 @@ export default function JobCard({ job, index }: { job: any, index: number }) {
        </View>
        <Text className="text-xs text-gray-500 mt-1 ">{job.pickedItems} / {job.totalItems} Picked</Text>
       </View>
-      <ChevronRight size={20} color="#9ca3af" />
+      {isLocked ? <Lock size={18} color="#9ca3af" /> : <ChevronRight size={20} color="#9ca3af" />}
      </View>
     </View>
    </TouchableOpacity>

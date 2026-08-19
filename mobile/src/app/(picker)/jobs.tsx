@@ -56,9 +56,12 @@ export default function JobsScreen() {
        status: p.status === 'picking' ? 'in_progress' : 'pending'
       };
      });
-    setJobs(mapped);
+    setJobs(mapped.sort((a, b) => a.id - b.id));
+    const isCurrentlyPicking = mapped.some((j: any) => j.status === 'in_progress');
+    useAuthStore.getState().setIsPicking(isCurrentlyPicking);
    } else {
     setJobs([]);
+    useAuthStore.getState().setIsPicking(false);
    }
   } catch (err) {
    console.log('Error fetching live picklists:', err);
@@ -151,6 +154,24 @@ export default function JobsScreen() {
     </TouchableOpacity>
    </View>
 
+   {/* KPI Metrics */}
+   <View className="flex-row px-4 mb-4 justify-between space-x-3">
+    <View className="flex-1 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm items-center border-t-2 border-t-[#006c49]">
+     <Text className="text-gray-500 text-xs font-bold uppercase mb-1">Items Picked</Text>
+     <Text className="text-2xl font-black text-[#003527]">
+      {jobs.reduce((sum, j) => sum + j.pickedItems, 0)}
+     </Text>
+     <Text className="text-gray-400 text-[10px] mt-1 font-semibold">Today</Text>
+    </View>
+    <View className="flex-1 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm items-center border-t-2 border-t-emerald-500">
+     <Text className="text-gray-500 text-xs font-bold uppercase mb-1">Queue Total</Text>
+     <Text className="text-2xl font-black text-[#0b1c30]">
+      {jobs.reduce((sum, j) => sum + j.totalItems, 0)}
+     </Text>
+     <Text className="text-gray-400 text-[10px] mt-1 font-semibold">Items Pending</Text>
+    </View>
+   </View>
+
    {/* Progress Summary Card with Elegant Green Border Accent */}
    <View className="flex-row items-center justify-between px-5 py-4 bg-white mx-4 rounded-2xl border border-gray-200 border-l-4 border-l-[#006c49] shadow-sm mb-4">
     <View>
@@ -158,7 +179,7 @@ export default function JobsScreen() {
       <View className="w-2 h-2 rounded-full bg-emerald-500 mr-1.5" />
       <Text className="text-[11px] font-bold text-emerald-700 tracking-wider uppercase">Live Floor Sync</Text>
      </View>
-     <Text className="text-sm text-gray-500 ">Active Assignment Completion</Text>
+     <Text className="text-sm text-gray-500 ">Assignment Completion</Text>
      <Text className="text-xl font-extrabold text-[#0b1c30] mt-0.5 ">
       {jobs.filter(j => j.pickedItems > 0 && j.pickedItems === j.totalItems).length} / {jobs.length} Orders
      </Text>
@@ -187,7 +208,7 @@ export default function JobsScreen() {
      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 28 }}
      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#003527"]} tintColor="#006c49" />}
      renderItem={({ item, index }) => (
-      <JobCard job={item} index={index} />
+      <JobCard job={item} index={index} hasActiveJob={jobs.some(j => j.status === 'in_progress')} />
      )}
      ListEmptyComponent={
       <View className="items-center justify-center py-12">

@@ -517,6 +517,23 @@ async def direct_assign_picklist(
     )
 
     return {"message": "Pick list generated and assigned to staff directly", "picklist_id": db_picklist.id, "job_label": job_label}
+@router.patch("/{picklist_id}/start")
+async def start_picklist(
+    picklist_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    pl = result.scalars().first()
+    if not pl:
+        raise HTTPException(status_code=404, detail="Pick list not found")
+
+    if pl.status != "assigned":
+        raise HTTPException(status_code=400, detail=f"Cannot start picklist with status {pl.status}")
+
+    pl.status = "picking"
+    await db.commit()
+    return {"status": pl.status}
 
 @router.post("/direct-assign-auto")
 async def direct_assign_auto(

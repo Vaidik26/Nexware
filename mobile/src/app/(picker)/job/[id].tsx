@@ -513,6 +513,38 @@ export default function JobDetailScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
+      {picklistInfo?.status === 'assigned' ? (
+        <View className="flex-1 p-6 justify-center bg-white">
+          <TouchableOpacity onPress={() => router.back()} className="absolute top-4 left-4 p-2 bg-gray-50 rounded-full">
+            <ArrowLeft size={24} color="#0b1c30" />
+          </TouchableOpacity>
+          <View className="items-center mb-10 mt-10">
+            <Package size={64} color="#006c49" className="mb-4" />
+            <Text className="text-2xl font-black text-[#0b1c30] text-center mb-2">Order {picklistInfo?.order_number}</Text>
+            <Text className="text-gray-500 text-center text-lg font-medium">{picklistInfo?.customer_name}</Text>
+            <View className="bg-gray-100 rounded-full px-4 py-2 mt-4">
+              <Text className="text-gray-600 font-bold">{items.length} Items to Pick</Text>
+            </View>
+          </View>
+          
+          <TouchableOpacity 
+            className="bg-[#003527] w-full py-5 rounded-2xl items-center shadow-md"
+            onPress={async () => {
+              try {
+                await api.patch(`/picklists/${id}/start`);
+                setPicklistInfo((prev: any) => ({...prev, status: 'picking'}));
+                const { useAuthStore } = require('../../../store/authStore');
+                useAuthStore.getState().setIsPicking(true);
+              } catch (e) {
+                Alert.alert('Error', 'Could not start picking');
+              }
+            }}
+          >
+            <Text className="text-white font-black text-lg uppercase tracking-wider">Start Picking</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <>
 
       {/* ── Header ── */}
       <View className="flex-row items-center px-4 py-3 bg-white border-b border-gray-200">
@@ -897,25 +929,45 @@ export default function JobDetailScreen() {
               <Text className="text-sm text-gray-500 text-center">Label physically printed at packing station.</Text>
             </View>
 
-            {/* This view will be captured as an image */}
-            <View ref={qrViewRef} collapsable={false} className="bg-white p-6 rounded-2xl border-4 border-gray-100 items-center mb-6 w-full">
+            {/* This view will be captured as an image in A4 Proportions */}
+            <View 
+              ref={qrViewRef} 
+              collapsable={false} 
+              className="bg-white px-6 py-10 items-center justify-between border-4 border-gray-100 w-[100%]"
+              style={{ aspectRatio: 1 / 1.414 }}
+            >
               {generatedQRData && (
                 <>
-                  <Text className="font-black text-2xl mb-1 text-gray-800">
-                    {JSON.parse(generatedQRData).customer}
-                  </Text>
-                  <Text className="font-bold text-gray-500 mb-4 text-sm">
-                    {JSON.parse(generatedQRData).lpo_no} | {JSON.parse(generatedQRData).carton}
-                  </Text>
-                  <QRCode
-                    value={generatedQRData}
-                    size={200}
-                    color="black"
-                    backgroundColor="white"
-                  />
-                  <View className="flex-row items-center justify-between w-full mt-5 px-2">
-                    <Text className="text-gray-600 font-bold">{JSON.parse(generatedQRData).total_qty} units</Text>
-                    <Text className="text-gray-600 font-bold">{JSON.parse(generatedQRData).weight}</Text>
+                  <View className="w-full items-center mb-8">
+                    <Text className="font-black text-3xl text-gray-900 text-center mb-2 leading-tight uppercase tracking-tight">
+                      {JSON.parse(generatedQRData).customer}
+                    </Text>
+                    <Text className="font-bold text-gray-500 text-lg uppercase tracking-widest">
+                      {JSON.parse(generatedQRData).lpo_no}
+                    </Text>
+                    <Text className="font-bold text-gray-700 text-xl mt-2 bg-gray-100 px-4 py-1 rounded-full">
+                      {JSON.parse(generatedQRData).carton}
+                    </Text>
+                  </View>
+                  
+                  <View className="flex-1 justify-center">
+                    <QRCode
+                      value={generatedQRData}
+                      size={240}
+                      color="black"
+                      backgroundColor="white"
+                    />
+                  </View>
+
+                  <View className="flex-row items-center justify-between w-full mt-8 pt-6 border-t-2 border-gray-100 px-2">
+                    <View className="items-center">
+                      <Text className="text-gray-400 text-xs font-bold uppercase tracking-widest">Total Items</Text>
+                      <Text className="text-gray-800 text-2xl font-black">{JSON.parse(generatedQRData).total_qty}</Text>
+                    </View>
+                    <View className="items-center">
+                      <Text className="text-gray-400 text-xs font-bold uppercase tracking-widest">Gross Weight</Text>
+                      <Text className="text-gray-800 text-2xl font-black">{JSON.parse(generatedQRData).weight}</Text>
+                    </View>
                   </View>
                 </>
               )}
@@ -1116,6 +1168,8 @@ export default function JobDetailScreen() {
         </View>
       </Modal>
 
+            </>
+      )}
     </SafeAreaView>
   );
 }

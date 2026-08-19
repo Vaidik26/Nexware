@@ -14,6 +14,8 @@ export interface PickerInfo {
 interface AuthState {
  picker: PickerInfo | null;
  isAuthenticated: boolean;
+ isPicking: boolean;
+ setIsPicking: (isPicking: boolean) => void;
  setPicker: (picker: PickerInfo | null) => void;
  setAuthenticated: (isAuthenticated: boolean) => void;
  logout: () => Promise<void>;
@@ -22,6 +24,8 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => ({
  picker: null,
  isAuthenticated: false,
+ isPicking: false,
+ setIsPicking: (isPicking) => set({ isPicking }),
  setPicker: (picker) => set({ picker }),
  setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
  logout: async () => {
