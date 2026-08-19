@@ -7,7 +7,6 @@ import {
   Navigation2, Layers, RefreshCw, FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { GoogleMap, useJsApiLoader, Marker, Polyline } from '@react-google-maps/api';
 
 // ─────────────────────────────────────────────────────────────
 // HARDCODED DATA
@@ -198,75 +197,57 @@ function ManifestBadge({ status }: { status: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// GOOGLE ROUTE MAP
+// SVG ROUTE MAP (Fallback for Demo)
 // ─────────────────────────────────────────────────────────────
-function RouteMapGoogle({ route }: { route: typeof ALL_MANIFESTS[0]['route'] }) {
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
-  });
+function RouteMapSVG({ route }: { route: typeof ALL_MANIFESTS[0]['route'] }) {
+  // Map lat/lng to arbitrary SVG coordinates for demo purposes
+  const minLat = Math.min(...route.map(r => r.lat));
+  const maxLat = Math.max(...route.map(r => r.lat));
+  const minLng = Math.min(...route.map(r => r.lng));
+  const maxLng = Math.max(...route.map(r => r.lng));
 
-  const center = {
-    lat: (Math.min(...route.map(r => r.lat)) + Math.max(...route.map(r => r.lat))) / 2,
-    lng: (Math.min(...route.map(r => r.lng)) + Math.max(...route.map(r => r.lng))) / 2
-  };
-  
-  const path = route.map(r => ({ lat: r.lat, lng: r.lng }));
+  const pts = route.map(r => ({
+    x: 40 + ((r.lng - minLng) / (maxLng - minLng || 1)) * 320,
+    y: 200 - ((r.lat - minLat) / (maxLat - minLat || 1)) * 160,
+    name: r.name,
+    label: r.label,
+  }));
 
-  if (!isLoaded) {
-    return (
-      <div className="w-full h-[260px] bg-slate-100 animate-pulse flex items-center justify-center text-slate-400 font-semibold text-sm rounded-xl">
-        Loading Map...
-      </div>
-    );
-  }
+  const pathD = `M ${pts[0].x},${pts[0].y} ` + pts.slice(1).map(p => `L ${p.x},${p.y}`).join(' ');
 
   return (
-    <GoogleMap
-      mapContainerStyle={{ width: '100%', height: '260px' }}
-      center={center}
-      zoom={11}
-      options={{ 
-        disableDefaultUI: true, 
-        zoomControl: true,
-        styles: [
-          { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-          { featureType: 'transit', stylers: [{ visibility: 'off' }] }
-        ]
-      }}
-    >
-      <Polyline
-        path={path}
-        options={{
-          strokeColor: '#006c49',
-          strokeOpacity: 0.8,
-          strokeWeight: 4,
-        }}
-      />
-      {route.map((r, i) => {
-        const isDepot = i === 0;
+    <svg viewBox="0 0 400 240" className="w-full h-[260px] bg-slate-50">
+      <defs>
+        <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e2e8f0" strokeWidth="0.5" />
+        </pattern>
+        <filter id="shadow-dm" x="-10%" y="-10%" width="120%" height="120%">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.2" />
+        </filter>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#grid)" />
+      
+      {/* Route Line */}
+      <path d={pathD} fill="none" stroke="#006c49" strokeWidth="3" strokeDasharray="6,6" opacity="0.8" />
+      
+      {/* Stops */}
+      {pts.map((p, i) => {
+        const isWarehouse = i === 0;
         return (
-          <Marker 
-            key={i} 
-            position={{ lat: r.lat, lng: r.lng }} 
-            label={{ 
-              text: r.label, 
-              color: 'white', 
-              fontWeight: 'bold',
-              fontSize: '11px'
-            }}
-            icon={{
-              path: (window as any).google.maps.SymbolPath.CIRCLE,
-              fillColor: isDepot ? '#003527' : '#006c49',
-              fillOpacity: 1,
-              strokeWeight: 2,
-              strokeColor: 'white',
-              scale: isDepot ? 14 : 11
-            }}
-          />
+          <g key={i} filter="url(#shadow-dm)">
+            <circle cx={p.x} cy={p.y} r={isWarehouse ? 16 : 13} fill={isWarehouse ? '#003527' : '#006c49'} />
+            <circle cx={p.x} cy={p.y} r={isWarehouse ? 16 : 13} fill="none" stroke="white" strokeWidth="2.5" />
+            <text x={p.x} y={p.y} fill="white" fontSize={isWarehouse ? "14" : "12"} fontWeight="bold" textAnchor="middle" dominantBaseline="central">
+              {p.label}
+            </text>
+            <rect x={p.x - 30} y={p.y + 18} width="60" height="14" rx="4" fill="white" fillOpacity="0.9" />
+            <text x={p.x} y={p.y + 25} fill="#475569" fontSize="8" fontWeight="bold" textAnchor="middle">
+              {p.name.substring(0, 15)}
+            </text>
+          </g>
         );
       })}
-    </GoogleMap>
+    </svg>
   );
 }
 
@@ -705,7 +686,7 @@ export default function DeliveryManifest() {
             </div>
 
             <div className="rounded-xl overflow-hidden border border-outline-variant">
-              <RouteMapGoogle route={selected.route} />
+              <RouteMapSVG route={selected.route} />
             </div>
 
             {/* Stop list */}
