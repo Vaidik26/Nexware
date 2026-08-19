@@ -531,10 +531,10 @@ async def start_picklist(
     if pl.status != "assigned":
         raise HTTPException(status_code=400, detail=f"Cannot start picklist with status {pl.status}")
         
-    # Check for any older incomplete job (assigned, picking, waiting_verification)
+    # Check for any older incomplete job (assigned, picking only)
     older_query = await db.execute(select(PickList).join(PickAssignment).filter(
         PickAssignment.picker_id == current_user.id,
-        PickList.status.in_(["assigned", "picking", "waiting_verification"]),
+        PickList.status.in_(["assigned", "picking"]),
         PickList.id < picklist_id
     ).order_by(PickList.id.asc()))
     older_job = older_query.scalars().first()

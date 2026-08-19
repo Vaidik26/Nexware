@@ -164,9 +164,10 @@ export default function JobDetailScreen() {
           try {
             const myJobsRes = await api.get('/picklists/my');
             if (myJobsRes && myJobsRes.data && Array.isArray(myJobsRes.data)) {
-              // Look at ALL incomplete jobs: assigned, picking, waiting_verification
+              // ONLY look at jobs that are 'assigned' or 'picking'.
+              // We IGNORE 'waiting_verification', so completed jobs don't block.
               const myJobs = myJobsRes.data
-                .filter((p: any) => p.status === 'assigned' || p.status === 'picking' || p.status === 'waiting_verification')
+                .filter((p: any) => p.status === 'assigned' || p.status === 'picking')
                 .sort((a: any, b: any) => a.id - b.id);
 
               // Block if there is any older incomplete job
