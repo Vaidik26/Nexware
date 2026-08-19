@@ -83,7 +83,12 @@ export default function JobsScreen() {
 
  useEffect(() => {
   let wsUrl = api.defaults.baseURL || 'http://localhost:8000/api';
-  wsUrl = wsUrl.replace('http://', 'ws://').replace('https://', 'wss://').replace('/api', '/ws/notifications');
+  wsUrl = wsUrl.replace('http://', 'ws://').replace('https://', 'wss://');
+  if (wsUrl.endsWith('/api')) {
+   wsUrl = wsUrl.replace(/\/api$/, '/ws/notifications');
+  } else {
+   wsUrl = wsUrl.replace(/\/$/, '') + '/ws/notifications';
+  }
   
   const ws = new WebSocket(wsUrl);
   
