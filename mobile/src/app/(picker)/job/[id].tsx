@@ -143,6 +143,14 @@ export default function JobDetailScreen() {
           }));
           setItems(mappedItems);
 
+          // Initialize sealed boxes from server
+          const loadedBoxes = (res.data.boxes || []).map((b: any) => ({
+             id: b.id,
+             carton_name: b.carton_name || 'Box',
+             carton_type: b.carton_type || 'Unknown'
+          }));
+          setSealedBoxes(loadedBoxes);
+
           // Track items that are already sealed in boxes
           const boxedIds = new Set<string>();
           (res.data.boxes || []).forEach((b: any) => {
@@ -156,20 +164,22 @@ export default function JobDetailScreen() {
           try {
             const myJobsRes = await api.get('/picklists/my');
             if (myJobsRes && myJobsRes.data && Array.isArray(myJobsRes.data)) {
-              // ONLY look at jobs that are 'assigned' or 'picking'.
-              // We IGNORE 'waiting_verification', so completed jobs don't block.
+              // Look at ALL incomplete jobs: assigned, picking, waiting_verification
               const myJobs = myJobsRes.data
-                .filter((p: any) => p.status === 'assigned' || p.status === 'picking')
+                .filter((p: any) => p.status === 'assigned' || p.status === 'picking' || p.status === 'waiting_verification')
                 .sort((a: any, b: any) => a.id - b.id);
 
-              const activeJob = myJobs.find((p: any) => p.status === 'picking');
-              if (activeJob && String(activeJob.id) !== String(id)) {
-                  setBlockingJob(activeJob.order_number || `P-${activeJob.id}`);
+              // Block if there is any older incomplete job
+              const olderJob = myJobs.find((p: any) => p.id < Number(id));
+              if (olderJob) {
+                  setBlockingJob(olderJob.order_number || `P-${olderJob.id}`);
               } else {
-                  const firstAssigned = myJobs.find((p: any) => p.status === 'assigned');
-                  // If this is NOT the first assigned job, block it with the first one's name
-                  if (firstAssigned && String(firstAssigned.id) !== String(id) && firstAssigned.id < Number(id)) {
-                      setBlockingJob(firstAssigned.order_number || `P-${firstAssigned.id}`);
+                  // Even if it's not older, if there's a job currently actively picking that isn't this one
+                  const activeJob = myJobs.find((p: any) => p.status === 'picking');
+                  if (activeJob && String(activeJob.id) !== String(id)) {
+                      setBlockingJob(activeJob.order_number || `P-${activeJob.id}`);
+                  } else {
+                      setBlockingJob(null);
                   }
               }
             }
