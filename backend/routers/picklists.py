@@ -152,7 +152,8 @@ async def my_picklist_stats(
         lifetime_items += pl_picked_qty
         
         # If updated today, count towards today
-        if pl.updated_at and pl.updated_at.date() == today_date:
+        # Use created_at instead of updated_at since PickList doesn't have updated_at
+        if pl.created_at and pl.created_at.date() == today_date:
             today_items += pl_picked_qty
             
     return {
