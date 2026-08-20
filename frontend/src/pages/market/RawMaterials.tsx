@@ -18,6 +18,8 @@ const materialSchema = z.object({
   material_name: z.string().min(1, 'Item Name is required'),
   bag_carton_weight: z.number().positive('Bag/Carton weight must be greater than 0'),
   weight_unit: z.string().default('kg'),
+  category: z.string().min(1, 'Category is required'),
+  market_type: z.enum(['DXB', 'INT', 'BOTH']).default('BOTH'),
 });
 
 type MaterialForm = z.infer<typeof materialSchema>;
@@ -36,6 +38,8 @@ export default function RawMaterials() {
     defaultValues: {
       bag_carton_weight: 10,
       weight_unit: 'kg',
+      category: 'Uncategorized',
+      market_type: 'BOTH',
     }
   });
 
@@ -70,6 +74,8 @@ export default function RawMaterials() {
         material_name: data.material_name,
         bag_carton_weight: data.bag_carton_weight,
         weight_unit: data.weight_unit || 'kg',
+        category: data.category,
+        market_type: data.market_type,
       };
       const res = await api.post('/market/materials', payload);
       const created = res.data;
@@ -122,6 +128,24 @@ export default function RawMaterials() {
       header: 'Commodity Item Name', 
       accessor: (r: any) => r.material_name || r.name || '-', 
       className: 'font-semibold text-on-surface' 
+    },
+    { 
+      header: 'Category', 
+      accessor: 'category' as const, 
+      className: 'font-semibold text-slate-600 text-sm' 
+    },
+    { 
+      header: 'Market', 
+      accessor: (r: any) => (
+        <span className={`inline-flex items-center gap-1 font-mono text-xs font-bold px-2 py-0.5 rounded ${
+          r.market_type === 'DXB' ? 'bg-orange-100 text-orange-700' : 
+          r.market_type === 'INT' ? 'bg-emerald-100 text-emerald-700' : 
+          'bg-blue-100 text-blue-700'
+        }`}>
+          {r.market_type || 'BOTH'}
+        </span>
+      ), 
+      className: 'w-24 text-center' 
     },
     { 
       header: 'Bag / Ctn Weight', 
@@ -217,6 +241,27 @@ export default function RawMaterials() {
             error={errors.material_name?.message} 
           />
           
+<Input 
+            label="Category" 
+            placeholder="e.g. Spices & Seasonings" 
+            {...register('category')} 
+            error={errors.category?.message} 
+          />
+
+          <div>
+            <label className="text-sm font-medium text-on-surface-variant mb-1.5 block">
+              Market Type
+            </label>
+            <select
+              {...register('market_type')}
+              className="w-full px-3 py-2.5 bg-surface rounded-xl border border-outline-variant font-medium text-sm focus:outline-none focus:border-primary text-on-surface"
+            >
+              <option value="BOTH">Both (Dubai & International)</option>
+              <option value="DXB">Dubai Only</option>
+              <option value="INT">International Only</option>
+            </select>
+          </div>
+
           <div>
             <label className="text-sm font-medium text-on-surface-variant mb-1.5 block">
               Standard Bag / Carton Weight & Unit

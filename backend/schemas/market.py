@@ -7,6 +7,8 @@ class RawMaterialBase(BaseModel):
     material_name: str
     bag_carton_weight: float
     weight_unit: Optional[str] = "kg"
+    category: str = "Uncategorized"
+    market_type: str = "BOTH"
 
 class RawMaterialCreate(RawMaterialBase):
     pass
@@ -18,29 +20,18 @@ class RawMaterialOut(RawMaterialBase):
     id: int
     model_config = ConfigDict(from_attributes=True)
 
-class DubaiPriceBase(BaseModel):
+class CapturedPriceBase(BaseModel):
     material_id: int
     date: date
-    local_market_price: float
+    currency: str
+    local_price: Optional[float] = None
+    fob_price: Optional[float] = None
+    cif_price: Optional[float] = None
 
-class DubaiPriceCreate(DubaiPriceBase):
+class CapturedPriceCreate(CapturedPriceBase):
     pass
 
-class DubaiPriceOut(DubaiPriceBase):
-    id: int
-    created_at: Optional[datetime] = None
-    model_config = ConfigDict(from_attributes=True)
-
-class InternationalPriceBase(BaseModel):
-    material_id: int
-    date: date
-    fob_price: float
-    cif_price: float
-
-class InternationalPriceCreate(InternationalPriceBase):
-    pass
-
-class InternationalPriceOut(InternationalPriceBase):
+class CapturedPriceOut(CapturedPriceBase):
     id: int
     created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
