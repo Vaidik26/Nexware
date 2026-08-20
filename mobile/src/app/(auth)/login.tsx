@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StatusBar } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StatusBar, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { api } from '../../lib/api';
 import { setToken, setPickerInfo } from '../../lib/session';
@@ -7,6 +7,9 @@ import { useAuthStore } from '../../store/authStore';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Lock, User, ArrowRight, ShieldCheck, Box, Bell, Eye, EyeOff } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
+
+const { height: SCREEN_H } = Dimensions.get('window');
+const isSmall = SCREEN_H < 700; // Xiaomi and compact phones
 
 export default function LoginScreen() {
  const [email, setEmail] = useState('');
@@ -60,12 +63,16 @@ export default function LoginScreen() {
   <SafeAreaView className="flex-1 bg-[#000806]">
    <StatusBar barStyle="light-content" backgroundColor="#000806" />
    <KeyboardAvoidingView
-    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     className="flex-1"
    >
-    <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: 32 }} className="px-6">
-     {/* Header & Brand Identity (Matching Admin Luxury Theme) */}
-     <View className="pt-10 pb-6 items-center">
+    <ScrollView
+     contentContainerStyle={{ paddingHorizontal: 24, paddingTop: isSmall ? 16 : 32, paddingBottom: 32 }}
+     keyboardShouldPersistTaps="handled"
+     showsVerticalScrollIndicator={false}
+    >
+     {/* Header & Brand Identity */}
+     <View style={{ paddingBottom: isSmall ? 12 : 24, alignItems: 'center' }}>
       <View className="flex-row items-center justify-center mb-4">
        <View className="shadow-lg mr-3">
         <Svg width="56" height="56" viewBox="0 0 40 40" fill="none">
@@ -90,30 +97,32 @@ export default function LoginScreen() {
       </Text>
      </View>
 
-     {/* Feature Highlight Pills (Inspired by Admin Showcase) */}
-     <View className="flex-row justify-between mb-8 px-1">
-      <View className="flex-1 bg-[#001712] border border-emerald-500/20 rounded-2xl p-3 mr-2 items-center shadow-sm">
-       <Box color="#34d399" size={20} className="mb-1" />
-       <Text className="text-[11px] font-bold text-slate-200 ">Smart Paths</Text>
-       <Text className="text-[9px] text-slate-400 text-center mt-0.5">Optimized routing</Text>
-      </View>
+      {/* Feature Highlight Pills — hidden on very small screens to save vertical space */}
+     {!isSmall && (
+      <View className="flex-row justify-between mb-8 px-1">
+       <View className="flex-1 bg-[#001712] border border-emerald-500/20 rounded-2xl p-3 mr-2 items-center shadow-sm">
+        <Box color="#34d399" size={20} className="mb-1" />
+        <Text className="text-[11px] font-bold text-slate-200 ">Smart Paths</Text>
+        <Text className="text-[9px] text-slate-400 text-center mt-0.5">Optimized routing</Text>
+       </View>
 
-      <View className="flex-1 bg-[#001712] border border-emerald-500/20 rounded-2xl p-3 mx-1 items-center shadow-sm">
-       <Bell color="#10b981" size={20} className="mb-1" />
-       <Text className="text-[11px] font-bold text-slate-200 ">Live Bells</Text>
-       <Text className="text-[9px] text-slate-400 text-center mt-0.5">Instant alarm feed</Text>
-      </View>
+       <View className="flex-1 bg-[#001712] border border-emerald-500/20 rounded-2xl p-3 mx-1 items-center shadow-sm">
+        <Bell color="#10b981" size={20} className="mb-1" />
+        <Text className="text-[11px] font-bold text-slate-200 ">Live Bells</Text>
+        <Text className="text-[9px] text-slate-400 text-center mt-0.5">Instant alarm feed</Text>
+       </View>
 
-      <View className="flex-1 bg-[#001712] border border-emerald-500/20 rounded-2xl p-3 ml-2 items-center shadow-sm">
-       <ShieldCheck color="#6ee7b7" size={20} className="mb-1" />
-       <Text className="text-[11px] font-bold text-slate-200 ">Touch Tick</Text>
-       <Text className="text-[9px] text-slate-400 text-center mt-0.5">Zero scan variance</Text>
+       <View className="flex-1 bg-[#001712] border border-emerald-500/20 rounded-2xl p-3 ml-2 items-center shadow-sm">
+        <ShieldCheck color="#6ee7b7" size={20} className="mb-1" />
+        <Text className="text-[11px] font-bold text-slate-200 ">Touch Tick</Text>
+        <Text className="text-[9px] text-slate-400 text-center mt-0.5">Zero scan variance</Text>
+       </View>
       </View>
-     </View>
+     )}
 
-     {/* Sexy Glassmorphic Login Card */}
-     <View className="bg-[#001712]/95 border border-emerald-500/30 rounded-[28px] p-7 shadow-2xl">
-      <View className="mb-6">
+     {/* Login Card */}
+     <View style={{ backgroundColor: 'rgba(0,23,18,0.95)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.3)', borderRadius: 28, padding: isSmall ? 20 : 28, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 20, elevation: 8 }}>
+      <View style={{ marginBottom: isSmall ? 16 : 24 }}>
        <Text className="text-2xl font-extrabold text-white tracking-tight ">
         Welcome back
        </Text>

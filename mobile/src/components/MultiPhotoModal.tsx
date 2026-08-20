@@ -32,25 +32,37 @@ export default function MultiPhotoModal({ visible, onClose, onConfirm }: {
   if (!visible) return null;
 
   const openCamera = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permission Required", "Camera permission is needed to attach LPO photos.");
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85,
-      allowsEditing: false,
-      exif: false,
-    });
-    if (!result.canceled && result.assets?.length > 0) {
-      const src = result.assets[0].uri;
-      // Copy to stable private cache (not gallery)
-      const dir = `${FileSystem.cacheDirectory}lpo-photos/`;
-      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-      const dest = `${dir}photo_${Date.now()}.jpg`;
-      await FileSystem.copyAsync({ from: src, to: dest });
-      setPhotos(prev => [...prev, dest]);
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Required", "Camera permission is needed to attach LPO photos.");
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.85,
+        allowsEditing: false,
+        exif: false,
+      });
+      if (!result.canceled && result.assets?.length > 0) {
+        const src = result.assets[0].uri;
+        // Try to copy to stable private cache. Fall back to original URI if it fails.
+        let finalUri = src;
+        try {
+          const dir = `${FileSystem.cacheDirectory}lpo-photos/`;
+          await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+          const dest = `${dir}photo_${Date.now()}.jpg`;
+          await FileSystem.copyAsync({ from: src, to: dest });
+          finalUri = dest;
+        } catch (copyErr) {
+          console.warn("Could not copy to cache, using original URI:", copyErr);
+          // finalUri remains = src (original), which is still valid for this session
+        }
+        setPhotos(prev => [...prev, finalUri]);
+      }
+    } catch (err) {
+      console.error("Camera error:", err);
+      Alert.alert("Camera Error", "Could not open camera. Please try again.");
     }
   };
 

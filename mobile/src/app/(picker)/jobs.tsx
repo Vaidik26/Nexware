@@ -132,7 +132,7 @@ export default function JobsScreen() {
 
 
  return (
-  <SafeAreaView className="flex-1 bg-background" edges={['top']}>
+  <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
    {/* Brand Header matching Admin Style */}
    <View className="flex-row items-center justify-between px-4 py-3 bg-white border-b border-gray-100 shadow-sm">
     <View className="flex-row items-center">

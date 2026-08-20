@@ -32,7 +32,7 @@ export default function ProfileScreen() {
  const emailAddr = picker?.email || 'picker@nexware.com';
 
  return (
-  <SafeAreaView className="flex-1 bg-background" edges={['top']}>
+  <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
    {/* Brand Header */}
    <View className="px-4 py-3.5 bg-white mb-4 border-b border-gray-100 shadow-sm flex-row items-center justify-between">
     <View className="flex-row items-center">

@@ -103,7 +103,7 @@ export default function LpoCreateScreen() {
 
  const [quantityModalVisible, setQuantityModalVisible] = useState(false);
  const [selectedItemForQuantity, setSelectedItemForQuantity] = useState<CatalogueItem | null>(null);
- const [tempQuantity, setTempQuantity] = useState('1');
+ const [tempQuantity, setTempQuantity] = useState('');
 
  // Debounce search input
  useEffect(() => {
@@ -165,7 +165,7 @@ export default function LpoCreateScreen() {
   }
   
   setSelectedItemForQuantity(item);
-  setTempQuantity('1');
+  setTempQuantity('');
   setQuantityModalVisible(true);
  };
 

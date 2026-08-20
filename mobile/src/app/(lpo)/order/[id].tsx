@@ -318,7 +318,9 @@ export default function LpoOrderDetailsScreen() {
     <div class="footer">* Please verify all items before dispatch *</div>
    </body></html>`;
 
+   // Generate PDF to file first (safer than direct print on all Android versions)
    const { uri } = await Print.printToFileAsync({ html: htmlContent, base64: false });
+
    if (await Sharing.isAvailableAsync()) {
     await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
    } else {
@@ -326,7 +328,14 @@ export default function LpoOrderDetailsScreen() {
    }
   } catch (err: any) {
    console.error(err);
-   if (err.message && err.message.includes('Another share request')) return;
+   // Silently ignore sharing-cancelled errors — these are user actions, not crashes
+   const msg: string = err?.message || '';
+   if (
+    msg.includes('Another share request') ||
+    msg.includes('cancelled') ||
+    msg.includes('canceled') ||
+    msg.includes('dismissed')
+   ) return;
    Alert.alert('Error', 'Failed to generate LPO PDF.');
   } finally {
    setIsSharing(false);
@@ -399,11 +408,6 @@ export default function LpoOrderDetailsScreen() {
      <TouchableOpacity onPress={toggleEditMode} className="p-2 bg-blue-50 rounded-xl border border-blue-200 flex-row items-center">
       <Edit2 size={16} color="#2563eb" />
       <Text className="ml-1 text-blue-700 font-bold text-sm">Edit</Text>
-     </TouchableOpacity>
-    )}
-    {isEditable && isEditing && (
-     <TouchableOpacity onPress={toggleEditMode} className="p-2 bg-gray-50 rounded-xl border border-gray-200 flex-row items-center">
-      <Text className="text-gray-600 font-bold text-sm">Cancel</Text>
      </TouchableOpacity>
     )}
    </View>
@@ -488,7 +492,7 @@ export default function LpoOrderDetailsScreen() {
             {isSharing ? <ActivityIndicator color="#374151" /> : (
              <>
               <Download size={18} color="#374151" />
-              <Text className="text-gray-700 font-black text-base ml-2">🖨️ Print and Save</Text>
+              <Text className="text-gray-700 font-black text-base ml-2">🖨️ Save & Print</Text>
              </>
             )}
            </TouchableOpacity>

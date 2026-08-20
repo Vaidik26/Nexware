@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Modal, ActivityIndicator, TextInput, Alert, Share, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, CheckCircle, CheckCircle2, Box, Scan, AlertCircle, Package, Plus, ChevronRight } from 'lucide-react-native';
 import PickItemRow from '../../../components/PickItemRow';
 import { playTickSound } from '../../../lib/alertSound';
@@ -49,6 +49,7 @@ interface ActiveBox {
 export default function JobDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   // ── Data state ──
   const [items, setItems] = useState<PickItem[]>([]);
@@ -104,7 +105,10 @@ export default function JobDetailScreen() {
 
   const handleShareQR = async () => {
     try {
-      if (!qrViewRef.current) return;
+      if (!qrViewRef.current) {
+        Alert.alert('Error', 'QR label is not ready yet. Please wait a moment and try again.');
+        return;
+      }
       const uri = await captureRef(qrViewRef, {
         format: 'png',
         quality: 1,
@@ -113,11 +117,14 @@ export default function JobDetailScreen() {
         dialogTitle: 'Save or Print Box Label',
         mimeType: 'image/png',
       });
-      // Optionally auto-close the modal after sharing
-      setShowQRModal(false);
-    } catch (err) {
-      console.log('Error sharing QR:', err);
-      Alert.alert('Error', 'Failed to generate label image.');
+      // Do NOT close the modal here — let the user press "Done — Continue Picking"
+      // The modal must stay visible until the user explicitly dismisses it
+    } catch (err: any) {
+      const msg: string = err?.message || '';
+      // Silently ignore if user cancelled the share sheet
+      if (msg.includes('cancelled') || msg.includes('canceled') || msg.includes('dismissed')) return;
+      console.error('Error sharing QR:', err);
+      Alert.alert('Error', 'Failed to generate label image. Please try again.');
     }
   };
 
@@ -231,6 +238,15 @@ export default function JobDetailScreen() {
         setIsDraftLoaded(true);
       }
     };
+
+    // ── Reset all stale state from previous job immediately when id changes ──
+    setActiveBox(null);
+    setSealedBoxes([]);
+    setSealedItemIds(new Set());
+    setIsDraftLoaded(false);
+    setBlockingJob(null);
+    setItems([]);
+    setPicklistInfo({});
 
     fetchPicklistDetails();
     fetchCartonTypes();
@@ -515,8 +531,7 @@ export default function JobDetailScreen() {
       playTickSound();
 
       setQtyTargetItem(scanTargetItem);
-      const remaining = Math.max(0, scanTargetItem.qty - scanTargetItem.picked_qty);
-      setQtyInput(String(remaining || 1)); // default to remaining qty, or 1 if somehow 0
+      setQtyInput(''); // empty so user types their own value — no need to clear first
       setQtyModalVisible(true);
     } else {
       Alert.alert('Scan Failed', 'The scanned barcode does not match this item.', [
@@ -691,7 +706,7 @@ export default function JobDetailScreen() {
         <FlatList
           data={items}
           keyExtractor={item => item.id}
-          contentContainerStyle={{ padding: 16, paddingBottom: 110 }}
+          contentContainerStyle={{ padding: 16, paddingBottom: 110 + insets.bottom }}
           renderItem={({ item }) => (
             <PickItemRow
               item={item}
@@ -715,7 +730,10 @@ export default function JobDetailScreen() {
       )}
 
       {/* ── Bottom Bar ── */}
-      <View className="absolute bottom-0 left-0 right-0 bg-white p-4 border-t border-gray-200 shadow-lg flex-row items-center justify-between">
+      <View 
+        className="absolute bottom-0 left-0 right-0 bg-white p-4 border-t border-gray-200 shadow-lg flex-row items-center justify-between"
+        style={{ paddingBottom: Math.max(16, insets.bottom) }}
+      >
         <View>
           <Text className="text-sm text-gray-500">Progress</Text>
           <Text className="text-lg font-bold text-onSurface">{pickedCount} / {items.length} Picked</Text>
@@ -776,7 +794,8 @@ export default function JobDetailScreen() {
                 : 'Grab a physical box and select its type below to begin packing loose items.'}
             </Text>
 
-            <View className="gap-3 mb-6">
+            <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={false}>
+              <View className="gap-3 mb-2">
               {cartonTypes.map(ct => (
                 <TouchableOpacity
                   key={ct.id}
@@ -800,7 +819,8 @@ export default function JobDetailScreen() {
                   <ChevronRight size={20} color={activeBox?.carton_type_id === ct.id ? '#006c49' : '#9ca3af'} />
                 </TouchableOpacity>
               ))}
-            </View>
+              </View>
+            </ScrollView>
 
             <TouchableOpacity
               className="py-3 rounded-xl items-center"
@@ -982,51 +1002,56 @@ export default function JobDetailScreen() {
           MODAL: QR Code after box sealed
       ════════════════════════════════════════════════════════════════ */}
       <Modal visible={showQRModal} transparent animationType="fade">
-        <View className="flex-1 bg-black/60 items-center justify-center px-6">
-          <View className="bg-white rounded-3xl p-8 w-full shadow-2xl items-center border border-gray-100">
-            <View className="text-center mb-6">
-              <Text className="text-xl font-extrabold text-onSurface text-center">✅ Box Sealed</Text>
-              <Text className="text-sm text-gray-500 text-center">Label physically printed at packing station.</Text>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16 }}>
+          <ScrollView
+            style={{ width: '100%' }}
+            contentContainerStyle={{ alignItems: 'center', paddingVertical: 24 }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+          <View style={{ backgroundColor: 'white', borderRadius: 24, padding: 20, width: '100%', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 20, elevation: 10, borderWidth: 1, borderColor: '#f3f4f6' }}>
+            <View style={{ marginBottom: 16, alignItems: 'center' }}>
+              <Text style={{ fontSize: 18, fontWeight: '900', color: '#111827', textAlign: 'center' }}>✅ Box Sealed</Text>
+              <Text style={{ fontSize: 13, color: '#6b7280', textAlign: 'center', marginTop: 2 }}>Label physically printed at packing station.</Text>
             </View>
 
-            {/* This view will be captured as an image in A4 Proportions */}
-            <View 
-              ref={qrViewRef} 
-              collapsable={false} 
-              className="bg-white px-6 py-10 items-center justify-between border-4 border-gray-100 w-[100%]"
-              style={{ aspectRatio: 1 / 1.414 }}
+            {/* QR capture view — fixed width, auto height, no aspectRatio that breaks small screens */}
+            <View
+              ref={qrViewRef}
+              collapsable={false}
+              style={{ backgroundColor: 'white', paddingHorizontal: 20, paddingVertical: 24, alignItems: 'center', borderWidth: 3, borderColor: '#f3f4f6', width: '100%', borderRadius: 8 }}
             >
               {generatedQRData && (
                 <>
-                  <View className="w-full items-center mb-8">
-                    <Text className="font-black text-3xl text-gray-900 text-center mb-2 leading-tight uppercase tracking-tight">
+                  <View style={{ width: '100%', alignItems: 'center', marginBottom: 20 }}>
+                    <Text style={{ fontWeight: '900', fontSize: 22, color: '#111827', textAlign: 'center', textTransform: 'uppercase' }}>
                       {JSON.parse(generatedQRData).customer}
                     </Text>
-                    <Text className="font-bold text-gray-500 text-lg uppercase tracking-widest">
+                    <Text style={{ fontWeight: '700', color: '#6b7280', fontSize: 14, textTransform: 'uppercase', letterSpacing: 2, marginTop: 4 }}>
                       {JSON.parse(generatedQRData).lpo_no}
                     </Text>
-                    <Text className="font-bold text-gray-700 text-xl mt-2 bg-gray-100 px-4 py-1 rounded-full">
-                      {JSON.parse(generatedQRData).carton}
-                    </Text>
-                  </View>
-                  
-                  <View className="flex-1 justify-center">
-                    <QRCode
-                      value={generatedQRData}
-                      size={240}
-                      color="black"
-                      backgroundColor="white"
-                    />
+                    <View style={{ backgroundColor: '#f3f4f6', paddingHorizontal: 16, paddingVertical: 4, borderRadius: 999, marginTop: 8 }}>
+                      <Text style={{ fontWeight: '700', color: '#374151', fontSize: 15 }}>
+                        {JSON.parse(generatedQRData).carton}
+                      </Text>
+                    </View>
                   </View>
 
-                  <View className="flex-row items-center justify-between w-full mt-8 pt-6 border-t-2 border-gray-100 px-2">
-                    <View className="items-center">
-                      <Text className="text-gray-400 text-xs font-bold uppercase tracking-widest">Total Items</Text>
-                      <Text className="text-gray-800 text-2xl font-black">{JSON.parse(generatedQRData).total_qty}</Text>
+                  <QRCode
+                    value={generatedQRData}
+                    size={200}
+                    color="black"
+                    backgroundColor="white"
+                  />
+
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginTop: 20, paddingTop: 16, borderTopWidth: 2, borderTopColor: '#f3f4f6', paddingHorizontal: 8 }}>
+                    <View style={{ alignItems: 'center' }}>
+                      <Text style={{ color: '#9ca3af', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>Total Items</Text>
+                      <Text style={{ color: '#1f2937', fontSize: 22, fontWeight: '900' }}>{JSON.parse(generatedQRData).total_qty}</Text>
                     </View>
-                    <View className="items-center">
-                      <Text className="text-gray-400 text-xs font-bold uppercase tracking-widest">Gross Weight</Text>
-                      <Text className="text-gray-800 text-2xl font-black">{JSON.parse(generatedQRData).weight}</Text>
+                    <View style={{ alignItems: 'center' }}>
+                      <Text style={{ color: '#9ca3af', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>Gross Weight</Text>
+                      <Text style={{ color: '#1f2937', fontSize: 22, fontWeight: '900' }}>{JSON.parse(generatedQRData).weight}</Text>
                     </View>
                   </View>
                 </>
@@ -1034,26 +1059,26 @@ export default function JobDetailScreen() {
             </View>
 
             <TouchableOpacity
-              className="bg-[#003527] w-full py-4 rounded-xl border border-[#006c49] items-center mb-3 flex-row justify-center"
+              style={{ backgroundColor: '#003527', width: '100%', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 16, flexDirection: 'row', justifyContent: 'center' }}
               onPress={handleShareQR}
             >
-              <Text className="text-white font-extrabold text-base">Download / Share QR Prototype</Text>
+              <Text style={{ color: 'white', fontWeight: '800', fontSize: 15 }}>Download / Share QR</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              className="bg-[#003527] w-full py-4 rounded-2xl items-center flex-row justify-center"
+              style={{ width: '100%', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 10, flexDirection: 'row', justifyContent: 'center', backgroundColor: '#003527' }}
               onPress={() => {
                 setShowQRModal(false);
-                // If all loose items are now boxed and all items picked, prompt to complete
                 if (isComplete) {
                   setShowConfirm(true);
                 }
               }}
             >
               <CheckCircle size={18} color="white" />
-              <Text className="text-white font-bold text-base ml-2">Done — Continue Picking</Text>
+              <Text style={{ color: 'white', fontWeight: '700', fontSize: 15, marginLeft: 8 }}>Done — Continue Picking</Text>
             </TouchableOpacity>
           </View>
+          </ScrollView>
         </View>
       </Modal>
 
