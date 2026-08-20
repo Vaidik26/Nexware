@@ -2,21 +2,21 @@ import { useState, useEffect, useMemo } from 'react';
 import { 
   Search, 
   Calendar, 
-  Download, 
+   
   Plus, 
   Edit2, 
-  AlertTriangle,
-  Filter,
-  FileSpreadsheet,
-  FileText,
-  CheckCircle2
+  
+  
+  
+  
+  
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { PageLoader } from '@/components/ui/PageLoader';
-import { getLatestPrices, saveDailyRates, buildBrandedExportPayload, LatestPriceSummary } from '@/lib/data/priceService';
-import api from '@/lib/api';
+import { getLatestPrices, saveDailyRates,  LatestPriceSummary } from '@/lib/data/priceService';
+
 
 export default function PriceManagement() {
   const todayStr = new Date().toISOString().split('T')[0];
@@ -40,15 +40,11 @@ export default function PriceManagement() {
   const [fobInput, setFobInput] = useState('');
 
   // Export Modal State
-  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [exportFilter, setExportFilter] = useState<'today' | 'yesterday' | '3days' | 'week' | 'month' | 'custom'>('month');
-  const [customStart, setCustomStart] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    return d.toISOString().split('T')[0];
-  });
-  const [customEnd, setCustomEnd] = useState(todayStr);
-  const [isExporting, setIsExporting] = useState(false);
+  
+  
+  
+  
+  
 
   const loadData = async () => {
     setIsLoading(true);
@@ -146,13 +142,7 @@ export default function PriceManagement() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Button 
-            variant="primary" 
-            onClick={() => setIsExportModalOpen(true)}
-            className="shadow-md bg-secondary hover:bg-secondary/90 text-white font-medium px-5"
-          >
-            <Download className="w-4 h-4 mr-2" /> Export Market Reports
-          </Button>
+          
         </div>
       </div>
 
@@ -242,7 +232,7 @@ export default function PriceManagement() {
                   const tp = summary.target_price;
                   const last_p = tp || summary.last_price;
 
-                  let priceStr = '—';
+                  let priceStr = 'ï¿½';
                   if (last_p) {
                     const parts = [];
                     if (last_p.local_price != null) parts.push(`LOC: ${last_p.local_price}`);
@@ -274,7 +264,7 @@ export default function PriceManagement() {
                         {priceStr}
                       </td>
                       <td className="py-3.5 px-4 border-r border-outline-variant text-center font-mono text-xs text-slate-500">
-                        {last_p?.date || '—'}
+                        {last_p?.date || 'ï¿½'}
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <Button 
@@ -302,7 +292,7 @@ export default function PriceManagement() {
       <Modal 
         isOpen={!!activeItem} 
         onClose={() => setActiveItem(null)} 
-        title={activeItem ? `Enter Daily Market Rates — ${activeItem.item.particulars}` : 'Enter Daily Market Rates'}
+        title={activeItem ? `Enter Daily Market Rates ï¿½ ${activeItem.item.particulars}` : 'Enter Daily Market Rates'}
       >
         <form onSubmit={handleSaveModal} className="space-y-4">
           <div className="flex justify-center gap-2 mb-4">

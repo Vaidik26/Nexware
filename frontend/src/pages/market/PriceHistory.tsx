@@ -64,7 +64,7 @@ export default function PriceHistory() {
       const combined = (await Promise.all(perItemPromises)).flat().filter(Boolean);
       
       // Sort ascending chronologically
-      const sorted = combined.sort((a, b) => new Date(b?.date || 0).getTime() - new Date(a?.date || 0).getTime());
+      const sorted = combined.sort((a: any, b: any) => new Date(b?.date || 0).getTime() - new Date(a?.date || 0).getTime());
       setAllRecords(sorted);
     } catch (err) {
       toast.error('Failed to retrieve historical pricing repository');

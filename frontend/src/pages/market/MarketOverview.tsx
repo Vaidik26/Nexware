@@ -14,9 +14,9 @@ import { toast } from '@/components/ui/Toast';
 import { PageLoader } from '@/components/ui/PageLoader';
 import {
   getLatestPrices,
-  getPriceHistory,
+  
   LatestPriceSummary,
-  PriceRecord
+  CapturedPrice
 } from '@/lib/data/priceService';
 import {
   ResponsiveContainer,
@@ -42,7 +42,7 @@ export default function MarketOverview() {
   // Admin Analytics Panel State
   const [analyticsItem, setAnalyticsItem] = useState<LatestPriceSummary | null>(null);
   const [analyticsRange, setAnalyticsRange] = useState<'14d' | '30d' | '60d' | '90d'>('30d');
-  const [analyticsHistory, setAnalyticsHistory] = useState<PriceRecord[]>([]);
+  const [analyticsHistory, setAnalyticsHistory] = useState<CapturedPrice[]>([]);
   const [itemSearch, setItemSearch] = useState('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -91,42 +91,55 @@ export default function MarketOverview() {
       return;
     }
     const fetchAnHist = async () => {
-      const hist = await getPriceHistory(analyticsItem.item.id, analyticsRange);
-      setAnalyticsHistory(hist);
+      
+      try {
+        const { default: api } = await import('@/lib/api');
+        const res = await api.get(`/market/prices?material_id=${analyticsItem.item.id}`);
+        setAnalyticsHistory(res.data || []);
+      } catch (e) {
+        setAnalyticsHistory([]);
+      }
     };
     fetchAnHist();
   }, [analyticsItem, analyticsRange]);
 
   // Top 10 Daily Movers (Market Momentum Index)
   const topMoversData = useMemo(() => {
-    const validMovers: {
-      summary: LatestPriceSummary;
-      name: string;
-      pctChange: number;
-      priceType: string;
-      todayPrice: number | null;
-      yesterdayPrice: number | null;
-    }[] = [];
+    const validMovers: any[] = [];
 
     summaries.forEach(s => {
-      // Exclude items with no recorded price yesterday / no valid % change
-      if (s.dayOverDayLocalChange != null && s.item.hasLocal) {
+      let dodLocal: number | null = null;
+      let dodInt: number | null = null;
+      
+      const tp = s.target_price;
+      const lp = s.last_price;
+      
+      if (tp && lp) {
+        if (tp.local_price != null && lp.local_price != null && lp.local_price > 0) {
+          dodLocal = Number(((tp.local_price - lp.local_price) / lp.local_price * 100).toFixed(2));
+        }
+        if (tp.cif_price != null && lp.cif_price != null && lp.cif_price > 0) {
+          dodInt = Number(((tp.cif_price - lp.cif_price) / lp.cif_price * 100).toFixed(2));
+        }
+      }
+      
+      if (dodLocal != null && (s.item.market_type === 'DXB' || s.item.market_type === 'BOTH')) {
         validMovers.push({
           summary: s,
           name: `[${s.item.sku || s.item.id}] ${s.item.particulars} (Local)`,
-          pctChange: s.dayOverDayLocalChange,
-          priceType: 'Local (AED)',
-          todayPrice: s.todayRecord?.dubaiLocalPrice ?? s.lastRecordedLocal.value ?? null,
-          yesterdayPrice: s.priorLocalPrice ?? null,
+          pctChange: dodLocal,
+          priceType: `Local (${tp?.currency || 'AED'})`,
+          todayPrice: tp?.local_price,
+          yesterdayPrice: lp?.local_price,
         });
-      } else if (s.dayOverDayIntChange != null && s.item.hasInternational) {
+      } else if (dodInt != null && (s.item.market_type === 'INT' || s.item.market_type === 'BOTH')) {
         validMovers.push({
           summary: s,
           name: `[${s.item.sku || s.item.id}] ${s.item.particulars} (CIF)`,
-          pctChange: s.dayOverDayIntChange,
-          priceType: 'Intl CIF ($)',
-          todayPrice: s.todayRecord?.internationalCIF ?? s.lastRecordedInt.cif ?? null,
-          yesterdayPrice: s.priorIntCifPrice ?? null,
+          pctChange: dodInt,
+          priceType: `Intl CIF (${tp?.currency || 'USD'})`,
+          todayPrice: tp?.cif_price,
+          yesterdayPrice: lp?.cif_price,
         });
       }
     });
@@ -145,9 +158,9 @@ export default function MarketOverview() {
       return analyticsHistory.map(r => ({
         date: r.date.slice(5), // MM-DD
         fullDate: r.date,
-        local: r.dubaiLocalPrice ?? 0,
-        cif: r.internationalCIF ?? 0,
-        fob: r.internationalFOB ?? 0,
+        local: r.local_price ?? 0,
+        cif: r.cif_price ?? 0,
+        fob: r.fob_price ?? 0,
       }));
     }
 
@@ -160,9 +173,9 @@ export default function MarketOverview() {
       if (!weeklyBuckets[weekKey]) {
         weeklyBuckets[weekKey] = { date: `W${weekNum} (${r.date.slice(5, 10)})`, local: [], cif: [], fob: [] };
       }
-      if (r.dubaiLocalPrice != null) weeklyBuckets[weekKey].local.push(r.dubaiLocalPrice);
-      if (r.internationalCIF != null) weeklyBuckets[weekKey].cif.push(r.internationalCIF);
-      if (r.internationalFOB != null) weeklyBuckets[weekKey].fob.push(r.internationalFOB);
+      if (r.local_price != null) weeklyBuckets[weekKey].local.push(r.local_price);
+      if (r.cif_price != null) weeklyBuckets[weekKey].cif.push(r.cif_price);
+      if (r.fob_price != null) weeklyBuckets[weekKey].fob.push(r.fob_price);
     });
 
     return Object.values(weeklyBuckets).map(b => ({
@@ -177,10 +190,10 @@ export default function MarketOverview() {
   // Chart 2: Import Advantage (Local Dubai vs CIF import gap %)
   const chart2Data = useMemo(() => {
     return analyticsHistory
-      .filter(r => r.dubaiLocalPrice != null && r.internationalCIF != null && r.internationalCIF > 0)
+      .filter(r => r.local_price != null && r.cif_price != null && r.cif_price > 0)
       .map(r => {
-        const dubaiPrice = r.dubaiLocalPrice!;
-        const cifPrice = r.internationalCIF!;
+        const dubaiPrice = r.local_price!;
+        const cifPrice = r.cif_price!;
         const diffAmt = Number((dubaiPrice - cifPrice).toFixed(2));
         const spreadPct = Number(((diffAmt / cifPrice) * 100).toFixed(1));
         return {
@@ -197,13 +210,13 @@ export default function MarketOverview() {
   // Chart 3: Estimated Shipping & Insurance Cost ($ USD, CIF minus FOB)
   const chart3Data = useMemo(() => {
     return analyticsHistory
-      .filter(r => r.internationalCIF != null && r.internationalFOB != null)
+      .filter(r => r.cif_price != null && r.fob_price != null)
       .map(r => ({
         date: r.date.slice(5),
         fullDate: r.date,
-        cifPrice: r.internationalCIF!,
-        fobPrice: r.internationalFOB!,
-        freightCost: Number((r.internationalCIF! - r.internationalFOB!).toFixed(2))
+        cifPrice: r.cif_price!,
+        fobPrice: r.fob_price!,
+        freightCost: Number((r.cif_price! - r.fob_price!).toFixed(2))
       }));
   }, [analyticsHistory]);
 

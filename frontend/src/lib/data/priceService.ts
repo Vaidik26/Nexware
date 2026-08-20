@@ -72,6 +72,49 @@ export async function saveDailyRates(newRecords: any[]): Promise<void> {
 }
 
 export async function buildBrandedExportPayload(startDate: string, endDate: string, scopeLabel: string) {
-  // Mock for now to prevent compilation errors
+  console.log(startDate, endDate);
   return { scope: scopeLabel, dates: [] };
+}
+
+export interface PriceRecord {
+  id: string;
+  itemId: string;
+  date: string;
+  dubaiLocalPrice: number | null;
+  internationalFOB: number | null;
+  internationalCIF: number | null;
+}
+
+export async function getPriceHistory(itemId: string, _range: string /* unused */): Promise<PriceRecord[]> {
+  try {
+    const res = await api.get(`/market/prices?material_id=${itemId}`);
+    return (res.data || []).map((r: any) => ({
+      id: String(r.id),
+      itemId: String(r.material_id),
+      date: r.date,
+      dubaiLocalPrice: r.local_price,
+      internationalFOB: r.fob_price,
+      internationalCIF: r.cif_price,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function getItems(): Promise<Item[]> {
+  try {
+    const res = await api.get('/market/materials');
+    return (res.data || []).map((m: any, idx: number) => ({
+      id: String(m.id),
+      sku: m.material_code,
+      slNo: idx + 1,
+      particulars: m.material_name,
+      bagCtnWeight: m.bag_carton_weight,
+      weightUnit: m.weight_unit,
+      category: m.category,
+      market_type: m.market_type
+    }));
+  } catch {
+    return [];
+  }
 }
