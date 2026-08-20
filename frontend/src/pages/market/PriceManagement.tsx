@@ -15,7 +15,8 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { PageLoader } from '@/components/ui/PageLoader';
-import { getLatestPrices, saveDailyRates,  LatestPriceSummary } from '@/lib/data/priceService';
+import { getLatestPrices, saveDailyRates, LatestPriceSummary } from '@/lib/data/priceService';
+import { convertCurrency } from '@/lib/currency';
 
 
 export default function PriceManagement() {
@@ -31,6 +32,7 @@ export default function PriceManagement() {
   const [marketFilter, setMarketFilter] = useState('ALL');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [quoteStatusFilter, setQuoteStatusFilter] = useState('ALL'); // NEW FILTER
+  const [currencyView, setCurrencyView] = useState('DEFAULT');
 
   // Modal State for Entering / Editing Rates
   const [activeItem, setActiveItem] = useState<LatestPriceSummary | null>(null);
@@ -177,15 +179,25 @@ export default function PriceManagement() {
             >
               {categories.map(c => <option key={c} value={c}>{c === 'ALL' ? 'All Categories' : c}</option>)}
             </select>
-            <select
-              value={quoteStatusFilter}
-              onChange={(e) => setQuoteStatusFilter(e.target.value)}
-              className="bg-surface px-3 py-2 rounded-xl border border-outline-variant text-sm focus:outline-none"
-            >
-              <option value="ALL">All Quote Statuses</option>
-              <option value="QUOTED">Quoted / Captured</option>
-              <option value="UNQUOTED">Unquoted / Missing</option>
-            </select>
+              <select
+                value={quoteStatusFilter}
+                onChange={(e) => setQuoteStatusFilter(e.target.value)}
+                className="bg-surface px-3 py-2 rounded-xl border border-outline-variant text-sm focus:outline-none"
+              >
+                <option value="ALL">All Quote Statuses</option>
+                <option value="QUOTED">Quoted / Captured</option>
+                <option value="UNQUOTED">Unquoted / Missing</option>
+              </select>
+              <select 
+                value={currencyView}
+                onChange={(e) => setCurrencyView(e.target.value)}
+                className="bg-blue-50 text-blue-700 font-semibold px-3 py-2 rounded-xl border border-outline-variant text-sm focus:outline-none"
+              >
+                <option value="DEFAULT">Currency: Default</option>
+                <option value="AED">View in AED</option>
+                <option value="USD">View in USD</option>
+                <option value="OMR">View in OMR</option>
+              </select>
 
             <div className="flex items-center gap-2.5 bg-surface px-4 py-2 rounded-xl border border-outline-variant shadow-xs">
               <Calendar className="w-4 h-4 text-primary shrink-0" />
@@ -232,14 +244,21 @@ export default function PriceManagement() {
                   const tp = summary.target_price;
                   const last_p = tp || summary.last_price;
 
-                  let priceStr = '�';
+                  let priceStr = '—';
                   if (last_p) {
                     const parts = [];
-                    if (last_p.local_price != null) parts.push(`LOC: ${last_p.local_price}`);
-                    if (last_p.cif_price != null) parts.push(`CIF: ${last_p.cif_price}`);
-                    if (last_p.fob_price != null) parts.push(`FOB: ${last_p.fob_price}`);
+                    const targetCurr = currencyView === 'DEFAULT' ? last_p.currency : currencyView;
+                    
+                    const loc = currencyView === 'DEFAULT' ? last_p.local_price : convertCurrency(last_p.local_price, last_p.currency, targetCurr);
+                    const cif = currencyView === 'DEFAULT' ? last_p.cif_price : convertCurrency(last_p.cif_price, last_p.currency, targetCurr);
+                    const fob = currencyView === 'DEFAULT' ? last_p.fob_price : convertCurrency(last_p.fob_price, last_p.currency, targetCurr);
+                    
+                    if (loc != null) parts.push(`LOC: ${loc.toFixed(2)}`);
+                    if (cif != null) parts.push(`CIF: ${cif.toFixed(2)}`);
+                    if (fob != null) parts.push(`FOB: ${fob.toFixed(2)}`);
+                    
                     if (parts.length > 0) {
-                      priceStr = `${parts.join(' | ')} ${last_p.currency}`;
+                      priceStr = `${parts.join(' | ')} ${targetCurr}`;
                     }
                   }
 

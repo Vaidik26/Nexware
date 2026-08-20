@@ -28,6 +28,22 @@ export default function RawMaterials() {
   const cached = getCachedData<any[]>('nexware_live_raw_materials_index');
   const [materials, setMaterials] = useState<any[]>(cached || []);
   const [isLoading, setIsLoading] = useState(!cached);
+
+  const [activeEditId, setActiveEditId] = useState<number | null>(null);
+  
+  const handleEdit = (item: any) => {
+    setActiveEditId(item.id);
+    reset({
+      material_code: item.material_code || item.sku,
+      material_name: item.material_name || item.name,
+      bag_carton_weight: item.bag_carton_weight || item.weight || 10,
+      weight_unit: item.weight_unit || item.unit || 'kg',
+      category: item.category || 'Uncategorized',
+      market_type: item.market_type || 'BOTH',
+    });
+    setIsAddModalOpen(true);
+  };
+
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -157,15 +173,20 @@ export default function RawMaterials() {
       ), 
       className: 'w-48' 
     },
-    {
-      header: 'Actions',
-      accessor: (row: any) => (
-        <Button variant="ghost" size="sm" onClick={() => handleDelete(row.id)} className="text-error hover:bg-error/10" title="Delete Commodity">
-          <Trash2 className="w-4 h-4" />
-        </Button>
-      ),
-      className: 'w-24 text-right'
-    },
+          {
+        header: 'Actions',
+        accessor: (row: any) => (
+          <div className="flex gap-2 items-center">
+            <Button variant="ghost" size="sm" onClick={() => handleEdit(row)} className="text-blue-600 hover:bg-blue-600/10" title="Edit Commodity">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => handleDelete(row.id)} className="text-error hover:bg-error/10" title="Delete Commodity">
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </div>
+        ),
+        className: 'w-24 text-center'
+      },
   ];
 
   return (
@@ -226,7 +247,7 @@ export default function RawMaterials() {
         </div>
       )}
 
-      <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Register New Commodity Benchmark">
+      <Modal isOpen={isAddModalOpen} onClose={() => { setIsAddModalOpen(false); setActiveEditId(null); reset(); }} title={activeEditId ? "Edit Commodity Benchmark" : "Register New Commodity Benchmark"}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <Input 
             label="Commodity Index Code / SKU" 
@@ -241,12 +262,23 @@ export default function RawMaterials() {
             error={errors.material_name?.message} 
           />
           
-<Input 
-            label="Category" 
-            placeholder="e.g. Spices & Seasonings" 
-            {...register('category')} 
-            error={errors.category?.message} 
-          />
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700">Category</label>
+              <select
+                {...register('category')}
+                className={`w-full px-3 py-2 bg-white rounded-lg border focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent ${
+                  errors.category ? 'border-error' : 'border-slate-200'
+                }`}
+              >
+                <option value="Spices">Spices</option>
+                <option value="Nuts & Dry Fruits">Nuts & Dry Fruits</option>
+                <option value="Lentils & Pulses">Lentils & Pulses</option>
+                <option value="Grains">Grains</option>
+              </select>
+              {errors.category && <span className="text-xs text-error">{errors.category.message}</span>}
+            </div>
+
 
           <div>
             <label className="text-sm font-medium text-on-surface-variant mb-1.5 block">
@@ -286,7 +318,7 @@ export default function RawMaterials() {
           </div>
           
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-outline-variant">
-            <Button variant="secondary" onClick={() => setIsAddModalOpen(false)} type="button">Cancel</Button>
+            <Button variant="secondary" onClick={() => { setIsAddModalOpen(false); setActiveEditId(null); reset(); }} type="button">Cancel</Button>
             <Button type="submit" isLoading={isSubmitting}>Register Commodity</Button>
           </div>
         </form>
