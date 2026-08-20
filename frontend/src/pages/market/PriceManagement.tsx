@@ -90,7 +90,14 @@ export default function PriceManagement() {
   const handleOpenEditModal = (summary: LatestPriceSummary) => {
     setActiveItem(summary);
     const tr = summary.target_price;
-    setCurrency(tr?.currency || 'AED');
+    let defCurr = tr?.currency;
+    if (!defCurr) {
+      const marketType = summary.item.market_type;
+      if (marketType === 'DXB') defCurr = 'AED';
+      else if (marketType === 'INT') defCurr = 'USD';
+      else defCurr = 'AED';
+    }
+    setCurrency(defCurr);
     setLocalInput(tr?.local_price != null ? String(tr.local_price) : '');
     setCifInput(tr?.cif_price != null ? String(tr.cif_price) : '');
     setFobInput(tr?.fob_price != null ? String(tr.fob_price) : '');
@@ -287,11 +294,13 @@ export default function PriceManagement() {
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => handleOpenEditModal(summary)}
-                          className="text-xs font-medium px-3 shadow-2xs hover:bg-primary/5 hover:text-primary hover:border-primary"
-                        >
+                            variant="outline" 
+                            size="sm" 
+                            disabled={selectedDate !== todayStr}
+                            title={selectedDate !== todayStr ? "Prices can only be captured for today" : undefined}
+                            onClick={() => handleOpenEditModal(summary)}
+                            className="text-xs font-medium px-3 shadow-2xs hover:bg-primary/5 hover:text-primary hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
                           {tp ? (
                             <span className="flex items-center gap-1.5"><Edit2 className="w-3.5 h-3.5" /> Edit Rates</span>
                           ) : (
@@ -315,7 +324,13 @@ export default function PriceManagement() {
       >
         <form onSubmit={handleSaveModal} className="space-y-4">
           <div className="flex justify-center gap-2 mb-4">
-            {['USD', 'AED', 'OMR'].map(c => (
+            {['USD', 'AED', 'OMR'].filter(c => {
+              if (!activeItem) return true;
+              const marketType = activeItem.item.market_type;
+              if (marketType === 'DXB') return c === 'AED' || c === 'OMR';
+              if (marketType === 'INT') return c === 'USD';
+              return true; // BOTH allows all
+            }).map(c => (
               <button
                 key={c}
                 type="button"
