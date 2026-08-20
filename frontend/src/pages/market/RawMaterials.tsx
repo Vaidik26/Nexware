@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Plus, Trash2, RefreshCw, Package, Tag, Scale, Search } from 'lucide-react';
+import { Plus, Trash2, Edit2, RefreshCw, Package, Tag, Scale, Search } from 'lucide-react';
 import { Table } from '@/components/ui/Table';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -14,10 +14,12 @@ import { getErrorMessage, getCachedData, setCachedData } from '@/lib/utils';
 import api from '@/lib/api';
 
 const materialSchema = z.object({
-  material_code: z.string().min(1, 'SKU / Commodity Index Code is required'),
-  material_name: z.string().min(1, 'Item Name is required'),
-  bag_carton_weight: z.number().positive('Bag/Carton weight must be greater than 0'),
-  weight_unit: z.string().default('kg'),
+  material_code: z.string().min(1, "SKU / Commodity Index Code is required"),
+  material_name: z.string().min(1, "Item Name is required"),
+  category: z.string().optional(),
+  market_type: z.string().default("BOTH"),
+  bag_carton_weight: z.number().positive("Bag/Carton weight must be greater than 0"),
+  weight_unit: z.string().default("kg"),
 });
 
 type MaterialForm = z.infer<typeof materialSchema>;
@@ -30,6 +32,7 @@ export default function RawMaterials() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [restrictedMsg, setRestrictedMsg] = useState<string | null>(null);
+  const [editingItem, setEditingItem] = useState<any>(null);
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<MaterialForm>({
     resolver: zodResolver(materialSchema),
@@ -66,27 +69,40 @@ export default function RawMaterials() {
     try {
       setIsSubmitting(true);
       const payload = {
-        material_code: data.material_code,
-        material_name: data.material_name,
-        bag_carton_weight: data.bag_carton_weight,
-        weight_unit: data.weight_unit || 'kg',
+        ...data,
+        weight_unit: data.weight_unit || "kg",
       };
-      const res = await api.post('/market/materials', payload);
-      const created = res.data;
       
-      const updated = [...materials, created || { id: Date.now(), ...payload }];
-      setMaterials(updated);
-      setCachedData('nexware_live_raw_materials_index', updated);
+      if (editingItem) {
+        await api.put(`/market/materials/${editingItem.id}`, payload);
+        toast.success("Commodity updated successfully");
+      } else {
+        await api.post("/market/materials", payload);
+        toast.success("Commodity registered successfully");
+      }
       
-      toast.success('Commodity registered successfully');
       setIsAddModalOpen(false);
-      reset();
+      setEditingItem(null);
+      reset({ bag_carton_weight: 10, weight_unit: "kg", market_type: "BOTH", category: "" });
       fetchMaterials(true);
     } catch (err: any) {
-      toast.error(getErrorMessage(err, 'Could not register commodity specification'));
+      toast.error(getErrorMessage(err, "Could not save commodity specification"));
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleOpenEditModal = (row: any) => {
+    setEditingItem(row);
+    reset({
+      material_code: row.material_code,
+      material_name: row.material_name,
+      category: row.category || "",
+      market_type: row.market_type || "BOTH",
+      bag_carton_weight: row.bag_carton_weight || 10,
+      weight_unit: row.weight_unit || "kg"
+    });
+    setIsAddModalOpen(true);
   };
 
   const handleDelete = async (id: string | number) => {
@@ -124,6 +140,16 @@ export default function RawMaterials() {
       className: 'font-semibold text-on-surface' 
     },
     { 
+      header: 'Market & Category', 
+      accessor: (r: any) => (
+        <div>
+          <div className="font-semibold text-slate-800">{r.market_type || 'BOTH'}</div>
+          <div className="text-[11px] text-slate-500">{r.category || 'Uncategorized'}</div>
+        </div>
+      ), 
+      className: 'w-48 text-left'
+    },
+    { 
       header: 'Bag / Ctn Weight', 
       accessor: (r: any) => (
         <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold bg-slate-100 px-2.5 py-1 rounded border border-slate-200 text-slate-700">
@@ -136,9 +162,14 @@ export default function RawMaterials() {
     {
       header: 'Actions',
       accessor: (row: any) => (
-        <Button variant="ghost" size="sm" onClick={() => handleDelete(row.id)} className="text-error hover:bg-error/10" title="Delete Commodity">
-          <Trash2 className="w-4 h-4" />
-        </Button>
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => handleOpenEditModal(row)} className="text-primary hover:bg-primary/10" title="Edit Commodity">
+            <Edit2 className="w-4 h-4" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => handleDelete(row.id)} className="text-error hover:bg-error/10" title="Delete Commodity">
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
       ),
       className: 'w-24 text-right'
     },
@@ -155,7 +186,7 @@ export default function RawMaterials() {
           <Button onClick={() => fetchMaterials(false)} variant="outline" size="sm">
             <RefreshCw className="w-4 h-4 mr-2 text-primary" /> Refresh
           </Button>
-          <Button onClick={() => setIsAddModalOpen(true)} className="shadow-md">
+          <Button onClick={() => { setEditingItem(null); reset({ bag_carton_weight: 10, weight_unit: "kg", market_type: "BOTH", category: "" }); setIsAddModalOpen(true); }} className="shadow-md">
             <Plus className="w-4 h-4 mr-2" /> Register Commodity
           </Button>
         </div>
@@ -192,7 +223,7 @@ export default function RawMaterials() {
               <p className="text-sm text-slate-500 max-w-md mx-auto mt-1 mb-6">
                 Register your commodity items (SKU, Title, and Bag/Ctn Weight) to begin daily capturing of Dubai Local and International CIF/FOB valuations.
               </p>
-              <Button onClick={() => setIsAddModalOpen(true)} className="shadow-md text-sm">
+              <Button onClick={() => { setEditingItem(null); reset({ bag_carton_weight: 10, weight_unit: "kg", market_type: "BOTH", category: "" }); setIsAddModalOpen(true); }} className="shadow-md text-sm">
                 <Plus className="w-4 h-4 mr-2" /> Register First Commodity
               </Button>
             </div>
@@ -202,20 +233,40 @@ export default function RawMaterials() {
         </div>
       )}
 
-      <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Register New Commodity Benchmark">
+      <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title={editingItem ? "Edit Commodity Benchmark" : "Register New Commodity Benchmark"}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <Input 
             label="Commodity Index Code / SKU" 
             placeholder="e.g. COMM-ALUM-99 or SKU-100" 
-            {...register('material_code')} 
+            {...register("material_code")} 
             error={errors.material_code?.message} 
           />
           <Input 
             label="Commodity Title / Material Name" 
             placeholder="e.g. Black Pepper Grade A / Pure Aluminum Ingots" 
-            {...register('material_name')} 
+            {...register("material_name")} 
             error={errors.material_name?.message} 
           />
+          <Input 
+            label="Category" 
+            placeholder="e.g. Spices" 
+            {...register("category")} 
+            error={errors.category?.message} 
+          />
+          
+          <div>
+            <label className="text-sm font-medium text-on-surface-variant mb-1.5 block">
+              Market Type
+            </label>
+            <select
+                {...register("market_type")}
+                className="w-full px-3 py-2.5 bg-surface rounded-xl border border-outline-variant font-semibold text-sm text-slate-700 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-xs"
+              >
+                <option value="BOTH">Both (DXB & INT)</option>
+                <option value="DXB">Dubai Only (DXB)</option>
+                <option value="INT">International Only (INT)</option>
+            </select>
+          </div>
           
           <div>
             <label className="text-sm font-medium text-on-surface-variant mb-1.5 block">
@@ -241,7 +292,7 @@ export default function RawMaterials() {
           </div>
           
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-outline-variant">
-            <Button variant="secondary" onClick={() => setIsAddModalOpen(false)} type="button">Cancel</Button>
+            <Button variant="secondary" onClick={() => { setIsAddModalOpen(false); setEditingItem(null); reset({ bag_carton_weight: 10, weight_unit: "kg", market_type: "BOTH", category: "" }); }} type="button">Cancel</Button>
             <Button type="submit" isLoading={isSubmitting}>Register Commodity</Button>
           </div>
         </form>
