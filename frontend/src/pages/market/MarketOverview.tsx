@@ -13,7 +13,7 @@ import {
 import { toast } from '@/components/ui/Toast';
 import { PageLoader } from '@/components/ui/PageLoader';
 import {
-  getLatestPriceSummaries as getLatestPrices,
+  getLatestPrices,
   getPriceHistory,
   LatestPriceSummary,
   PriceRecord

@@ -7,120 +7,160 @@ export interface Item {
   particulars: string;
   bagCtnWeight: number | null;
   weightUnit?: string;
-  category?: string;
-  market_type?: string; // 'DXB', 'INT', 'BOTH'
-  hasLocal?: boolean;
-  hasInternational?: boolean;
+  hasLocal: boolean;
+  hasInternational: boolean;
 }
 
 export interface PriceRecord {
   id: string;
   itemId: string;
   date: string;
-  price?: number;
-  market?: string;
-  price_type?: string;
-  currency?: string;
-  
-  // Legacy fields for backward compatibility
-  dubaiLocalPrice?: number | null;
-  internationalFOB?: number | null;
-  internationalCIF?: number | null;
+  dubaiLocalPrice: number | null;
+  internationalFOB: number | null;
+  internationalCIF: number | null;
 }
 
-export interface RowData {
-  id: string;
-  item: Item;
-  market: string;
-  type: string;
-  todayRecord: PriceRecord | null;
-  lastRecord: PriceRecord | null;
-  lastUpdated: string | null;
+// Helper to format Date to YYYY-MM-DD
+function toDateString(date: Date): string {
+  return date.toISOString().split('T')[0];
 }
+
+const getPastDate = (daysAgo: number): string => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return toDateString(d);
+};
+
+// Immediately wipe out legacy dummy seed data from localStorage upon loading
+try {
+  localStorage.removeItem('nexware_m2_items_v1');
+  localStorage.removeItem('nexware_m2_records_v1');
+  localStorage.removeItem('nexware_m2_last_updated_v1');
+  localStorage.removeItem('raw_materials_index');
+  localStorage.removeItem('nexware_market_items');
+  localStorage.removeItem('nexware_market_prices');
+} catch (e) {
+  // Ignore storage exceptions in non-browser environments
+}
+
+const STORAGE_KEY_ITEMS = 'nexware_live_materials_cache_v2';
+const STORAGE_KEY_RECORDS = 'nexware_live_prices_cache_v2';
+const STORAGE_KEY_UPDATED = 'nexware_live_last_updated_v2';
+
+// ==========================================
+// LIVE API & PERSISTENT SERVICES (ZERO DUMMY DATA)
+// ==========================================
 
 export async function getItems(): Promise<Item[]> {
-  const res = await api.get('/market/materials');
-  const dbData = res.data || [];
-  return dbData.map((m: any, idx: number) => {
-    const marketType = (m.market_type || 'BOTH').toUpperCase();
-    return {
-      id: String(m.id),
-      sku: String(m.material_code),
-      slNo: idx + 1,
-      particulars: m.material_name,
-      bagCtnWeight: m.bag_carton_weight,
-      weightUnit: m.weight_unit,
-      category: m.category,
-      market_type: marketType,
-      hasLocal: marketType === 'DXB' || marketType === 'BOTH',
-      hasInternational: marketType === 'INT' || marketType === 'BOTH',
-    };
-  });
-}
-
-export async function fetchPriceRecords(date_from?: string, date_to?: string): Promise<PriceRecord[]> {
-  let url = '/market/prices';
-  const params = [];
-  if (date_from) params.push(`date_from=${date_from}`);
-  if (date_to) params.push(`date_to=${date_to}`);
-  if (params.length > 0) url += '?' + params.join('&');
-  
-  const res = await api.get(url);
-  return res.data.map((r: any) => ({
-    id: String(r.id),
-    itemId: String(r.material_id),
-    date: r.date,
-    price: r.price,
-    market: r.market,
-    price_type: r.price_type,
-    currency: r.currency,
-    dubaiLocalPrice: r.market === 'DXB' && r.price_type === 'LOC' ? r.price : null,
-    internationalFOB: r.market === 'INT' && r.price_type === 'FOB' ? r.price : null,
-    internationalCIF: r.market === 'INT' && r.price_type === 'CIF' ? r.price : null,
-  }));
-}
-
-export async function getLatestPrices(targetDate?: string): Promise<RowData[]> {
-  const dateStr = targetDate || new Date().toISOString().split('T')[0];
-  const items = await getItems();
-  const allRecords = await fetchPriceRecords();
-
-  const rows: RowData[] = [];
-
-  for (const item of items) {
-    const itemRecords = allRecords
-      .filter(r => r.itemId === item.id)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-    const addRow = (market: string, type: string) => {
-      const typeRecords = itemRecords.filter(r => r.market === market && r.price_type === type);
-      const todayRecord = typeRecords.find(r => r.date === dateStr) || null;
-      const pastRecords = typeRecords.filter(r => r.date <= dateStr);
-      // Last record should be the latest available
-      const lastRecord = pastRecords.length > 0 ? pastRecords[0] : null;
-      const lastUpdated = lastRecord ? lastRecord.date : null;
-
-      rows.push({
-        id: `${item.id}-${market}-${type}`,
-        item,
-        market,
-        type,
-        todayRecord,
-        lastRecord,
-        lastUpdated
-      });
-    };
-
-    if (item.market_type === 'DXB' || item.market_type === 'BOTH') {
-      addRow('DXB', 'LOC');
+  try {
+    const res = await api.get('/market/materials');
+    const dbData = res.data || [];
+    if (Array.isArray(dbData)) {
+      const sorted = [...dbData].sort((a: any, b: any) => (Number(a.id) || 0) - (Number(b.id) || 0));
+      const mapped: Item[] = sorted.map((m: any, idx: number) => ({
+        id: String(m.id ?? m.material_code ?? idx),
+        sku: String(m.material_code || m.sku || m.id || idx),
+        slNo: idx + 1,
+        particulars: m.material_name || m.name || 'Unnamed Commodity',
+        bagCtnWeight: m.bag_carton_weight !== undefined ? Number(m.bag_carton_weight) : null,
+        weightUnit: m.weight_unit || m.unit || 'kg',
+        hasLocal: m.market_type === 'dubai' || m.market_type === 'both' || !m.market_type,
+        hasInternational: m.market_type === 'international' || m.market_type === 'both' || !m.market_type,
+      }));
+      try {
+        localStorage.setItem(STORAGE_KEY_ITEMS, JSON.stringify(mapped));
+      } catch (e) {
+        console.error(e);
+      }
+      return mapped;
     }
-    if (item.market_type === 'INT' || item.market_type === 'BOTH') {
-      addRow('INT', 'FOB');
-      addRow('INT', 'CIF');
+  } catch (err) {
+    // If backend server is unreachable, return live cached data if available (never dummy data)
+    try {
+      const cached = localStorage.getItem(STORAGE_KEY_ITEMS);
+      if (cached) {
+        const parsed: Item[] = JSON.parse(cached);
+        return parsed.sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0)).map((m, idx) => ({ 
+          ...m, 
+          sku: m.sku || String(m.id || idx),
+          slNo: idx + 1 
+        }));
+      }
+    } catch (e) {
+      console.error(e);
     }
   }
+  return [];
+}
 
-  return rows;
+export async function getItemById(itemId: string): Promise<Item | null> {
+  const items = await getItems();
+  return items.find(i => i.id === itemId) || null;
+}
+
+async function fetchPriceRecords(): Promise<PriceRecord[]> {
+  try {
+    const [dubaiRes, intlRes] = await Promise.all([
+      api.get('/market/dubai-prices').catch(() => ({ data: null })),
+      api.get('/market/international-prices').catch(() => ({ data: null })),
+    ]);
+
+    const dubaiList = Array.isArray(dubaiRes.data) ? dubaiRes.data : null;
+    const intlList = Array.isArray(intlRes.data) ? intlRes.data : null;
+
+    // If API calls returned valid arrays, synthesize them by commodity and date
+    if (dubaiList !== null || intlList !== null) {
+      const recordMap: Record<string, PriceRecord> = {};
+
+      (dubaiList || []).forEach((d: any) => {
+        const key = `${d.material_id}_${d.date}`;
+        recordMap[key] = {
+          id: String(d.id ?? key),
+          itemId: String(d.material_id),
+          date: String(d.date),
+          dubaiLocalPrice: d.local_market_price !== undefined ? Number(d.local_market_price) : null,
+          internationalFOB: null,
+          internationalCIF: null,
+        };
+      });
+
+      (intlList || []).forEach((i: any) => {
+        const key = `${i.material_id}_${i.date}`;
+        if (recordMap[key]) {
+          recordMap[key].internationalFOB = i.fob_price !== undefined ? Number(i.fob_price) : null;
+          recordMap[key].internationalCIF = i.cif_price !== undefined ? Number(i.cif_price) : null;
+        } else {
+          recordMap[key] = {
+            id: String(i.id ?? key),
+            itemId: String(i.material_id),
+            date: String(i.date),
+            dubaiLocalPrice: null,
+            internationalFOB: i.fob_price !== undefined ? Number(i.fob_price) : null,
+            internationalCIF: i.cif_price !== undefined ? Number(i.cif_price) : null,
+          };
+        }
+      });
+
+      const merged = Object.values(recordMap);
+      try {
+        localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(merged));
+      } catch (e) {
+        console.error(e);
+      }
+      return merged;
+    }
+  } catch (err) {
+    console.error('Failed to query pricing API, falling back to local cache:', err);
+  }
+
+  // Fallback to real cached records if offline (no dummy records generated)
+  try {
+    const cached = localStorage.getItem(STORAGE_KEY_RECORDS);
+    if (cached) return JSON.parse(cached);
+  } catch (e) {
+    console.error(e);
+  }
+  return [];
 }
 
 export interface LatestPriceSummary {
@@ -140,58 +180,52 @@ export interface LatestPriceSummary {
   priorIntCifPrice: number | null;
 }
 
-export async function getLatestPriceSummaries(targetDate?: string): Promise<LatestPriceSummary[]> {
-  const dateStr = targetDate || new Date().toISOString().split('T')[0];
-  const items = await getItems();
-  const allRecords = await fetchPriceRecords();
+export async function getLatestPrices(targetDate?: string): Promise<LatestPriceSummary[]> {
+  const [items, allRecords] = await Promise.all([getItems(), fetchPriceRecords()]);
+  const activeDateStr = targetDate || toDateString(new Date());
+  const todayStr = activeDateStr;
 
-  return items.map(item => {
-    const itemRecords = allRecords.filter(r => r.itemId === item.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    
-    // Group records by date to synthesize a legacy PriceRecord
-    const recordsByDate: Record<string, PriceRecord> = {};
-    itemRecords.forEach(r => {
-      if (!recordsByDate[r.date]) {
-        recordsByDate[r.date] = { id: r.date, itemId: item.id, date: r.date, dubaiLocalPrice: null, internationalFOB: null, internationalCIF: null };
-      }
-      if (r.market === 'DXB' && r.price_type === 'LOC') recordsByDate[r.date].dubaiLocalPrice = r.price;
-      if (r.market === 'INT' && r.price_type === 'FOB') recordsByDate[r.date].internationalFOB = r.price;
-      if (r.market === 'INT' && r.price_type === 'CIF') recordsByDate[r.date].internationalCIF = r.price;
-    });
+  const summaries: LatestPriceSummary[] = items.map(item => {
+    const itemRecords = allRecords
+      .filter(r => r.itemId === item.id)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    const legacyRecords = Object.values(recordsByDate).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const latest = itemRecords.length > 0 ? itemRecords[0] : null;
+    const previous = itemRecords.length > 1 ? itemRecords[1] : null;
+    const todayRecord = itemRecords.find(r => r.date === activeDateStr) || null;
 
-    const latest = legacyRecords.length > 0 ? legacyRecords[0] : null;
-    const previous = legacyRecords.length > 1 ? legacyRecords[1] : null;
-    const todayRecord = legacyRecords.find(r => r.date === dateStr) || null;
+    const validLocalRecord = itemRecords.find(r => r.dubaiLocalPrice !== null);
+    const validIntRecord = itemRecords.find(r => r.internationalFOB !== null && r.internationalCIF !== null);
 
-    const validLocalRecord = legacyRecords.find(r => r.dubaiLocalPrice !== null);
-    const validIntRecord = legacyRecords.find(r => r.internationalFOB !== null && r.internationalCIF !== null);
-
+    // Day-over-day change is strictly computed ONLY when both today and prior recorded day have values
     let dayOverDayLocalChange: number | null = null;
-    const pastLocalRecords = legacyRecords.filter(r => r.dubaiLocalPrice != null && r.date < dateStr);
-    if (todayRecord && todayRecord.dubaiLocalPrice != null && pastLocalRecords.length > 0) {
+    const pastLocalRecords = itemRecords.filter(r => r.dubaiLocalPrice !== null && r.date < todayStr);
+    if (todayRecord && todayRecord.dubaiLocalPrice !== null && pastLocalRecords.length > 0) {
       const priorLocal = pastLocalRecords[0].dubaiLocalPrice!;
       const diff = todayRecord.dubaiLocalPrice - priorLocal;
       dayOverDayLocalChange = Number(((diff / priorLocal) * 100).toFixed(2));
     }
 
     let dayOverDayIntChange: number | null = null;
-    const pastIntRecords = legacyRecords.filter(r => r.internationalCIF != null && r.date < dateStr);
-    if (todayRecord && todayRecord.internationalCIF != null && pastIntRecords.length > 0) {
+    const pastIntRecords = itemRecords.filter(r => r.internationalCIF !== null && r.date < todayStr);
+    if (todayRecord && todayRecord.internationalCIF !== null && pastIntRecords.length > 0) {
       const priorCif = pastIntRecords[0].internationalCIF!;
       const diff = todayRecord.internationalCIF - priorCif;
       dayOverDayIntChange = Number(((diff / priorCif) * 100).toFixed(2));
     }
 
+    // Regional spread computed strictly per item where both local & international CIF prices exist
     let regionalSpreadPct: number | null = null;
     if (validLocalRecord?.dubaiLocalPrice != null && validIntRecord?.internationalCIF != null) {
       const lPrice = validLocalRecord.dubaiLocalPrice;
       const cPrice = validIntRecord.internationalCIF;
-      if (cPrice > 0) regionalSpreadPct = Number(((lPrice - cPrice) / cPrice * 100).toFixed(1));
+      if (cPrice > 0) {
+        regionalSpreadPct = Number(((lPrice - cPrice) / cPrice * 100).toFixed(1));
+      }
     }
 
-    const sortedAsc = [...legacyRecords].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    // Sparkline arrays from older to newer (excluding nulls)
+    const sortedAsc = [...itemRecords].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const sparklineLocal = sortedAsc.map(r => r.dubaiLocalPrice).filter((v): v is number => v !== null);
     const sparklineFOB = sortedAsc.map(r => r.internationalFOB).filter((v): v is number => v !== null);
     const sparklineCIF = sortedAsc.map(r => r.internationalCIF).filter((v): v is number => v !== null);
@@ -201,8 +235,15 @@ export async function getLatestPriceSummaries(targetDate?: string): Promise<Late
       latest,
       previous,
       todayRecord,
-      lastRecordedLocal: { value: validLocalRecord?.dubaiLocalPrice ?? null, date: validLocalRecord?.date ?? null },
-      lastRecordedInt: { fob: validIntRecord?.internationalFOB ?? null, cif: validIntRecord?.internationalCIF ?? null, date: validIntRecord?.date ?? null },
+      lastRecordedLocal: {
+        value: validLocalRecord?.dubaiLocalPrice ?? null,
+        date: validLocalRecord?.date ?? null,
+      },
+      lastRecordedInt: {
+        fob: validIntRecord?.internationalFOB ?? null,
+        cif: validIntRecord?.internationalCIF ?? null,
+        date: validIntRecord?.date ?? null,
+      },
       sparklineLocal,
       sparklineFOB,
       sparklineCIF,
@@ -213,39 +254,173 @@ export async function getLatestPriceSummaries(targetDate?: string): Promise<Late
       priorIntCifPrice: pastIntRecords.length > 0 ? (pastIntRecords[0].internationalCIF ?? null) : null,
     };
   });
+
+  return summaries;
 }
 
-export async function saveDailyRates(newRecords: any[]): Promise<void> {
+export async function getPriceHistory(itemId: string, range: string = 'all'): Promise<PriceRecord[]> {
+  const allRecords = await fetchPriceRecords();
+  let records = allRecords.filter(r => r.itemId === itemId);
+
+  if (range !== 'all') {
+    const days = parseInt(range.replace('d', ''), 10);
+    if (!isNaN(days)) {
+      const cutoffDate = getPastDate(days);
+      records = records.filter(r => r.date >= cutoffDate);
+    }
+  }
+
+  return records.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
+export async function buildBrandedExportPayload(startDate: string, endDate: string, scopeLabel: string) {
+  const [items, allRecords] = await Promise.all([getItems(), fetchPriceRecords()]);
+  
+  const datesSet = new Set<string>();
+  allRecords.forEach(r => {
+    if (r.date >= startDate && r.date <= endDate) {
+      datesSet.add(r.date);
+    }
+  });
+  if (datesSet.size === 0 && startDate === endDate) {
+    datesSet.add(startDate);
+  }
+
+  const availableDates = Array.from(datesSet).sort((a, b) => b.localeCompare(a));
+
+  return {
+    scope: scopeLabel,
+    dates: availableDates.map(date => {
+      const dateFormatted = new Date(date).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric' });
+      return {
+        date,
+        date_formatted: dateFormatted,
+        rows: items.map((item, idx) => {
+          const rec = allRecords.find(r => r.itemId === item.id && r.date === date);
+          const localVal = rec?.dubaiLocalPrice != null ? `${rec.dubaiLocalPrice.toFixed(2)} AED` : '—';
+          const cifVal = rec?.internationalCIF != null ? `$${rec.internationalCIF.toFixed(2)}` : '—';
+          const fobVal = rec?.internationalFOB != null ? `$${rec.internationalFOB.toFixed(2)}` : '—';
+          const weight = item.bagCtnWeight ? `${item.bagCtnWeight} ${item.weightUnit || 'kg'}` : 'Standard Unit';
+          return {
+            sno: idx + 1,
+            commodity: item.particulars,
+            weight,
+            local_price: localVal,
+            cif_price: cifVal,
+            fob_price: fobVal
+          };
+        })
+      };
+    })
+  };
+}
+
+export async function saveDailyRates(newRecords: Partial<PriceRecord>[]): Promise<void> {
+  const todayStr = toDateString(new Date());
+  const existingRecords: PriceRecord[] = (() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_RECORDS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  })();
+
   for (const record of newRecords) {
-    await api.post('/market/prices', {
-      material_id: Number(record.itemId),
-      date: record.date,
-      price: record.price,
-      market: record.market,
-      price_type: record.price_type,
-      currency: record.currency,
-    });
+    if (!record.itemId) continue;
+    const targetDate = record.date || todayStr;
+
+    // Send to Dubai local pricing endpoint if provided
+    if (record.dubaiLocalPrice !== undefined && record.dubaiLocalPrice !== null) {
+      await api.post('/market/dubai-prices', {
+        material_id: Number(record.itemId),
+        date: targetDate,
+        local_market_price: Number(record.dubaiLocalPrice),
+      }).catch(() => null);
+    }
+
+    // Send to International pricing endpoint if FOB & CIF provided
+    if (record.internationalFOB !== undefined && record.internationalFOB !== null &&
+        record.internationalCIF !== undefined && record.internationalCIF !== null) {
+      await api.post('/market/international-prices', {
+        material_id: Number(record.itemId),
+        date: targetDate,
+        fob_price: Number(record.internationalFOB),
+        cif_price: Number(record.internationalCIF),
+      }).catch(() => null);
+    }
+
+    // Immediately reflect changes in persistent local cache
+    const index = existingRecords.findIndex(r => r.itemId === record.itemId && r.date === targetDate);
+    if (index !== -1) {
+      existingRecords[index] = {
+        ...existingRecords[index],
+        dubaiLocalPrice: record.dubaiLocalPrice !== undefined ? record.dubaiLocalPrice : existingRecords[index].dubaiLocalPrice,
+        internationalFOB: record.internationalFOB !== undefined ? record.internationalFOB : existingRecords[index].internationalFOB,
+        internationalCIF: record.internationalCIF !== undefined ? record.internationalCIF : existingRecords[index].internationalCIF,
+      };
+    } else {
+      existingRecords.push({
+        id: record.id || `pr-${record.itemId}-${targetDate}-${Date.now()}`,
+        itemId: record.itemId,
+        date: targetDate,
+        dubaiLocalPrice: record.dubaiLocalPrice !== undefined ? record.dubaiLocalPrice : null,
+        internationalFOB: record.internationalFOB !== undefined ? record.internationalFOB : null,
+        internationalCIF: record.internationalCIF !== undefined ? record.internationalCIF : null,
+      });
+    }
+  }
+
+  try {
+    localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(existingRecords));
+    localStorage.setItem(STORAGE_KEY_UPDATED, new Date().toISOString());
+  } catch (e) {
+    console.error(e);
   }
 }
 
-export async function buildBrandedExportPayload(_startDate: string, _endDate: string, scopeLabel: string) {
-  return { scope: scopeLabel, dates: [] };
-}
+export async function getOperationalKPIs(view: 'local' | 'international'): Promise<{
+  totalTracked: number;
+  missingToday: number;
+  recordedToday: number;
+  completionRate: number;
+  lastUpdated: string;
+}> {
+  const [items, allRecords] = await Promise.all([getItems(), fetchPriceRecords()]);
+  const todayStr = toDateString(new Date());
 
-export async function getPriceHistory(itemId: string, _range: string = 'all'): Promise<PriceRecord[]> {
-  const allRecords = await fetchPriceRecords();
-  let itemRecords = allRecords.filter(r => r.itemId === itemId);
-  
-  // Group into legacy structure
-  const recordsByDate: Record<string, PriceRecord> = {};
-  itemRecords.forEach(r => {
-    if (!recordsByDate[r.date]) {
-      recordsByDate[r.date] = { id: r.date, itemId, date: r.date, dubaiLocalPrice: null, internationalFOB: null, internationalCIF: null };
+  const trackedItems = items.filter(i => view === 'local' ? i.hasLocal : i.hasInternational);
+  const totalTracked = trackedItems.length;
+
+  let recordedToday = 0;
+  trackedItems.forEach(item => {
+    const record = allRecords.find(r => r.itemId === item.id && r.date === todayStr);
+    if (view === 'local') {
+      if (record && record.dubaiLocalPrice !== null) recordedToday++;
+    } else {
+      if (record && record.internationalFOB !== null && record.internationalCIF !== null) recordedToday++;
     }
-    if (r.market === 'DXB' && r.price_type === 'LOC') recordsByDate[r.date].dubaiLocalPrice = r.price;
-    if (r.market === 'INT' && r.price_type === 'FOB') recordsByDate[r.date].internationalFOB = r.price;
-    if (r.market === 'INT' && r.price_type === 'CIF') recordsByDate[r.date].internationalCIF = r.price;
   });
 
-  return Object.values(recordsByDate).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const missingToday = Math.max(0, totalTracked - recordedToday);
+  const completionRate = totalTracked > 0 ? Math.round((recordedToday / totalTracked) * 100) : 0;
+  const lastUpdatedRaw = localStorage.getItem(STORAGE_KEY_UPDATED) || new Date().toISOString();
+
+  return {
+    totalTracked,
+    missingToday,
+    recordedToday,
+    completionRate,
+    lastUpdated: lastUpdatedRaw,
+  };
+}
+
+export async function resetPriceSeeder(): Promise<void> {
+  try {
+    localStorage.removeItem(STORAGE_KEY_ITEMS);
+    localStorage.removeItem(STORAGE_KEY_RECORDS);
+    localStorage.removeItem(STORAGE_KEY_UPDATED);
+  } catch (e) {
+    console.error(e);
+  }
 }

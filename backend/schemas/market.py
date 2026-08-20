@@ -5,8 +5,6 @@ from datetime import date, datetime
 class RawMaterialBase(BaseModel):
     material_code: str
     material_name: str
-    category: Optional[str] = None
-    market_type: Optional[str] = None
     bag_carton_weight: float
     weight_unit: Optional[str] = "kg"
 
@@ -20,18 +18,29 @@ class RawMaterialOut(RawMaterialBase):
     id: int
     model_config = ConfigDict(from_attributes=True)
 
-class MarketPriceBase(BaseModel):
+class DubaiPriceBase(BaseModel):
     material_id: int
     date: date
-    price: float
-    market: str
-    price_type: str
-    currency: str
+    local_market_price: float
 
-class MarketPriceCreate(MarketPriceBase):
+class DubaiPriceCreate(DubaiPriceBase):
     pass
 
-class MarketPriceOut(MarketPriceBase):
+class DubaiPriceOut(DubaiPriceBase):
+    id: int
+    created_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class InternationalPriceBase(BaseModel):
+    material_id: int
+    date: date
+    fob_price: float
+    cif_price: float
+
+class InternationalPriceCreate(InternationalPriceBase):
+    pass
+
+class InternationalPriceOut(InternationalPriceBase):
     id: int
     created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
