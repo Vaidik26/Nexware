@@ -39,7 +39,7 @@ def parse_str(val):
     if val is None or pd.isna(val):
         return None
     val = str(val).strip()
-    if not val or val -= 'nan':
+    if not val or val == 'nan':
         return None
     return val
 
