@@ -32,7 +32,8 @@ interface CapturedPrice {
   date: string;
   local_price_aed: number | null;
   local_price_omr: number | null;
-  supplier?: string;
+  supplier_dubai?: string;
+  supplier_oman?: string;
   cif_price: number | null;
   fob_price: number | null;
   material?: RawMaterial; // Joined on frontend for convenience

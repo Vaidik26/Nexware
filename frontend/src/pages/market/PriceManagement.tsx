@@ -39,7 +39,8 @@ export default function PriceManagement() {
   const [activeItem, setActiveItem] = useState<LatestPriceSummary | null>(null);
   const [localAedInput, setLocalAedInput] = useState('');
   const [localOmrInput, setLocalOmrInput] = useState('');
-  const [supplierInput, setSupplierInput] = useState('');
+  const [supplierDubaiInput, setSupplierDubaiInput] = useState('');
+  const [supplierOmanInput, setSupplierOmanInput] = useState('');
   const [cifInput, setCifInput] = useState('');
   const [fobInput, setFobInput] = useState('');
 
@@ -116,7 +117,8 @@ export default function PriceManagement() {
     const tr = summary.target_price;
     setLocalAedInput(tr?.local_price_aed != null ? String(tr.local_price_aed) : '');
     setLocalOmrInput(tr?.local_price_omr != null ? String(tr.local_price_omr) : '');
-    setSupplierInput(tr?.supplier || '');
+    setSupplierDubaiInput(tr?.supplier_dubai || '');
+    setSupplierOmanInput(tr?.supplier_oman || '');
     setCifInput(tr?.cif_price != null ? String(tr.cif_price) : '');
     setFobInput(tr?.fob_price != null ? String(tr.fob_price) : '');
   };
@@ -129,7 +131,8 @@ export default function PriceManagement() {
     const locOmr = localOmrInput.trim() !== '' ? Number(localOmrInput) : null;
     const cifVal = cifInput.trim() !== '' ? Number(cifInput) : null;
     const fobVal = fobInput.trim() !== '' ? Number(fobInput) : null;
-    const sup = supplierInput.trim();
+    const supDxb = supplierDubaiInput.trim();
+    const supOmr = supplierOmanInput.trim();
 
     if (locAed === null && locOmr === null && cifVal === null && fobVal === null) {
       toast.error('Please fill at least one price to save the rate record.');
@@ -143,7 +146,8 @@ export default function PriceManagement() {
         date: selectedDate,
         local_price_aed: locAed,
         local_price_omr: locOmr,
-        supplier: sup,
+        supplier_dubai: supDxb,
+        supplier_oman: supOmr,
         fob_price: fobVal,
         cif_price: cifVal,
       }]);
@@ -350,39 +354,51 @@ export default function PriceManagement() {
         <form onSubmit={handleSaveModal} className="space-y-4">
             {activeItem?.item?.market_type !== 'INT' && (
               <>
-                <div className="space-y-4 mb-4">
-                  <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Supplier Name</label>
-                  <input
-                    type="text"
-                    value={supplierInput} onChange={(e) => setSupplierInput(e.target.value)}
-                    placeholder="Enter supplier name..."
-                    className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
-                  />
-                </div>
-                
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
                   <h4 className="text-sm font-bold text-slate-700">Dubai Local Market</h4>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Price (AED)</label>
-                    <input
-                      type="number" step="0.01" min="0"
-                      value={localAedInput} onChange={(e) => setLocalAedInput(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Price (AED)</label>
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={localAedInput} onChange={(e) => setLocalAedInput(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Supplier</label>
+                      <input
+                        type="text"
+                        value={supplierDubaiInput} onChange={(e) => setSupplierDubaiInput(e.target.value)}
+                        placeholder="Type supplier name..."
+                        className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                      />
+                    </div>
                   </div>
                 </div>
                 
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
                   <h4 className="text-sm font-bold text-slate-700">Oman Local Market</h4>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Price (OMR)</label>
-                    <input
-                      type="number" step="0.001" min="0"
-                      value={localOmrInput} onChange={(e) => setLocalOmrInput(e.target.value)}
-                      placeholder="0.000"
-                      className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Price (OMR)</label>
+                      <input
+                        type="number" step="0.001" min="0"
+                        value={localOmrInput} onChange={(e) => setLocalOmrInput(e.target.value)}
+                        placeholder="0.000"
+                        className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Supplier</label>
+                      <input
+                        type="text"
+                        value={supplierOmanInput} onChange={(e) => setSupplierOmanInput(e.target.value)}
+                        placeholder="Type supplier name..."
+                        className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                      />
+                    </div>
                   </div>
                 </div>
               </>

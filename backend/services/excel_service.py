@@ -392,11 +392,11 @@ def generate_price_capture_template(materials: list, market_type: str) -> bytes:
         cols = ["S.No", "SKU / Index Code", "Commodity Item Name", "Category", "Bag/CTN Weight"]
         
         if market_filter == "DXB":
-            cols.extend(["Local Dubai Price (AED)", "Local Oman Price (OMR)", "Supplier"])
+            cols.extend(["Local Dubai Price (AED)", "Supplier (Dubai)", "Local Oman Price (OMR)", "Supplier (Oman)"])
         elif market_filter == "INT":
             cols.extend(["International CIF (USD)", "International FOB (USD)"])
         else: # BOTH
-            cols.extend(["Local Dubai Price (AED)", "Local Oman Price (OMR)", "Supplier", "International CIF (USD)", "International FOB (USD)"])
+            cols.extend(["Local Dubai Price (AED)", "Supplier (Dubai)", "Local Oman Price (OMR)", "Supplier (Oman)", "International CIF (USD)", "International FOB (USD)"])
             
         # Write Headers
         ws.append(cols)
@@ -420,11 +420,11 @@ def generate_price_capture_template(materials: list, market_type: str) -> bytes:
                 
             # Prices (blank for entry)
             if market_filter == "DXB":
-                row_data.extend(["", "", ""])
+                row_data.extend(["", "", "", ""])
             elif market_filter == "INT":
                 row_data.extend(["", ""])
             else:
-                row_data.extend(["", "", "", "", ""])
+                row_data.extend(["", "", "", "", "", ""])
                 
             ws.append(row_data)
             current_row = ws[ws.max_row]
@@ -453,17 +453,19 @@ def generate_price_capture_template(materials: list, market_type: str) -> bytes:
         ws.column_dimensions["E"].width = 18
         if market_filter == "DXB":
             ws.column_dimensions["F"].width = 22
-            ws.column_dimensions["G"].width = 22
-            ws.column_dimensions["H"].width = 20
+            ws.column_dimensions["G"].width = 20
+            ws.column_dimensions["H"].width = 22
+            ws.column_dimensions["I"].width = 20
         elif market_filter == "INT":
             ws.column_dimensions["F"].width = 22
             ws.column_dimensions["G"].width = 22
         else:
             ws.column_dimensions["F"].width = 22
-            ws.column_dimensions["G"].width = 22
-            ws.column_dimensions["H"].width = 20
-            ws.column_dimensions["I"].width = 22
+            ws.column_dimensions["G"].width = 20
+            ws.column_dimensions["H"].width = 22
+            ws.column_dimensions["I"].width = 20
             ws.column_dimensions["J"].width = 22
+            ws.column_dimensions["K"].width = 22
             
     if market_type == "ALL":
         create_sheet("Dubai Local", "DXB", 0)
