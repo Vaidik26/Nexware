@@ -263,7 +263,7 @@ export default function PriceManagement() {
                 <th className="py-3.5 px-4 border-r border-outline-variant text-center">Category</th>
                 <th className="py-3.5 px-4 border-r border-outline-variant text-center">Market</th>
                 <th className="py-3.5 px-6 border-r border-outline-variant text-right">Last Price</th>
-                  <th className="py-3.5 px-6 border-r border-outline-variant text-right">Last Supplier</th>
+                  <th className="py-3.5 px-6 border-r border-outline-variant text-left">Last Supplier</th>
                   <th className="py-3.5 px-4 border-r border-outline-variant text-center">Last Updated</th>
                 <th className="py-3.5 px-4 text-right w-36">Action</th>
               </tr>
@@ -281,32 +281,51 @@ export default function PriceManagement() {
                   const tp = summary.target_price;
                   const last_p = tp || summary.last_price;
 
-                  let priceStr = '—';
-                  let supplierStr = '-';
-                    if (last_p) {
-                    const parts = [];
-                      const isDef = currencyView === 'DEFAULT';
-                      
-                      const locAed = isDef ? last_p.local_price_aed : convertCurrency(last_p.local_price_aed, 'AED', currencyView);
-                      const locOmr = isDef ? last_p.local_price_omr : convertCurrency(last_p.local_price_omr, 'OMR', currencyView);
-                      const cif = isDef ? last_p.cif_price : convertCurrency(last_p.cif_price, 'USD', currencyView);
-                      const fob = isDef ? last_p.fob_price : convertCurrency(last_p.fob_price, 'USD', currencyView);
-                      
-                      if (locAed != null) parts.push(`DXB: ${locAed.toFixed(2)} ${isDef ? 'AED' : currencyView}`);
-                      if (locOmr != null) parts.push(`OMN: ${locOmr.toFixed(2)} ${isDef ? 'OMR' : currencyView}`);
-                      if (cif != null) parts.push(`CIF: ${cif.toFixed(2)} ${isDef ? 'USD' : currencyView}`);
-                      if (fob != null) parts.push(`FOB: ${fob.toFixed(2)} ${isDef ? 'USD' : currencyView}`);
-                      
-                      if (parts.length > 0) {
-                          priceStr = parts.join(' | ');
-                        }
-                        
-                        const supParts = [];
-                        if (last_p.supplier_dubai) supParts.push(`DXB: ${last_p.supplier_dubai}`);
-                        if (last_p.supplier_oman) supParts.push(`OMN: ${last_p.supplier_oman}`);
-                        if (supParts.length > 0) {
-                          supplierStr = supParts.join(' | ');
-                        }
+                  let priceElements: React.ReactNode = <span className="text-slate-400">-</span>;
+                  let supplierElements: React.ReactNode = <span className="text-slate-400">-</span>;
+                  if (last_p) {
+                    const isDef = currencyView === 'DEFAULT';
+                    
+                    const locAed = isDef ? last_p.local_price_aed : convertCurrency(last_p.local_price_aed, 'AED', currencyView);
+                    const locOmr = isDef ? last_p.local_price_omr : convertCurrency(last_p.local_price_omr, 'OMR', currencyView);
+                    const cif = isDef ? last_p.cif_price : convertCurrency(last_p.cif_price, 'USD', currencyView);
+                    const fob = isDef ? last_p.fob_price : convertCurrency(last_p.fob_price, 'USD', currencyView);
+                    
+                    const pList = [];
+                    if (locAed != null) pList.push({ label: 'DXB', value: `${locAed.toFixed(2)} ${isDef ? 'AED' : currencyView}` });
+                    if (locOmr != null) pList.push({ label: 'OMN', value: `${locOmr.toFixed(2)} ${isDef ? 'OMR' : currencyView}` });
+                    if (cif != null) pList.push({ label: 'CIF', value: `${cif.toFixed(2)} ${isDef ? 'USD' : currencyView}` });
+                    if (fob != null) pList.push({ label: 'FOB', value: `${fob.toFixed(2)} ${isDef ? 'USD' : currencyView}` });
+                    
+                    if (pList.length > 0) {
+                      priceElements = (
+                        <div className="flex flex-col gap-1 items-end justify-center">
+                          {pList.map((p, i) => (
+                            <div key={i} className="flex items-center gap-1.5 whitespace-nowrap">
+                              <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1 py-0.5 rounded tracking-wide">{p.label}</span>
+                              <span className="text-sm font-semibold text-slate-700">{p.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }
+                    
+                    const sList = [];
+                    if (last_p.supplier_dubai) sList.push({ label: 'DXB', value: last_p.supplier_dubai });
+                    if (last_p.supplier_oman) sList.push({ label: 'OMN', value: last_p.supplier_oman });
+                    
+                    if (sList.length > 0) {
+                      supplierElements = (
+                        <div className="flex flex-col gap-1 items-start justify-center">
+                          {sList.map((s, i) => (
+                            <div key={i} className="flex items-center gap-1.5 whitespace-nowrap">
+                              <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1 py-0.5 rounded tracking-wide">{s.label}</span>
+                              <span className="text-xs font-medium text-slate-600 truncate max-w-[140px]" title={s.value}>{s.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }
                   }
 
                   return (
@@ -326,11 +345,11 @@ export default function PriceManagement() {
                           {(item.market_type === 'INT' || item.market_type === 'BOTH') && <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-1.5 py-0.5 rounded">INT</span>}
                         </div>
                       </td>
-                      <td className="py-3.5 px-6 border-r border-outline-variant text-right font-mono font-semibold">
-                          {priceStr}
+                      <td className="py-3.5 px-6 border-r border-outline-variant text-right font-mono align-middle">
+                          {priceElements}
                         </td>
-                        <td className="py-3.5 px-6 border-r border-outline-variant text-right text-xs text-slate-600 font-medium whitespace-pre-wrap">
-                          {supplierStr.split(' | ').join('\n')} 
+                        <td className="py-3.5 px-6 border-r border-outline-variant text-left align-middle">
+                          {supplierElements}
                         </td>
                       <td className="py-3.5 px-4 border-r border-outline-variant text-center font-mono text-xs text-slate-500">
                         {last_p?.date || '�'}
