@@ -1,21 +1,11 @@
+import * as React from 'react';
 import { useState, useEffect, useMemo } from 'react';
-import { 
-  Search, 
-  Calendar, 
-   
-  Plus, Download, 
-  Edit2, 
-  
-  
-  
-  
-  
-} from 'lucide-react';
+import { Search, Calendar, Plus, Download, Edit2, Upload, Loader2, AlertCircle, FileCheck } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { PageLoader } from '@/components/ui/PageLoader';
-import { getLatestPrices, saveDailyRates, LatestPriceSummary } from '@/lib/data/priceService';
+import { getLatestPrices, saveDailyRates, LatestPriceSummary, importPriceExcel } from '@/lib/data/priceService';
 import { convertCurrency } from '@/lib/currency';
 import api from '@/lib/api';
 
@@ -28,6 +18,52 @@ export default function PriceManagement() {
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Import State
+  const [isImporting, setIsImporting] = useState(false);
+  const [importSummary, setImportSummary] = useState<any>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const abortControllerRef = React.useRef<AbortController | null>(null);
+
+  const handleImportClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // Reset input so the same file can be selected again
+    e.target.value = '';
+
+    setIsImporting(true);
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const data = await importPriceExcel(file, selectedDate, abortControllerRef.current.signal);
+      setImportSummary(data);
+      await loadData(); // Reload UI
+    } catch (err: any) {
+      if (err.name === 'CanceledError' || err.message === 'canceled') {
+        toast.error("Import cancelled. No changes were made.");
+      } else {
+        const msg = err.response?.data?.detail || "Failed to import file. Please check the template format.";
+        toast.error(msg);
+      }
+    } finally {
+      setIsImporting(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleCancelImport = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  };
+
   
   // Filters
   const [marketFilter, setMarketFilter] = useState('ALL');
@@ -180,7 +216,11 @@ export default function PriceManagement() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-            <Button variant="primary" onClick={() => handleExportTemplate('ALL')} className="shadow-sm flex items-center gap-2">
+            <Button variant="outline" onClick={handleImportClick} className="shadow-sm flex items-center gap-2 border-primary text-primary hover:bg-primary/5">
+                <Upload className="w-4 h-4" /> Import Excel
+              </Button>
+              <input type="file" accept=".xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
+              <Button variant="primary" onClick={() => handleExportTemplate('ALL')} className="shadow-sm flex items-center gap-2">
                 <Download className="w-4 h-4" /> Export Template
               </Button>
           </div>
@@ -485,7 +525,84 @@ export default function PriceManagement() {
             </div>
           </form>
       </Modal>
-    </div>
+    
+      {/* Import Processing Modal (Non-dismissible) */}
+      <Modal 
+        isOpen={isImporting} 
+        onClose={() => {}} 
+        title="Importing Market Rates..."
+      >
+        <div className="py-8 flex flex-col items-center justify-center text-center space-y-4">
+          <Loader2 className="w-12 h-12 text-primary animate-spin" />
+          <div>
+            <h3 className="text-lg font-semibold text-slate-800">Processing Upload</h3>
+            <p className="text-sm text-slate-500 max-w-[280px] mx-auto mt-2">
+              Validating and mapping your data safely. Please do not leave this page.
+            </p>
+          </div>
+          <Button variant="secondary" onClick={handleCancelImport} className="mt-4">
+            Cancel & Rollback
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Import Summary Modal */}
+      <Modal
+        isOpen={!!importSummary}
+        onClose={() => setImportSummary(null)}
+        title="Import Complete"
+      >
+        <div className="space-y-6">
+          <div className="flex items-center gap-4 bg-emerald-50 text-emerald-800 p-4 rounded-xl border border-emerald-100">
+            <div className="bg-white p-2 rounded-full shadow-sm">
+              <FileCheck className="w-6 h-6 text-emerald-600" />
+            </div>
+            <div>
+              <h4 className="font-bold text-base">Success</h4>
+              <p className="text-sm opacity-90">Successfully updated {importSummary?.success_count || 0} records for {selectedDate}.</p>
+            </div>
+          </div>
+
+          {importSummary?.skipped_count > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-amber-700">
+                <AlertCircle className="w-5 h-5" />
+                <h4 className="font-bold text-sm">Skipped Records ({importSummary.skipped_count})</h4>
+              </div>
+              
+              <div className="max-h-[300px] overflow-y-auto rounded-lg border border-outline-variant bg-white shadow-inner">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 sticky top-0 border-b border-outline-variant">
+                    <tr>
+                      <th className="py-2 px-3 font-semibold text-slate-600 border-r border-outline-variant">Sheet</th>
+                      <th className="py-2 px-3 font-semibold text-slate-600 border-r border-outline-variant">Row</th>
+                      <th className="py-2 px-3 font-semibold text-slate-600 border-r border-outline-variant">SKU</th>
+                      <th className="py-2 px-3 font-semibold text-slate-600">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant">
+                    {importSummary.errors?.map((err: any, i: number) => (
+                      <tr key={i} className="hover:bg-amber-50/50">
+                        <td className="py-2 px-3 border-r border-outline-variant font-medium text-slate-700">{err.sheet}</td>
+                        <td className="py-2 px-3 border-r border-outline-variant text-slate-500 font-mono text-[10px]">{err.row}</td>
+                        <td className="py-2 px-3 border-r border-outline-variant text-amber-700 font-mono">{err.sku}</td>
+                        <td className="py-2 px-3 text-slate-600 leading-snug">{err.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[11px] text-slate-500 text-center">Skipped rows were safely ignored and did not modify the database.</p>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <Button onClick={() => setImportSummary(null)}>Close</Button>
+          </div>
+        </div>
+      </Modal>
+
+</div>
   );
 }
 

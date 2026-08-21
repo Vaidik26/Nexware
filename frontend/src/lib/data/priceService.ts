@@ -123,3 +123,30 @@ export async function getItems(): Promise<Item[]> {
     return [];
   }
 }
+
+
+export async function importPriceExcel(file: File, targetDate: string, abortSignal?: AbortSignal): Promise<any> {
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  const res = await api.post(`/market/prices/import-excel?date_target=${targetDate}`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+    signal: abortSignal,
+  });
+  return res.data;
+}
+
+export async function importDailyRatesExcel(file: File, targetDate: string, signal?: AbortSignal): Promise<any> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await api.post(`/market/prices/import-excel?date_target=${targetDate}`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    signal
+  });
+  return res.data;
+}
