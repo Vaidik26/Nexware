@@ -3,7 +3,7 @@ import {
   Search, 
   Calendar, 
    
-  Plus, 
+  Plus, Download, 
   Edit2, 
   
   
@@ -17,6 +17,7 @@ import { toast } from '@/components/ui/Toast';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { getLatestPrices, saveDailyRates, LatestPriceSummary } from '@/lib/data/priceService';
 import { convertCurrency } from '@/lib/currency';
+import api from '@/lib/api';
 
 
 export default function PriceManagement() {
@@ -58,6 +59,28 @@ export default function PriceManagement() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  
+  const handleExportTemplate = (market: string) => {
+    // Construct the URL directly, assuming API base URL is available, or use window.open
+    // Better to fetch and download blob to keep auth headers if needed
+    toast.success(`Generating template for ${market}...`);
+    api.get(`/market/prices/export-capture-template?market=${market}`, { responseType: 'blob' })
+      .then((res: any) => {
+        const url = window.URL.createObjectURL(new Blob([res.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `Price_Capture_Template_${market}.xlsx`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        toast.success('Template downloaded successfully');
+      })
+      .catch((err: any) => {
+        console.error(err);
+        toast.error('Failed to download template');
+      });
   };
 
   useEffect(() => {
@@ -151,8 +174,18 @@ export default function PriceManagement() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          
-        </div>
+            <div className="relative group">
+              <Button variant="primary" className="shadow-sm flex items-center gap-2">
+                <Download className="w-4 h-4" /> Export Template
+              </Button>
+              <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
+                <button onClick={() => handleExportTemplate('ALL')} className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors border-b border-slate-50">All Markets</button>
+                <button onClick={() => handleExportTemplate('DXB')} className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors border-b border-slate-50">Dubai Local</button>
+                <button onClick={() => handleExportTemplate('INT')} className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors border-b border-slate-50">International</button>
+                <button onClick={() => handleExportTemplate('BOTH')} className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">Both Markets</button>
+              </div>
+            </div>
+          </div>
       </div>
 
       <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant shadow-sm space-y-6">

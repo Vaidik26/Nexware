@@ -15,7 +15,7 @@ from backend.schemas.market import (
     CapturedPriceCreate, CapturedPriceOut,
     PriceHistoryReportRequest
 )
-from backend.services.excel_service import generate_branded_price_history_excel
+from backend.services.excel_service import generate_branded_price_history_excel, generate_price_capture_template
 from backend.services.pdf_generator import generate_price_history_pdf
 from backend.dependencies import get_current_admin, get_current_user
 from sqlalchemy.exc import IntegrityError
@@ -248,4 +248,23 @@ async def export_price_history_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     ) # Final export endpoints included
+
+
+@router.get("/prices/export-capture-template")
+async def export_price_capture_template(
+    market: str = Query("ALL", description="DXB, INT, BOTH, or ALL"),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    materials_result = await db.execute(select(RawMaterial).order_by(RawMaterial.id))
+    materials = materials_result.scalars().all()
+    
+    excel_bytes = generate_price_capture_template(materials, market)
+    
+    filename = f"Price_Capture_Template_{market}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(excel_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 

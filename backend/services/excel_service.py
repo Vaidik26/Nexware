@@ -357,3 +357,147 @@ def generate_branded_price_history_excel(payload: dict) -> bytes:
     return buf.getvalue()
 
 
+
+from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.styles import Protection
+
+def generate_price_capture_template(materials: list, market_type: str) -> bytes:
+    wb = openpyxl.Workbook()
+    
+    # Define styles (Nexware Green Theme)
+    header_fill = PatternFill(start_color="064E3B", end_color="064E3B", fill_type="solid") # Dark Green
+    header_font = Font(color="FFFFFF", bold=True, size=11)
+    
+    row_fill_alt = PatternFill(start_color="ECFDF5", end_color="ECFDF5", fill_type="solid") # Light Emerald
+    row_fill_normal = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+    
+    thin_border = Border(
+        left=Side(style='thin', color="CCCCCC"), 
+        right=Side(style='thin', color="CCCCCC"), 
+        top=Side(style='thin', color="CCCCCC"), 
+        bottom=Side(style='thin', color="CCCCCC")
+    )
+    
+    locked_style = Protection(locked=True)
+    unlocked_style = Protection(locked=False)
+    
+    def create_sheet(sheet_name, market_filter, ws_index):
+        if ws_index == 0:
+            ws = wb.active
+            ws.title = sheet_name
+        else:
+            ws = wb.create_sheet(title=sheet_name)
+            
+        # Determine columns
+        cols = ["S.No", "SKU / Index Code", "Commodity Item Name", "Category", "Bag/CTN Weight", "Currency"]
+        
+        dv_currency = None
+        if market_filter == "DXB":
+            cols.append("Local Dubai Price")
+            dv_currency = DataValidation(type="list", formula1='"AED,OMR"', allow_blank=False)
+        elif market_filter == "INT":
+            cols.extend(["International CIF", "International FOB"])
+            # Force USD for INT, no dropdown needed
+        else: # BOTH
+            cols.extend(["Local Dubai Price", "International CIF", "International FOB"])
+            dv_currency = DataValidation(type="list", formula1='"USD,AED,OMR"', allow_blank=False)
+            
+        if dv_currency:
+            dv_currency.error ='Your entry is not in the list'
+            dv_currency.errorTitle = 'Invalid Entry'
+            dv_currency.prompt = 'Please select from the list'
+            dv_currency.promptTitle = 'Select Currency'
+            ws.add_data_validation(dv_currency)
+
+        # Write Headers
+        ws.append(cols)
+        for col_idx, cell in enumerate(ws[1], 1):
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = thin_border
+            
+        # Filter materials
+        sheet_mats = [m for m in materials if m.market_type == market_filter]
+        
+        for idx, mat in enumerate(sheet_mats, 1):
+            row_data = [
+                idx,
+                mat.material_code,
+                mat.material_name,
+                mat.category,
+                mat.bag_carton_weight if mat.bag_carton_weight else "-",
+            ]
+            
+            # Currency Default
+            if market_filter == "INT":
+                row_data.append("USD")
+            elif market_filter == "DXB":
+                row_data.append("AED")
+            else:
+                row_data.append("AED")
+                
+            # Prices (blank for entry)
+            if market_filter == "DXB":
+                row_data.append("")
+            elif market_filter == "INT":
+                row_data.extend(["", ""])
+            else:
+                row_data.extend(["", "", ""])
+                
+            ws.append(row_data)
+            current_row = ws[ws.max_row]
+            
+            fill = row_fill_alt if idx % 2 == 0 else row_fill_normal
+            
+            for c_idx, cell in enumerate(current_row, 1):
+                cell.fill = fill
+                cell.border = thin_border
+                cell.alignment = Alignment(vertical="center")
+                
+                # Lock columns 1 to 5 (S.No to Weight)
+                if c_idx <= 5:
+                    cell.protection = locked_style
+                else:
+                    cell.protection = unlocked_style
+                    
+            if dv_currency:
+                # Column 6 is currency
+                curr_cell_coord = f"F{ws.max_row}"
+                dv_currency.add(ws[curr_cell_coord])
+                
+        # Protect sheet so locked cells can't be edited
+        ws.protection.sheet = True
+        ws.protection.password = "" # No password, just UI protection
+        
+        # Adjust column widths
+        ws.column_dimensions["A"].width = 8
+        ws.column_dimensions["B"].width = 18
+        ws.column_dimensions["C"].width = 40
+        ws.column_dimensions["D"].width = 20
+        ws.column_dimensions["E"].width = 18
+        ws.column_dimensions["F"].width = 12
+        if market_filter == "DXB":
+            ws.column_dimensions["G"].width = 20
+        elif market_filter == "INT":
+            ws.column_dimensions["G"].width = 20
+            ws.column_dimensions["H"].width = 20
+        else:
+            ws.column_dimensions["G"].width = 20
+            ws.column_dimensions["H"].width = 20
+            ws.column_dimensions["I"].width = 20
+            
+    if market_type == "ALL":
+        create_sheet("Dubai Local", "DXB", 0)
+        create_sheet("International", "INT", 1)
+        create_sheet("Both Markets", "BOTH", 2)
+    elif market_type == "DXB":
+        create_sheet("Dubai Local", "DXB", 0)
+    elif market_type == "INT":
+        create_sheet("International", "INT", 0)
+    elif market_type == "BOTH":
+        create_sheet("Both Markets", "BOTH", 0)
+
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
