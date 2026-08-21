@@ -171,7 +171,7 @@ export default function PriceManagement() {
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-[1600px] w-full mx-auto">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-on-surface">Daily Market Price Management</h1>
@@ -262,14 +262,14 @@ export default function PriceManagement() {
           <table className="w-full text-left border-collapse text-sm">
             <thead>
               <tr className="bg-slate-50 text-slate-700 border-b border-outline-variant font-semibold">
-                <th className="py-3.5 px-4 border-r border-outline-variant text-center w-14">S.No</th>
-                <th className="py-3.5 px-6 border-r border-outline-variant">Item Name</th>
-                <th className="py-3.5 px-4 border-r border-outline-variant text-center">Category</th>
-                <th className="py-3.5 px-4 border-r border-outline-variant text-center">Market</th>
-                <th className="py-3.5 px-6 border-r border-outline-variant text-right">Last Price</th>
-                  <th className="py-3.5 px-6 border-r border-outline-variant text-left">Last Supplier</th>
-                  <th className="py-3.5 px-4 border-r border-outline-variant text-center">Last Updated</th>
-                <th className="py-3.5 px-4 text-right w-36">Action</th>
+                <th className="py-3.5 px-3 border-r border-outline-variant text-center w-12">S.No</th>
+                <th className="py-3.5 px-3 border-r border-outline-variant">Item Name</th>
+                <th className="py-3.5 px-2 border-r border-outline-variant text-center">Category</th>
+                <th className="py-3.5 px-2 border-r border-outline-variant text-center">Market</th>
+                <th className="py-3.5 px-4 border-r border-outline-variant text-right">Last Price</th>
+                  <th className="py-3.5 px-4 border-r border-outline-variant text-left">Last Supplier</th>
+                  <th className="py-3.5 px-3 border-r border-outline-variant text-center">Last Updated</th>
+                <th className="py-3.5 px-3 text-right w-32">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant text-sm">
@@ -335,38 +335,38 @@ export default function PriceManagement() {
 
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="py-3.5 px-4 border-r border-outline-variant text-center font-mono text-xs text-slate-500 font-medium">
+                      <td className="py-3.5 px-3 border-r border-outline-variant text-center font-mono text-xs text-slate-500 font-medium">
                         {idx + 1}
                       </td>
-                      <td className="py-3.5 px-6 border-r border-outline-variant font-semibold text-on-surface">
+                      <td className="py-3.5 px-3 border-r border-outline-variant font-semibold text-on-surface text-xs leading-snug">
                         {item.particulars}
                       </td>
-                      <td className="py-3.5 px-4 border-r border-outline-variant text-center text-slate-700">
+                      <td className="py-3.5 px-2 border-r border-outline-variant text-center text-slate-700 text-xs">
                         {item.category}
                       </td>
-                      <td className="py-3.5 px-4 border-r border-outline-variant text-center">
+                      <td className="py-3.5 px-2 border-r border-outline-variant text-center">
                         <div className="flex justify-center gap-1">
                           {(item.market_type === 'DXB' || item.market_type === 'BOTH') && <span className="bg-orange-100 text-orange-700 text-[10px] font-bold px-1.5 py-0.5 rounded">DXB</span>}
                           {(item.market_type === 'INT' || item.market_type === 'BOTH') && <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-1.5 py-0.5 rounded">INT</span>}
                         </div>
                       </td>
-                      <td className="py-3.5 px-6 border-r border-outline-variant text-right font-mono align-middle">
+                      <td className="py-3.5 px-4 border-r border-outline-variant text-right font-mono align-middle">
                           {priceElements}
                         </td>
-                        <td className="py-3.5 px-6 border-r border-outline-variant text-left align-middle">
+                        <td className="py-3.5 px-4 border-r border-outline-variant text-left align-middle">
                           {supplierElements}
                         </td>
-                      <td className="py-3.5 px-4 border-r border-outline-variant text-center font-mono text-xs text-slate-500">
+                      <td className="py-3.5 px-3 border-r border-outline-variant text-center font-mono text-[10px] text-slate-500">
                         {last_p?.date || '�'}
                       </td>
-                      <td className="py-3.5 px-4 text-right">
+                      <td className="py-3.5 px-3 text-right">
                         <Button 
                             variant="outline" 
                             size="sm" 
                             disabled={selectedDate !== todayStr}
                             title={selectedDate !== todayStr ? "Prices can only be captured for today" : undefined}
                             onClick={() => handleOpenEditModal(summary)}
-                            className="text-xs font-medium px-3 shadow-2xs hover:bg-primary/5 hover:text-primary hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="text-xs font-medium px-2 py-1.5 h-auto shadow-2xs hover:bg-primary/5 hover:text-primary hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                           {tp ? (
                             <span className="flex items-center gap-1.5"><Edit2 className="w-3.5 h-3.5" /> Edit Rates</span>
