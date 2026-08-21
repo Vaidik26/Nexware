@@ -25,8 +25,7 @@ class CapturedPriceBase(BaseModel):
     date: date
     local_price_aed: Optional[float] = None
     local_price_omr: Optional[float] = None
-    supplier_dubai: Optional[str] = None
-    supplier_oman: Optional[str] = None
+    supplier: Optional[str] = None
     fob_price: Optional[float] = None
     cif_price: Optional[float] = None
 

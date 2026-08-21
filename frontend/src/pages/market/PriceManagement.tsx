@@ -39,8 +39,7 @@ export default function PriceManagement() {
   const [activeItem, setActiveItem] = useState<LatestPriceSummary | null>(null);
   const [localAedInput, setLocalAedInput] = useState('');
   const [localOmrInput, setLocalOmrInput] = useState('');
-  const [supplierDubaiInput, setSupplierDubaiInput] = useState('');
-  const [supplierOmanInput, setSupplierOmanInput] = useState('');
+  const [supplierInput, setSupplierInput] = useState('');
   const [cifInput, setCifInput] = useState('');
   const [fobInput, setFobInput] = useState('');
 
@@ -117,8 +116,7 @@ export default function PriceManagement() {
     const tr = summary.target_price;
     setLocalAedInput(tr?.local_price_aed != null ? String(tr.local_price_aed) : '');
     setLocalOmrInput(tr?.local_price_omr != null ? String(tr.local_price_omr) : '');
-    setSupplierDubaiInput(tr?.supplier_dubai || '');
-    setSupplierOmanInput(tr?.supplier_oman || '');
+    setSupplierInput(tr?.supplier || '');
     setCifInput(tr?.cif_price != null ? String(tr.cif_price) : '');
     setFobInput(tr?.fob_price != null ? String(tr.fob_price) : '');
   };
@@ -131,8 +129,7 @@ export default function PriceManagement() {
     const locOmr = localOmrInput.trim() !== '' ? Number(localOmrInput) : null;
     const cifVal = cifInput.trim() !== '' ? Number(cifInput) : null;
     const fobVal = fobInput.trim() !== '' ? Number(fobInput) : null;
-    const supDxb = supplierDubaiInput.trim();
-    const supOmr = supplierOmanInput.trim();
+    const sup = supplierInput.trim();
 
     if (locAed === null && locOmr === null && cifVal === null && fobVal === null) {
       toast.error('Please fill at least one price to save the rate record.');
@@ -146,8 +143,7 @@ export default function PriceManagement() {
         date: selectedDate,
         local_price_aed: locAed,
         local_price_omr: locOmr,
-        supplier_dubai: supDxb,
-        supplier_oman: supOmr,
+        supplier: sup,
         fob_price: fobVal,
         cif_price: cifVal,
       }]);
@@ -176,17 +172,9 @@ export default function PriceManagement() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-            <div className="relative group">
-              <Button variant="primary" className="shadow-sm flex items-center gap-2">
+            <Button variant="primary" onClick={() => handleExportTemplate('ALL')} className="shadow-sm flex items-center gap-2">
                 <Download className="w-4 h-4" /> Export Template
               </Button>
-              <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
-                <button onClick={() => handleExportTemplate('ALL')} className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors border-b border-slate-50">All Markets</button>
-                <button onClick={() => handleExportTemplate('DXB')} className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors border-b border-slate-50">Dubai Local</button>
-                <button onClick={() => handleExportTemplate('INT')} className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors border-b border-slate-50">International</button>
-                <button onClick={() => handleExportTemplate('BOTH')} className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">Both Markets</button>
-              </div>
-            </div>
           </div>
       </div>
 
@@ -362,51 +350,39 @@ export default function PriceManagement() {
         <form onSubmit={handleSaveModal} className="space-y-4">
             {activeItem?.item?.market_type !== 'INT' && (
               <>
+                <div className="space-y-4 mb-4">
+                  <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Supplier Name</label>
+                  <input
+                    type="text"
+                    value={supplierInput} onChange={(e) => setSupplierInput(e.target.value)}
+                    placeholder="Enter supplier name..."
+                    className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                  />
+                </div>
+                
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
                   <h4 className="text-sm font-bold text-slate-700">Dubai Local Market</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Price (AED)</label>
-                      <input
-                        type="number" step="0.01" min="0"
-                        value={localAedInput} onChange={(e) => setLocalAedInput(e.target.value)}
-                        placeholder="0.00"
-                        className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Supplier</label>
-                      <input
-                        type="text" list="dubai-suppliers"
-                        value={supplierDubaiInput} onChange={(e) => setSupplierDubaiInput(e.target.value)}
-                        placeholder="Select or type..."
-                        className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
-                      />
-                    </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Price (AED)</label>
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={localAedInput} onChange={(e) => setLocalAedInput(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                    />
                   </div>
                 </div>
                 
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
                   <h4 className="text-sm font-bold text-slate-700">Oman Local Market</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Price (OMR)</label>
-                      <input
-                        type="number" step="0.001" min="0"
-                        value={localOmrInput} onChange={(e) => setLocalOmrInput(e.target.value)}
-                        placeholder="0.000"
-                        className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Supplier</label>
-                      <input
-                        type="text" list="oman-suppliers"
-                        value={supplierOmanInput} onChange={(e) => setSupplierOmanInput(e.target.value)}
-                        placeholder="Select or type..."
-                        className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
-                      />
-                    </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Price (OMR)</label>
+                    <input
+                      type="number" step="0.001" min="0"
+                      value={localOmrInput} onChange={(e) => setLocalOmrInput(e.target.value)}
+                      placeholder="0.000"
+                      className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                    />
                   </div>
                 </div>
               </>
@@ -438,12 +414,7 @@ export default function PriceManagement() {
               </div>
             )}
             
-            <datalist id="dubai-suppliers">
-              {Array.from(new Set(items.map(i => i.last_price?.supplier_dubai).filter(Boolean))).map(s => <option key={s} value={s} />)}
-            </datalist>
-            <datalist id="oman-suppliers">
-              {Array.from(new Set(items.map(i => i.last_price?.supplier_oman).filter(Boolean))).map(s => <option key={s} value={s} />)}
-            </datalist>
+            
 
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-outline-variant">
               <Button variant="secondary" onClick={() => setActiveItem(null)} type="button">Cancel</Button>
