@@ -263,14 +263,15 @@ export default function PriceManagement() {
                 <th className="py-3.5 px-4 border-r border-outline-variant text-center">Category</th>
                 <th className="py-3.5 px-4 border-r border-outline-variant text-center">Market</th>
                 <th className="py-3.5 px-6 border-r border-outline-variant text-right">Last Price</th>
-                <th className="py-3.5 px-4 border-r border-outline-variant text-center">Last Updated</th>
+                  <th className="py-3.5 px-6 border-r border-outline-variant text-right">Last Supplier</th>
+                  <th className="py-3.5 px-4 border-r border-outline-variant text-center">Last Updated</th>
                 <th className="py-3.5 px-4 text-right w-36">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant text-sm">
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500 font-medium">
+                  <td colSpan={8} className="py-12 text-center text-slate-500 font-medium">
                     No commodity items found matching your filters.
                   </td>
                 </tr>
@@ -281,7 +282,8 @@ export default function PriceManagement() {
                   const last_p = tp || summary.last_price;
 
                   let priceStr = '—';
-                  if (last_p) {
+                  let supplierStr = '-';
+                    if (last_p) {
                     const parts = [];
                       const isDef = currencyView === 'DEFAULT';
                       
@@ -296,8 +298,15 @@ export default function PriceManagement() {
                       if (fob != null) parts.push(`FOB: ${fob.toFixed(2)} ${isDef ? 'USD' : currencyView}`);
                       
                       if (parts.length > 0) {
-                        priceStr = parts.join(' | ');
-                      }
+                          priceStr = parts.join(' | ');
+                        }
+                        
+                        const supParts = [];
+                        if (last_p.supplier_dubai) supParts.push(`DXB: ${last_p.supplier_dubai}`);
+                        if (last_p.supplier_oman) supParts.push(`OMN: ${last_p.supplier_oman}`);
+                        if (supParts.length > 0) {
+                          supplierStr = supParts.join(' | ');
+                        }
                   }
 
                   return (
@@ -318,8 +327,11 @@ export default function PriceManagement() {
                         </div>
                       </td>
                       <td className="py-3.5 px-6 border-r border-outline-variant text-right font-mono font-semibold">
-                        {priceStr}
-                      </td>
+                          {priceStr}
+                        </td>
+                        <td className="py-3.5 px-6 border-r border-outline-variant text-right text-xs text-slate-600 font-medium whitespace-pre-wrap">
+                          {supplierStr.split(' | ').join('\n')} 
+                        </td>
                       <td className="py-3.5 px-4 border-r border-outline-variant text-center font-mono text-xs text-slate-500">
                         {last_p?.date || '�'}
                       </td>
@@ -443,3 +455,5 @@ export default function PriceManagement() {
     </div>
   );
 }
+
+
