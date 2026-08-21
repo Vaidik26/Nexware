@@ -16,7 +16,7 @@ import api from '@/lib/api';
 const materialSchema = z.object({
   material_code: z.string().min(1, 'SKU / Commodity Index Code is required'),
   material_name: z.string().min(1, 'Item Name is required'),
-  bag_carton_weight: z.number().positive('Bag/Carton weight must be greater than 0'),
+  bag_carton_weight: z.any().optional(),
   weight_unit: z.string().default('kg'),
   category: z.string().min(1, 'Category is required'),
   market_type: z.enum(['DXB', 'INT', 'BOTH']).default('BOTH'),
@@ -36,7 +36,7 @@ export default function RawMaterials() {
     reset({
       material_code: item.material_code || item.sku,
       material_name: item.material_name || item.name,
-      bag_carton_weight: item.bag_carton_weight || item.weight || 10,
+      bag_carton_weight: item.bag_carton_weight || item.weight || '',
       weight_unit: item.weight_unit || item.unit || 'kg',
       category: item.category || 'Uncategorized',
       market_type: item.market_type || 'BOTH',
@@ -52,7 +52,7 @@ export default function RawMaterials() {
   const { register, handleSubmit, reset, formState: { errors } } = useForm<MaterialForm>({
     resolver: zodResolver(materialSchema),
     defaultValues: {
-      bag_carton_weight: 10,
+      bag_carton_weight: '',
       weight_unit: 'kg',
       category: 'Uncategorized',
       market_type: 'BOTH',
@@ -168,7 +168,7 @@ export default function RawMaterials() {
       accessor: (r: any) => (
         <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold bg-slate-100 px-2.5 py-1 rounded border border-slate-200 text-slate-700">
           <Scale className="w-3.5 h-3.5 text-slate-500" />
-          <span>{r.bag_carton_weight || r.weight || '10'} {r.weight_unit || r.unit || 'kg'}</span>
+          <span>{r.bag_carton_weight || r.weight || '-'}</span>
         </span>
       ), 
       className: 'w-48' 
@@ -265,17 +265,22 @@ export default function RawMaterials() {
 
             <div className="space-y-1">
               <label className="text-sm font-medium text-slate-700">Category</label>
-              <select
-                {...register('category')}
-                className={`w-full px-3 py-2 bg-white rounded-lg border focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent ${
-                  errors.category ? 'border-error' : 'border-slate-200'
-                }`}
-              >
-                <option value="Spices">Spices</option>
-                <option value="Nuts & Dry Fruits">Nuts & Dry Fruits</option>
-                <option value="Lentils & Pulses">Lentils & Pulses</option>
-                <option value="Grains">Grains</option>
-              </select>
+              <input
+                  type="text"
+                  list="category-options"
+                  {...register('category')}
+                  placeholder="e.g. Spices, OTHER..."
+                  className={`w-full px-3 py-2.5 bg-surface rounded-xl border border-outline-variant font-medium text-sm focus:outline-none focus:border-primary text-on-surface ${
+                    errors.category ? 'border-error' : ''
+                  }`}
+                />
+                <datalist id="category-options">
+                  <option value="Spices" />
+                  <option value="Nuts & Dry Fruits" />
+                  <option value="Lentils & Pulses" />
+                  <option value="Grains" />
+                  <option value="OTHER" />
+                </datalist>
               {errors.category && <span className="text-xs text-error">{errors.category.message}</span>}
             </div>
 
@@ -300,19 +305,12 @@ export default function RawMaterials() {
             </label>
             <div className="flex items-center gap-2.5">
               <input
-                type="number"
-                step="0.01"
-                placeholder="e.g. 10 or 500"
-                {...register('bag_carton_weight', { valueAsNumber: true })}
-                className="flex-1 px-3.5 py-2.5 bg-surface rounded-xl border border-outline-variant font-medium text-sm focus:outline-none focus:border-primary text-on-surface"
-              />
-              <select
-                {...register('weight_unit')}
-                className="w-28 px-3 py-2.5 bg-slate-50 rounded-xl border border-outline-variant font-semibold text-sm text-slate-700 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer shadow-xs"
-              >
-                <option value="kg">KG</option>
-                <option value="g">Gram (g)</option>
-              </select>
+                  type="text"
+                  placeholder="e.g. 72 CTN, 20, etc."
+                  {...register('bag_carton_weight')}
+                  className="flex-1 px-3.5 py-2.5 bg-surface rounded-xl border border-outline-variant font-medium text-sm focus:outline-none focus:border-primary text-on-surface"
+                />
+              
             </div>
             {errors.bag_carton_weight && <p className="text-xs font-semibold text-red-600 mt-1">{errors.bag_carton_weight.message}</p>}
           </div>
