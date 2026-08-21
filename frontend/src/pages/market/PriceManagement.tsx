@@ -357,7 +357,7 @@ export default function PriceManagement() {
                           {supplierElements}
                         </td>
                       <td className="py-3.5 px-3 border-r border-outline-variant text-center font-mono text-[10px] text-slate-500">
-                        {last_p?.date || '�'}
+                        {last_p?.date || '-'}
                       </td>
                       <td className="py-3.5 px-3 text-right">
                         <Button 
@@ -387,7 +387,7 @@ export default function PriceManagement() {
       <Modal 
         isOpen={!!activeItem} 
         onClose={() => setActiveItem(null)} 
-        title={activeItem ? `Enter Daily Market Rates � ${activeItem.item.particulars}` : 'Enter Daily Market Rates'}
+        title={activeItem ? activeItem.item.particulars : 'Enter Daily Market Rates'}
       >
         <form onSubmit={handleSaveModal} className="space-y-4">
             {activeItem?.item?.market_type !== 'INT' && (
