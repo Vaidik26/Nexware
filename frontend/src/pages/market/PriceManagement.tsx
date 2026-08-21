@@ -183,57 +183,20 @@ export default function PriceManagement() {
       </div>
 
       <div className="bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant shadow-sm space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex max-w-md w-full relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search commodities..."
-              className="w-full pl-10 pr-4 py-2.5 bg-surface rounded-xl border border-outline-variant focus:outline-none focus:border-primary text-sm transition-all"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          
-          <div className="flex flex-wrap items-center gap-3">
-            <select
-              value={marketFilter}
-              onChange={(e) => setMarketFilter(e.target.value)}
-              className="bg-surface px-3 py-2 rounded-xl border border-outline-variant text-sm focus:outline-none"
-            >
-              <option value="ALL">All Markets</option>
-              <option value="DXB">Dubai (Local)</option>
-              <option value="INT">International</option>
-              <option value="BOTH">Both</option>
-            </select>
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="bg-surface px-3 py-2 rounded-xl border border-outline-variant text-sm focus:outline-none"
-            >
-              {categories.map(c => <option key={c} value={c}>{c === 'ALL' ? 'All Categories' : c}</option>)}
-            </select>
-              <select
-                value={quoteStatusFilter}
-                onChange={(e) => setQuoteStatusFilter(e.target.value)}
-                className="bg-surface px-3 py-2 rounded-xl border border-outline-variant text-sm focus:outline-none"
-              >
-                <option value="ALL">All Quote Statuses</option>
-                <option value="QUOTED">Quoted / Captured</option>
-                <option value="UNQUOTED">Unquoted / Missing</option>
-              </select>
-              <select 
-                value={currencyView}
-                onChange={(e) => setCurrencyView(e.target.value)}
-                className="bg-blue-50 text-blue-700 font-semibold px-3 py-2 rounded-xl border border-outline-variant text-sm focus:outline-none"
-              >
-                <option value="DEFAULT">Currency: Default</option>
-                <option value="AED">View in AED</option>
-                <option value="USD">View in USD</option>
-                <option value="OMR">View in OMR</option>
-              </select>
-
-            <div className="flex items-center gap-2.5 bg-surface px-4 py-2 rounded-xl border border-outline-variant shadow-xs">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex w-full md:max-w-md relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search commodities..."
+                className="w-full pl-10 pr-4 py-2.5 bg-surface rounded-xl border border-outline-variant focus:outline-none focus:border-primary text-sm transition-all shadow-sm"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            
+            <div className="flex items-center gap-2.5 bg-surface px-4 py-2 rounded-xl border border-outline-variant shadow-sm w-full sm:w-auto shrink-0 justify-center">
               <Calendar className="w-4 h-4 text-primary shrink-0" />
               <input
                 type="date"
@@ -243,6 +206,45 @@ export default function PriceManagement() {
                 className="font-mono text-sm font-bold text-on-surface bg-transparent border-0 focus:outline-none focus:ring-0 cursor-pointer p-0"
               />
             </div>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-3 p-3 bg-slate-50/50 rounded-xl border border-slate-100">
+            <select
+              value={marketFilter}
+              onChange={(e) => setMarketFilter(e.target.value)}
+              className="bg-white px-3 py-2 rounded-lg border border-outline-variant text-sm focus:outline-none shadow-sm flex-1 sm:flex-none min-w-[140px]"
+            >
+              <option value="ALL">All Markets</option>
+              <option value="DXB">Dubai (Local)</option>
+              <option value="INT">International</option>
+              <option value="BOTH">Both</option>
+            </select>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="bg-white px-3 py-2 rounded-lg border border-outline-variant text-sm focus:outline-none shadow-sm flex-1 sm:flex-none min-w-[140px]"
+            >
+              {categories.map(c => <option key={c} value={c}>{c === 'ALL' ? 'All Categories' : c}</option>)}
+            </select>
+            <select
+              value={quoteStatusFilter}
+              onChange={(e) => setQuoteStatusFilter(e.target.value)}
+              className="bg-white px-3 py-2 rounded-lg border border-outline-variant text-sm focus:outline-none shadow-sm flex-1 sm:flex-none min-w-[140px]"
+            >
+              <option value="ALL">All Quote Statuses</option>
+              <option value="QUOTED">Quoted / Captured</option>
+              <option value="UNQUOTED">Unquoted / Missing</option>
+            </select>
+            <select 
+              value={currencyView}
+              onChange={(e) => setCurrencyView(e.target.value)}
+              className="bg-blue-50 text-blue-700 font-semibold px-3 py-2 rounded-lg border border-blue-100 text-sm focus:outline-none shadow-sm flex-1 sm:flex-none min-w-[140px]"
+            >
+              <option value="DEFAULT">Currency: Default</option>
+              <option value="AED">View in AED</option>
+              <option value="USD">View in USD</option>
+              <option value="OMR">View in OMR</option>
+            </select>
           </div>
         </div>
 
