@@ -37,8 +37,10 @@ export default function PriceManagement() {
 
   // Modal State for Entering / Editing Rates
   const [activeItem, setActiveItem] = useState<LatestPriceSummary | null>(null);
-  const [currency, setCurrency] = useState('AED');
-  const [localInput, setLocalInput] = useState('');
+  const [localAedInput, setLocalAedInput] = useState('');
+  const [localOmrInput, setLocalOmrInput] = useState('');
+  const [supplierDubaiInput, setSupplierDubaiInput] = useState('');
+  const [supplierOmanInput, setSupplierOmanInput] = useState('');
   const [cifInput, setCifInput] = useState('');
   const [fobInput, setFobInput] = useState('');
 
@@ -113,15 +115,10 @@ export default function PriceManagement() {
   const handleOpenEditModal = (summary: LatestPriceSummary) => {
     setActiveItem(summary);
     const tr = summary.target_price;
-    let defCurr = tr?.currency;
-    if (!defCurr) {
-      const marketType = summary.item.market_type;
-      if (marketType === 'DXB') defCurr = 'AED';
-      else if (marketType === 'INT') defCurr = 'USD';
-      else defCurr = 'AED';
-    }
-    setCurrency(defCurr);
-    setLocalInput(tr?.local_price != null ? String(tr.local_price) : '');
+    setLocalAedInput(tr?.local_price_aed != null ? String(tr.local_price_aed) : '');
+    setLocalOmrInput(tr?.local_price_omr != null ? String(tr.local_price_omr) : '');
+    setSupplierDubaiInput(tr?.supplier_dubai || '');
+    setSupplierOmanInput(tr?.supplier_oman || '');
     setCifInput(tr?.cif_price != null ? String(tr.cif_price) : '');
     setFobInput(tr?.fob_price != null ? String(tr.fob_price) : '');
   };
@@ -130,11 +127,14 @@ export default function PriceManagement() {
     e.preventDefault();
     if (!activeItem) return;
 
-    const localVal = localInput.trim() !== '' ? Number(localInput) : null;
+    const locAed = localAedInput.trim() !== '' ? Number(localAedInput) : null;
+    const locOmr = localOmrInput.trim() !== '' ? Number(localOmrInput) : null;
     const cifVal = cifInput.trim() !== '' ? Number(cifInput) : null;
     const fobVal = fobInput.trim() !== '' ? Number(fobInput) : null;
+    const supDxb = supplierDubaiInput.trim();
+    const supOmr = supplierOmanInput.trim();
 
-    if (localVal === null && cifVal === null && fobVal === null) {
+    if (locAed === null && locOmr === null && cifVal === null && fobVal === null) {
       toast.error('Please fill at least one price to save the rate record.');
       return;
     }
@@ -144,8 +144,10 @@ export default function PriceManagement() {
       await saveDailyRates([{
         itemId: activeItem.item.id,
         date: selectedDate,
-        currency,
-        local_price: localVal,
+        local_price_aed: locAed,
+        local_price_omr: locOmr,
+        supplier_dubai: supDxb,
+        supplier_oman: supOmr,
         fob_price: fobVal,
         cif_price: cifVal,
       }]);
@@ -287,13 +289,15 @@ export default function PriceManagement() {
                   let priceStr = '—';
                   if (last_p) {
                     const parts = [];
-                    const targetCurr = currencyView === 'DEFAULT' ? last_p.currency : currencyView;
+                    const targetCurr = currencyView === 'DEFAULT' ? 'AED' : currencyView;
                     
-                    const loc = currencyView === 'DEFAULT' ? last_p.local_price : convertCurrency(last_p.local_price, last_p.currency, targetCurr);
-                    const cif = currencyView === 'DEFAULT' ? last_p.cif_price : convertCurrency(last_p.cif_price, last_p.currency, targetCurr);
-                    const fob = currencyView === 'DEFAULT' ? last_p.fob_price : convertCurrency(last_p.fob_price, last_p.currency, targetCurr);
+                    const locAed = currencyView === 'DEFAULT' ? last_p.local_price_aed : convertCurrency(last_p.local_price_aed, 'AED', targetCurr);
+                    const locOmr = currencyView === 'DEFAULT' ? last_p.local_price_omr : convertCurrency(last_p.local_price_omr, 'OMR', targetCurr);
+                    const cif = currencyView === 'DEFAULT' ? last_p.cif_price : convertCurrency(last_p.cif_price, 'USD', targetCurr);
+                    const fob = currencyView === 'DEFAULT' ? last_p.fob_price : convertCurrency(last_p.fob_price, 'USD', targetCurr);
                     
-                    if (loc != null) parts.push(`LOC: ${loc.toFixed(2)}`);
+                    if (locAed != null) parts.push(`DXB: ${locAed.toFixed(2)}`);
+                    if (locOmr != null) parts.push(`OMN: ${locOmr.toFixed(2)}`);
                     if (cif != null) parts.push(`CIF: ${cif.toFixed(2)}`);
                     if (fob != null) parts.push(`FOB: ${fob.toFixed(2)}`);
                     
@@ -356,78 +360,96 @@ export default function PriceManagement() {
         title={activeItem ? `Enter Daily Market Rates � ${activeItem.item.particulars}` : 'Enter Daily Market Rates'}
       >
         <form onSubmit={handleSaveModal} className="space-y-4">
-          <div className="flex justify-center gap-2 mb-4">
-            {['USD', 'AED', 'OMR'].filter(c => {
-              if (!activeItem) return true;
-              const marketType = activeItem.item.market_type;
-              if (marketType === 'DXB') return c === 'AED' || c === 'OMR';
-              if (marketType === 'INT') return c === 'USD';
-              return true; // BOTH allows all
-            }).map(c => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setCurrency(c)}
-                className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${currency === c ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
+            {activeItem?.item?.market_type !== 'INT' && (
+              <>
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
+                  <h4 className="text-sm font-bold text-slate-700">Dubai Local Market</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Price (AED)</label>
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={localAedInput} onChange={(e) => setLocalAedInput(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Supplier</label>
+                      <input
+                        type="text" list="dubai-suppliers"
+                        value={supplierDubaiInput} onChange={(e) => setSupplierDubaiInput(e.target.value)}
+                        placeholder="Select or type..."
+                        className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
+                  <h4 className="text-sm font-bold text-slate-700">Oman Local Market</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Price (OMR)</label>
+                      <input
+                        type="number" step="0.001" min="0"
+                        value={localOmrInput} onChange={(e) => setLocalOmrInput(e.target.value)}
+                        placeholder="0.000"
+                        className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Supplier</label>
+                      <input
+                        type="text" list="oman-suppliers"
+                        value={supplierOmanInput} onChange={(e) => setSupplierOmanInput(e.target.value)}
+                        placeholder="Select or type..."
+                        className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
 
-          {(activeItem?.item.market_type === 'DXB' || activeItem?.item.market_type === 'BOTH') && (
-            <div>
-              <label className="text-sm font-medium text-on-surface-variant mb-1.5 block">
-                Local Dubai Price ({currency})
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                placeholder="e.g. 23.50"
-                value={localInput}
-                onChange={(e) => setLocalInput(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-surface rounded-xl border border-outline-variant font-medium text-sm focus:outline-none focus:border-primary text-on-surface font-mono"
-              />
+            {activeItem?.item?.market_type !== 'DXB' && (
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
+                <h4 className="text-sm font-bold text-slate-700">International Market (USD)</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">CIF Price</label>
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={cifInput} onChange={(e) => setCifInput(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">FOB Price</label>
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={fobInput} onChange={(e) => setFobInput(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <datalist id="dubai-suppliers">
+              {Array.from(new Set(items.map(i => i.last_price?.supplier_dubai).filter(Boolean))).map(s => <option key={s} value={s} />)}
+            </datalist>
+            <datalist id="oman-suppliers">
+              {Array.from(new Set(items.map(i => i.last_price?.supplier_oman).filter(Boolean))).map(s => <option key={s} value={s} />)}
+            </datalist>
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-outline-variant">
+              <Button variant="secondary" onClick={() => setActiveItem(null)} type="button">Cancel</Button>
+              <Button type="submit" isLoading={isSaving} className="shadow-md">Save Daily Rates</Button>
             </div>
-          )}
-
-          {(activeItem?.item.market_type === 'INT' || activeItem?.item.market_type === 'BOTH') && (
-            <>
-              <div>
-                <label className="text-sm font-medium text-on-surface-variant mb-1.5 block">
-                  International CIF Landed Quote ({currency})
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="e.g. 32.00"
-                  value={cifInput}
-                  onChange={(e) => setCifInput(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-surface rounded-xl border border-outline-variant font-medium text-sm focus:outline-none focus:border-primary text-on-surface font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-on-surface-variant mb-1.5 block">
-                  International FOB Export Quote ({currency})
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="e.g. 40.00"
-                  value={fobInput}
-                  onChange={(e) => setFobInput(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-surface rounded-xl border border-outline-variant font-medium text-sm focus:outline-none focus:border-primary text-on-surface font-mono"
-                />
-              </div>
-            </>
-          )}
-
-          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-outline-variant">
-            <Button variant="secondary" onClick={() => setActiveItem(null)} type="button">Cancel</Button>
-            <Button type="submit" isLoading={isSaving} className="shadow-md">Save Daily Rates</Button>
-          </div>
-        </form>
+          </form>
       </Modal>
     </div>
   );

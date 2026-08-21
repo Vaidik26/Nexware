@@ -30,8 +30,10 @@ interface CapturedPrice {
   id: number;
   material_id: number;
   date: string;
-  currency: string;
-  local_price: number | null;
+  local_price_aed: number | null;
+  local_price_omr: number | null;
+  supplier_dubai?: string;
+  supplier_oman?: string;
   cif_price: number | null;
   fob_price: number | null;
   material?: RawMaterial; // Joined on frontend for convenience
@@ -125,11 +127,15 @@ export default function MarketOverview() {
     let sumPrice = 0;
     let count = 0;
     filteredPrices.forEach(p => {
-      const targetCurr = currencyView === 'DEFAULT' ? p.currency : currencyView;
-      // Prefer CIF -> Local -> FOB for overall avg
-      const val = p.cif_price ?? p.local_price ?? p.fob_price;
-      if (val != null) {
-        sumPrice += convertCurrency(val, p.currency, targetCurr) || 0;
+      const targetCurr = currencyView === 'DEFAULT' ? 'AED' : currencyView;
+      let cVal = 0;
+      if (p.cif_price != null) cVal = convertCurrency(p.cif_price, 'USD', targetCurr) || 0;
+      else if (p.local_price_aed != null) cVal = convertCurrency(p.local_price_aed, 'AED', targetCurr) || 0;
+      else if (p.local_price_omr != null) cVal = convertCurrency(p.local_price_omr, 'OMR', targetCurr) || 0;
+      else if (p.fob_price != null) cVal = convertCurrency(p.fob_price, 'USD', targetCurr) || 0;
+      
+      if (cVal > 0) {
+        sumPrice += cVal;
         count++;
       }
     });
@@ -143,11 +149,19 @@ export default function MarketOverview() {
       const first = itemPrices[0];
       const last = itemPrices[itemPrices.length - 1];
       
-      const targetCurr = currencyView === 'DEFAULT' ? first.currency : currencyView;
-      const getVal = (p: CapturedPrice) => p.cif_price ?? p.local_price ?? p.fob_price;
+      const targetCurr = currencyView === 'DEFAULT' ? 'AED' : currencyView;
       
-      const v1 = convertCurrency(getVal(first), first.currency, targetCurr);
-      const v2 = convertCurrency(getVal(last), last.currency, targetCurr);
+      
+      let v1 = 0;
+        if (first.cif_price != null) v1 = convertCurrency(first.cif_price, 'USD', targetCurr) || 0;
+        else if (first.local_price_aed != null) v1 = convertCurrency(first.local_price_aed, 'AED', targetCurr) || 0;
+        else if (first.local_price_omr != null) v1 = convertCurrency(first.local_price_omr, 'OMR', targetCurr) || 0;
+        else if (first.fob_price != null) v1 = convertCurrency(first.fob_price, 'USD', targetCurr) || 0;
+      let v2 = 0;
+        if (last.cif_price != null) v2 = convertCurrency(last.cif_price, 'USD', targetCurr) || 0;
+        else if (last.local_price_aed != null) v2 = convertCurrency(last.local_price_aed, 'AED', targetCurr) || 0;
+        else if (last.local_price_omr != null) v2 = convertCurrency(last.local_price_omr, 'OMR', targetCurr) || 0;
+        else if (last.fob_price != null) v2 = convertCurrency(last.fob_price, 'USD', targetCurr) || 0;
       
       if (!v1 || !v2 || v1 === 0) return null;
       const pctChange = ((v2 - v1) / v1) * 100;
@@ -174,10 +188,14 @@ export default function MarketOverview() {
   const trendData = useMemo(() => {
     const dailyMap = new Map<string, { sum: number, count: number }>();
     filteredPrices.forEach(p => {
-      const targetCurr = currencyView === 'DEFAULT' ? p.currency : currencyView;
-      const val = p.cif_price ?? p.local_price ?? p.fob_price;
-      if (val != null) {
-        const cVal = convertCurrency(val, p.currency, targetCurr) || 0;
+      const targetCurr = currencyView === 'DEFAULT' ? 'AED' : currencyView;
+        let cVal = 0;
+        if (p.cif_price != null) cVal = convertCurrency(p.cif_price, 'USD', targetCurr) || 0;
+        else if (p.local_price_aed != null) cVal = convertCurrency(p.local_price_aed, 'AED', targetCurr) || 0;
+        else if (p.local_price_omr != null) cVal = convertCurrency(p.local_price_omr, 'OMR', targetCurr) || 0;
+        else if (p.fob_price != null) cVal = convertCurrency(p.fob_price, 'USD', targetCurr) || 0;
+        
+        if (cVal > 0) {
         const current = dailyMap.get(p.date) || { sum: 0, count: 0 };
         dailyMap.set(p.date, { sum: current.sum + cVal, count: current.count + 1 });
       }
@@ -224,15 +242,17 @@ export default function MarketOverview() {
     const itemPrices = prices.filter(p => p.material_id === deepDiveItem.id).sort((a, b) => a.date.localeCompare(b.date));
     
     return itemPrices.map(p => {
-      const targetCurr = currencyView === 'DEFAULT' ? p.currency : currencyView;
-      const loc = convertCurrency(p.local_price, p.currency, targetCurr);
-      const cif = convertCurrency(p.cif_price, p.currency, targetCurr);
-      const fob = convertCurrency(p.fob_price, p.currency, targetCurr);
+      const targetCurr = currencyView === 'DEFAULT' ? 'AED' : currencyView;
+        const loc_aed = convertCurrency(p.local_price_aed, 'AED', targetCurr);
+        const loc_omr = convertCurrency(p.local_price_omr, 'OMR', targetCurr);
+        const cif = convertCurrency(p.cif_price, 'USD', targetCurr);
+        const fob = convertCurrency(p.fob_price, 'USD', targetCurr);
       
       return {
         date: formatDateStr(p.date),
         fullDate: p.date,
-        loc: loc ? Number(loc.toFixed(2)) : null,
+        loc_aed: loc_aed ? Number(loc_aed.toFixed(2)) : null,
+        loc_omr: loc_omr ? Number(loc_omr.toFixed(2)) : null,
         cif: cif ? Number(cif.toFixed(2)) : null,
         fob: fob ? Number(fob.toFixed(2)) : null,
         freightDelta: (cif && fob) ? Number((cif - fob).toFixed(2)) : null,

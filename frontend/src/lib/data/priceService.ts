@@ -13,8 +13,10 @@ export interface CapturedPrice {
   id: number;
   material_id: number;
   date: string;
-  currency: string;
-  local_price: number | null;
+  local_price_aed: number | null;
+  local_price_omr: number | null;
+  supplier_dubai?: string;
+  supplier_oman?: string;
   fob_price: number | null;
   cif_price: number | null;
   created_at?: string;
@@ -63,10 +65,12 @@ export async function saveDailyRates(newRecords: any[]): Promise<void> {
     await api.post('/market/prices', {
       material_id: Number(record.itemId),
       date: record.date,
-      currency: record.currency,
-      local_price: record.local_price !== undefined ? record.local_price : null,
-      fob_price: record.fob_price !== undefined ? record.fob_price : null,
-      cif_price: record.cif_price !== undefined ? record.cif_price : null,
+      local_price_aed: record.local_price_aed !== undefined ? record.local_price_aed : null,
+        local_price_omr: record.local_price_omr !== undefined ? record.local_price_omr : null,
+        supplier_dubai: record.supplier_dubai || null,
+        supplier_oman: record.supplier_oman || null,
+        fob_price: record.fob_price !== undefined ? record.fob_price : null,
+        cif_price: record.cif_price !== undefined ? record.cif_price : null,
     }).catch(e => console.error(e));
   }
 }

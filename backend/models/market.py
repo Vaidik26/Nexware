@@ -19,8 +19,10 @@ class CapturedPrice(Base):
     id = Column(Integer, primary_key=True, index=True)
     material_id = Column(Integer, ForeignKey("raw_materials.id"), nullable=False)
     date = Column(Date, nullable=False)
-    currency = Column(String, nullable=False) # USD, AED, OMR
-    local_price = Column(Float, nullable=True)
+    local_price_aed = Column(Float, nullable=True)
+    local_price_omr = Column(Float, nullable=True)
+    supplier_dubai = Column(String, nullable=True)
+    supplier_oman = Column(String, nullable=True)
     fob_price = Column(Float, nullable=True)
     cif_price = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

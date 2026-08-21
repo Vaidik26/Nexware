@@ -46,8 +46,7 @@ async def create_material(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_admin)
 ):
-    if material.bag_carton_weight <= 0:
-        raise HTTPException(status_code=400, detail="Weight must be > 0")
+    
     try:
         db_mat = RawMaterial(**material.model_dump())
         db.add(db_mat)
@@ -137,8 +136,10 @@ async def create_price(
     )
     existing = result.scalars().first()
     if existing:
-        existing.currency = price.currency
-        existing.local_price = price.local_price
+        existing.local_price_aed = price.local_price_aed
+        existing.local_price_omr = price.local_price_omr
+        existing.supplier_dubai = price.supplier_dubai
+        existing.supplier_oman = price.supplier_oman
         existing.fob_price = price.fob_price
         existing.cif_price = price.cif_price
         await db.commit()
