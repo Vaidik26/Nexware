@@ -16,7 +16,7 @@ import api from '@/lib/api';
 const materialSchema = z.object({
   material_code: z.string().min(1, 'SKU / Commodity Index Code is required'),
   material_name: z.string().min(1, 'Item Name is required'),
-  bag_carton_weight: z.any().optional(),
+  bag_carton_weight: z.string().optional().nullable(),
   weight_unit: z.string().default('kg'),
   category: z.string().min(1, 'Category is required'),
   market_type: z.enum(['DXB', 'INT', 'BOTH']).default('BOTH'),
@@ -312,7 +312,7 @@ export default function RawMaterials() {
                 />
               
             </div>
-            {errors.bag_carton_weight && <p className="text-xs font-semibold text-red-600 mt-1">{errors.bag_carton_weight.message}</p>}
+            {errors.bag_carton_weight && <p className="text-xs font-semibold text-red-600 mt-1">{String(errors.bag_carton_weight.message)}</p>}
           </div>
           
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-outline-variant">
