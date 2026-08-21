@@ -283,21 +283,21 @@ export default function PriceManagement() {
                   let priceStr = '—';
                   if (last_p) {
                     const parts = [];
-                    const targetCurr = currencyView === 'DEFAULT' ? 'AED' : currencyView;
-                    
-                    const locAed = currencyView === 'DEFAULT' ? last_p.local_price_aed : convertCurrency(last_p.local_price_aed, 'AED', targetCurr);
-                    const locOmr = currencyView === 'DEFAULT' ? last_p.local_price_omr : convertCurrency(last_p.local_price_omr, 'OMR', targetCurr);
-                    const cif = currencyView === 'DEFAULT' ? last_p.cif_price : convertCurrency(last_p.cif_price, 'USD', targetCurr);
-                    const fob = currencyView === 'DEFAULT' ? last_p.fob_price : convertCurrency(last_p.fob_price, 'USD', targetCurr);
-                    
-                    if (locAed != null) parts.push(`DXB: ${locAed.toFixed(2)}`);
-                    if (locOmr != null) parts.push(`OMN: ${locOmr.toFixed(2)}`);
-                    if (cif != null) parts.push(`CIF: ${cif.toFixed(2)}`);
-                    if (fob != null) parts.push(`FOB: ${fob.toFixed(2)}`);
-                    
-                    if (parts.length > 0) {
-                      priceStr = `${parts.join(' | ')} ${targetCurr}`;
-                    }
+                      const isDef = currencyView === 'DEFAULT';
+                      
+                      const locAed = isDef ? last_p.local_price_aed : convertCurrency(last_p.local_price_aed, 'AED', currencyView);
+                      const locOmr = isDef ? last_p.local_price_omr : convertCurrency(last_p.local_price_omr, 'OMR', currencyView);
+                      const cif = isDef ? last_p.cif_price : convertCurrency(last_p.cif_price, 'USD', currencyView);
+                      const fob = isDef ? last_p.fob_price : convertCurrency(last_p.fob_price, 'USD', currencyView);
+                      
+                      if (locAed != null) parts.push(`DXB: ${locAed.toFixed(2)} ${isDef ? 'AED' : currencyView}`);
+                      if (locOmr != null) parts.push(`OMN: ${locOmr.toFixed(2)} ${isDef ? 'OMR' : currencyView}`);
+                      if (cif != null) parts.push(`CIF: ${cif.toFixed(2)} ${isDef ? 'USD' : currencyView}`);
+                      if (fob != null) parts.push(`FOB: ${fob.toFixed(2)} ${isDef ? 'USD' : currencyView}`);
+                      
+                      if (parts.length > 0) {
+                        priceStr = parts.join(' | ');
+                      }
                   }
 
                   return (
