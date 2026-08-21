@@ -7,7 +7,7 @@ class RawMaterial(Base):
     id = Column(Integer, primary_key=True, index=True)
     material_code = Column(String, unique=True, index=True, nullable=False)
     material_name = Column(String, nullable=False)
-    bag_carton_weight = Column(Float, nullable=False)
+    bag_carton_weight = Column(String, nullable=True)
     weight_unit = Column(String, nullable=False, default="kg", server_default="kg")
     category = Column(String, nullable=False, default="Uncategorized", server_default="Uncategorized")
     market_type = Column(String, nullable=False, default="BOTH", server_default="BOTH") # DXB, INT, BOTH

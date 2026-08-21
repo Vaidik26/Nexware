@@ -5,7 +5,7 @@ from datetime import date, datetime
 class RawMaterialBase(BaseModel):
     material_code: str
     material_name: str
-    bag_carton_weight: float
+    bag_carton_weight: Optional[str] = None
     weight_unit: Optional[str] = "kg"
     category: str = "Uncategorized"
     market_type: str = "BOTH"
