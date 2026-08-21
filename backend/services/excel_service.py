@@ -422,9 +422,9 @@ def generate_price_capture_template(materials: list, market_type: str) -> bytes:
             if market_filter == "DXB":
                 row_data.extend(["", "", "", ""])
             elif market_filter == "INT":
-                row_data.extend(["", ""])
+                row_data.extend(["", "", ""])
             else:
-                row_data.extend(["", "", "", "", "", ""])
+                row_data.extend(["", "", "", "", "", "", ""])
                 
             ws.append(row_data)
             current_row = ws[ws.max_row]
@@ -459,6 +459,7 @@ def generate_price_capture_template(materials: list, market_type: str) -> bytes:
         elif market_filter == "INT":
             ws.column_dimensions["F"].width = 22
             ws.column_dimensions["G"].width = 22
+            ws.column_dimensions["H"].width = 20
         else:
             ws.column_dimensions["F"].width = 22
             ws.column_dimensions["G"].width = 20
@@ -466,6 +467,7 @@ def generate_price_capture_template(materials: list, market_type: str) -> bytes:
             ws.column_dimensions["I"].width = 20
             ws.column_dimensions["J"].width = 22
             ws.column_dimensions["K"].width = 22
+            ws.column_dimensions["L"].width = 20
             
     if market_type == "ALL":
         create_sheet("Dubai Local", "DXB", 0)
