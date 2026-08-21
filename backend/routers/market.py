@@ -174,31 +174,36 @@ async def get_latest_prices(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    # Returns materials with their price for the specific date, and the last known price.
     target = date_target or date.today()
     
+    # 1. Fetch all materials
     materials_result = await db.execute(select(RawMaterial).order_by(RawMaterial.id))
     materials = materials_result.scalars().all()
     
+    # 2. Fetch all target prices for the given date in one query
+    target_prices_result = await db.execute(
+        select(CapturedPrice).filter(CapturedPrice.date == target)
+    )
+    target_prices_map = {p.material_id: p for p in target_prices_result.scalars().all()}
+    
+    # 3. Fetch the latest price before the target date for all materials using a subquery
+    subq = select(
+        CapturedPrice.material_id, 
+        func.max(CapturedPrice.date).label('max_date')
+    ).filter(CapturedPrice.date < target).group_by(CapturedPrice.material_id).subquery()
+    
+    last_prices_result = await db.execute(
+        select(CapturedPrice).join(
+            subq, 
+            (CapturedPrice.material_id == subq.c.material_id) & (CapturedPrice.date == subq.c.max_date)
+        )
+    )
+    last_prices_map = {p.material_id: p for p in last_prices_result.scalars().all()}
+    
     res = []
     for mat in materials:
-        # Get target date price
-        target_price_q = await db.execute(
-            select(CapturedPrice).filter(
-                CapturedPrice.material_id == mat.id,
-                CapturedPrice.date == target
-            )
-        )
-        target_price = target_price_q.scalars().first()
-        
-        # Get last known price before target date
-        last_price_q = await db.execute(
-            select(CapturedPrice)
-            .filter(CapturedPrice.material_id == mat.id, CapturedPrice.date < target)
-            .order_by(desc(CapturedPrice.date))
-            .limit(1)
-        )
-        last_price = last_price_q.scalars().first()
+        target_price = target_prices_map.get(mat.id)
+        last_price = last_prices_map.get(mat.id)
         
         res.append({
             "material": {
@@ -213,7 +218,9 @@ async def get_latest_prices(
             "target_price": target_price,
             "last_price": last_price
         })
+        
     return res
+
 
 @router.post("/prices/export-excel")
 async def export_price_history_excel(
