@@ -23,6 +23,7 @@ class CapturedPrice(Base):
     local_price_omr = Column(Float, nullable=True)
     supplier_dubai = Column(String, nullable=True)
     supplier_oman = Column(String, nullable=True)
+    supplier_int = Column(String, nullable=True)
     fob_price = Column(Float, nullable=True)
     cif_price = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

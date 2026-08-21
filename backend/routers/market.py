@@ -140,6 +140,7 @@ async def create_price(
         existing.local_price_omr = price.local_price_omr
         existing.supplier_dubai = price.supplier_dubai
         existing.supplier_oman = price.supplier_oman
+        existing.supplier_int = price.supplier_int
         existing.fob_price = price.fob_price
         existing.cif_price = price.cif_price
         await db.commit()

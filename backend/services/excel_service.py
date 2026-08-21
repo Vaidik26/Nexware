@@ -394,9 +394,9 @@ def generate_price_capture_template(materials: list, market_type: str) -> bytes:
         if market_filter == "DXB":
             cols.extend(["Local Dubai Price (AED)", "Supplier (Dubai)", "Local Oman Price (OMR)", "Supplier (Oman)"])
         elif market_filter == "INT":
-            cols.extend(["International CIF (USD)", "International FOB (USD)"])
+            cols.extend(["International CIF (USD)", "International FOB (USD)", "Supplier (INT)"])
         else: # BOTH
-            cols.extend(["Local Dubai Price (AED)", "Supplier (Dubai)", "Local Oman Price (OMR)", "Supplier (Oman)", "International CIF (USD)", "International FOB (USD)"])
+            cols.extend(["Local Dubai Price (AED)", "Supplier (Dubai)", "Local Oman Price (OMR)", "Supplier (Oman)", "International CIF (USD)", "International FOB (USD)", "Supplier (INT)"])
             
         # Write Headers
         ws.append(cols)

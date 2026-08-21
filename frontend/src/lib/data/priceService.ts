@@ -17,6 +17,7 @@ export interface CapturedPrice {
   local_price_omr: number | null;
   supplier_dubai?: string;
   supplier_oman?: string;
+  supplier_int?: string;
   fob_price: number | null;
   cif_price: number | null;
   created_at?: string;

@@ -41,6 +41,7 @@ export default function PriceManagement() {
   const [localOmrInput, setLocalOmrInput] = useState('');
   const [supplierDubaiInput, setSupplierDubaiInput] = useState('');
   const [supplierOmanInput, setSupplierOmanInput] = useState('');
+  const [supplierIntInput, setSupplierIntInput] = useState('');
   const [cifInput, setCifInput] = useState('');
   const [fobInput, setFobInput] = useState('');
 
@@ -119,6 +120,7 @@ export default function PriceManagement() {
     setLocalOmrInput(tr?.local_price_omr != null ? String(tr.local_price_omr) : '');
     setSupplierDubaiInput(tr?.supplier_dubai || '');
     setSupplierOmanInput(tr?.supplier_oman || '');
+    setSupplierIntInput(tr?.supplier_int || '');
     setCifInput(tr?.cif_price != null ? String(tr.cif_price) : '');
     setFobInput(tr?.fob_price != null ? String(tr.fob_price) : '');
   };
@@ -133,6 +135,7 @@ export default function PriceManagement() {
     const fobVal = fobInput.trim() !== '' ? Number(fobInput) : null;
     const supDxb = supplierDubaiInput.trim();
     const supOmr = supplierOmanInput.trim();
+    const supInt = supplierIntInput.trim();
 
     if (locAed === null && locOmr === null && cifVal === null && fobVal === null) {
       toast.error('Please fill at least one price to save the rate record.');
@@ -148,6 +151,7 @@ export default function PriceManagement() {
         local_price_omr: locOmr,
         supplier_dubai: supDxb,
         supplier_oman: supOmr,
+        supplier_int: supInt,
         fob_price: fobVal,
         cif_price: cifVal,
       }]);
@@ -313,6 +317,7 @@ export default function PriceManagement() {
                     const sList = [];
                     if (last_p.supplier_dubai) sList.push({ label: 'DXB', value: last_p.supplier_dubai });
                     if (last_p.supplier_oman) sList.push({ label: 'OMN', value: last_p.supplier_oman });
+                    if (last_p.supplier_int) sList.push({ label: 'INT', value: last_p.supplier_int });
                     
                     if (sList.length > 0) {
                       supplierElements = (
@@ -440,27 +445,36 @@ export default function PriceManagement() {
             {activeItem?.item?.market_type !== 'DXB' && (
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
                 <h4 className="text-sm font-bold text-slate-700">International Market (USD)</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">CIF Price</label>
-                    <input
-                      type="number" step="0.01" min="0"
-                      value={cifInput} onChange={(e) => setCifInput(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
-                    />
+                                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">CIF Price</label>
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={cifInput} onChange={(e) => setCifInput(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 mb-1.5 block">FOB Price</label>
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={fobInput} onChange={(e) => setFobInput(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
+                      />
+                    </div>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">FOB Price</label>
+                    <label className="text-xs font-semibold text-slate-500 mb-1.5 block">Supplier</label>
                     <input
-                      type="number" step="0.01" min="0"
-                      value={fobInput} onChange={(e) => setFobInput(e.target.value)}
-                      placeholder="0.00"
+                      type="text"
+                      value={supplierIntInput} onChange={(e) => setSupplierIntInput(e.target.value)}
+                      placeholder="Type supplier name..."
                       className="w-full px-3 py-2 bg-white rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary"
                     />
                   </div>
                 </div>
-              </div>
             )}
             
             

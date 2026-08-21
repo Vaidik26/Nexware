@@ -27,6 +27,7 @@ class CapturedPriceBase(BaseModel):
     local_price_omr: Optional[float] = None
     supplier_dubai: Optional[str] = None
     supplier_oman: Optional[str] = None
+    supplier_int: Optional[str] = None
     fob_price: Optional[float] = None
     cif_price: Optional[float] = None
 
