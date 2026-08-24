@@ -17,7 +17,7 @@ EXPECTED_HEADERS = {
     "International": [
         "S.No", "SKU / Index Code", "Commodity Item Name", "Category", "Bag/CTN Weight", 
         "International CIF (USD)", "International FOB (USD)", "Supplier (INT)"
-    ],
+    \,
     "Both Markets": [
         "S.No", "SKU / Index Code", "Commodity Item Name", "Category", "Bag/CTN Weight", 
         "Local Dubai Price (AED)", "Supplier (Dubai)", "Local Oman Price (OMR)", "Supplier (Oman)", 
@@ -33,7 +33,7 @@ def parse_float(val):
             return None
         return float(val)
     except ValueError:
-        raise ValueError("Invalid number format")
+        raise ValueError("Invalid number format. Expected a numeric value.")
 
 def parse_str(val):
     if val is None or pd.isna(val):
@@ -43,29 +43,34 @@ def parse_str(val):
         return None
     return val
 
-async def process_market_import(file_bytes: bytes, target_date: date, db: AsyncSession):
+async def preview_market_import(file_bytes: bytes, target_date: date, db: AsyncSession):
     try:
         dfs = pd.read_excel(BytesIO(file_bytes), sheet_name=None, dtype=str)
     except Exception as e:
         raise TemplateValidationError(f"Invalid Excel document file structure or formatting: {str(e)}")
 
-    found_sheets = [s for s in dfs.keys() if s in EXPECTED_HEADERS]
-    if not found_sheets:
-        raise TemplateValidationError("No recognizable market template sheets found (Dubai Local, International, Both Markets).")
+    actual_sheets = list(dfs.keys())
+    valid_sequences = [
+        ["Dubai Local", "International", "Both Markets"],
+        ["Dubai Local"],
+        ["International"],
+        ["Both Markets"]
+    ]
+    
+    if actual_sheets not in valid_sequences:
+        raise TemplateValidationError("Invalid tab sequence or unrecognized sheets. The tabs must exactly match the exported template sequence.")
 
     materials_res = await db.execute(select(RawMaterial))
     materials_list = materials_res.scalars().all()
     material_map = {m.material_code.strip(): m.id for m in materials_list if m.material_code}
 
-    prices_res = await db.execute(select(CapturedPrice).filter(CapturedPrice.date == target_date))
-    existing_prices = {p.material_id: p for p in prices_res.scalars().all()}
-
     success_count = 0
     skipped_count = 0
     errors = []
     seen_skus = set()
+    valid_updates = []
 
-    for sheet_name in found_sheets:
+    for sheet_name in actual_sheets:
         df = dfs[sheet_name]
         
         actual_cols = list(df.columns)
@@ -135,31 +140,57 @@ async def process_market_import(file_bytes: bytes, target_date: date, db: AsyncS
 
                 if not updates:
                     continue
-
-                existing_record = existing_prices.get(material_id)
-                if existing_record:
-                    for k, v in updates.items():
-                        setattr(existing_record, k, v)
-                else:
-                    new_record = CapturedPrice(
-                        material_id=material_id,
-                        date=target_date,
-                        **updates
-                    )
-                    db.add(new_record)
-                    existing_prices[material_id] = new_record
+                
+                valid_updates.append({
+                    "material_id": material_id,
+                    "sku": sku,
+                    "sheet": sheet_name,
+                    "row": excel_row_num,
+                    **updates
+                })
 
                 success_count += 1
 
             except ValueError as ve:
                 skipped_count += 1
                 errors.append({"sheet": sheet_name, "row": excel_row_num, "sku": sku, "reason": str(ve)})
-            except Exception as e:
+            exception as e:
                 skipped_count += 1
                 errors.append({"sheet": sheet_name, "row": excel_row_num, "sku": sku, "reason": f"Unexpected error: {str(e)}"})
 
     return {
-        "success_count": success_count,
-        "skipped_count": skipped_count,
+        "summary": {
+            "success_count": success_count,
+            "skipped_count": skipped_count
+        },
+        "valid_updates": valid_updates,
         "errors": errors
     }
+
+async def commit_market_import(updates: list, target_date: date, db: AsyncSession):
+    prices_res = await db.execute(select(CapturedPrice).filter(CapturedPrice.date == target_date))
+    existing_prices = {p.material_id: p for p in prices_res.scalars().all()}
+    
+    for u in updates:
+        material_id = u.material_id
+        
+        # Filter out frontend-only tracking fields before applying
+        db_updates = {k: v for k, v in u.model_dump().items() if k not in ["material_id", "sku", "sheet", "row"] and v is not None}
+        
+        if not db_updates:
+            continue
+            
+        existing_record = existing_prices.get(material_id)
+        if existing_record:
+            for k, v in db_updates.items():
+                setattr(existing_record, k, v)
+        else:
+            new_record = CapturedPrice(
+                material_id=material_id,
+                date=target_date,
+                **db_updates
+            )
+            db.add(new_record)
+            existing_prices[material_id] = new_record
+            
+    await db.commit()

@@ -15,7 +15,8 @@ from backend.schemas.market import (
     CapturedPriceCreate, CapturedPriceOut,
     PriceHistoryReportRequest
 )
-from backend.services.import_service import process_market_import, TemplateValidationError
+from backend.services.import_service import preview_market_import, commit_market_import, TemplateValidationError
+from backend.schemas.market import ImportCommitRequest
 from backend.services.excel_service import generate_branded_price_history_excel, generate_price_capture_template
 from backend.services.pdf_generator import generate_price_history_pdf
 from backend.dependencies import get_current_admin, get_current_user
@@ -273,8 +274,8 @@ async def export_price_capture_template(
 
 
 
-@router.post("/prices/import-excel")
-async def import_price_capture_excel(
+@router.post("/prices/import-preview")
+async def preview_price_capture_excel(
     date_target: date,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -285,15 +286,30 @@ async def import_price_capture_excel(
         
     try:
         file_bytes = await file.read()
-        
-        async with db.begin_nested() as transaction:
-            summary = await process_market_import(file_bytes, date_target, db)
-                
-        await db.commit()
+        summary = await preview_market_import(file_bytes, date_target, db)
         return summary
     except TemplateValidationError as te:
         raise HTTPException(status_code=400, detail=str(te))
     except Exception as e:
         import traceback
-        logging.error("Import error: %s", traceback.format_exc())
+        import logging
+        logging.error("Preview error: %s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+@router.post("/prices/import-commit")
+async def commit_price_capture_excel(
+    payload: ImportCommitRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    try:
+        async with db.begin_nested() as transaction:
+            await commit_market_import(payload.updates, payload.date_target, db)
+        await db.commit()
+        return {"message": "Prices imported successfully"}
+    except Exception as e:
+        import traceback
+        import logging
+        logging.error("Commit error: %s", traceback.format_exc())
+        await db.rollback()
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")

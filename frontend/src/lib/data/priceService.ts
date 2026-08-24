@@ -125,16 +125,25 @@ export async function getItems(): Promise<Item[]> {
 }
 
 
-export async function importPriceExcel(file: File, targetDate: string, abortSignal?: AbortSignal): Promise<any> {
+export async function importPricePreview(file: File, targetDate: string, abortSignal?: AbortSignal): Promise<any> {
   const formData = new FormData();
   formData.append('file', file);
   
-  const res = await api.post(`/market/prices/import-excel?date_target=${targetDate}`, formData, {
+  const res = await api.post(`/market/prices/import-preview?date_target=${targetDate}`, formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
     signal: abortSignal,
   });
+  return res.data;
+}
+
+export async function commitPriceImport(updates: any[], targetDate: string): Promise<any> {
+  const payload = {
+    date_target: targetDate,
+    updates: updates
+  };
+  const res = await api.post(`/market/prices/import-commit`, payload);
   return res.data;
 }
 
