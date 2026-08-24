@@ -17,7 +17,7 @@ EXPECTED_HEADERS = {
     "International": [
         "S.No", "SKU / Index Code", "Commodity Item Name", "Category", "Bag/CTN Weight", 
         "International CIF (USD)", "International FOB (USD)", "Supplier (INT)"
-    \,
+    ],
     "Both Markets": [
         "S.No", "SKU / Index Code", "Commodity Item Name", "Category", "Bag/CTN Weight", 
         "Local Dubai Price (AED)", "Supplier (Dubai)", "Local Oman Price (OMR)", "Supplier (Oman)", 
@@ -154,7 +154,7 @@ async def preview_market_import(file_bytes: bytes, target_date: date, db: AsyncS
             except ValueError as ve:
                 skipped_count += 1
                 errors.append({"sheet": sheet_name, "row": excel_row_num, "sku": sku, "reason": str(ve)})
-            exception as e:
+            except Exception as e:
                 skipped_count += 1
                 errors.append({"sheet": sheet_name, "row": excel_row_num, "sku": sku, "reason": f"Unexpected error: {str(e)}"})
 
