@@ -25,14 +25,19 @@ EXPECTED_HEADERS = {
     ]
 }
 
-def parse_float(val):
+def parse_float(val, must_be_positive=True):
     if val is None or pd.isna(val):
         return None
     try:
         if isinstance(val, str) and not val.strip():
             return None
-        return float(val)
-    except ValueError:
+        parsed = float(val)
+        if must_be_positive and parsed <= 0:
+            raise ValueError("Price must be greater than zero.")
+        return parsed
+    except ValueError as ve:
+        if "greater than zero" in str(ve):
+            raise
         raise ValueError("Invalid number format. Expected a numeric value.")
 
 def parse_str(val):
@@ -140,6 +145,13 @@ async def preview_market_import(file_bytes: bytes, target_date: date, db: AsyncS
 
                 if not updates:
                     continue
+                
+                # CIF vs FOB Logic
+                cif = updates.get("cif_price")
+                fob = updates.get("fob_price")
+                if cif is not None and fob is not None:
+                    if fob > cif:
+                        raise ValueError("FOB price cannot be strictly greater than CIF price.")
                 
                 valid_updates.append({
                     "material_id": material_id,
