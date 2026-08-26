@@ -20,7 +20,7 @@ def _get_client():
         if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY or settings.SUPABASE_SERVICE_KEY == "PASTE_YOUR_SERVICE_ROLE_KEY_HERE":
             raise HTTPException(
                 status_code=400,
-                detail="Supabase storage is not configured in Vercel. Please add SUPABASE_URL and SUPABASE_SERVICE_KEY to your Environment Variables."
+                detail="Supabase storage is not configured. Please add SUPABASE_URL and SUPABASE_SERVICE_KEY to your Environment Variables (e.g. in Railway/Vercel)."
             )
         try:
             from supabase import create_client
