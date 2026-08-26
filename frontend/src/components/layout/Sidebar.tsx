@@ -22,10 +22,15 @@ import {
 
 const groups = [
   {
-    label: 'Dashboard',
+    label: 'Executive Summary',
+    icon: BarChart3,
+    path: '/dashboard',
+    items: [],
+  },
+  {
+    label: 'Dashboards',
     icon: BarChart3,
     items: [
-      { name: 'Executive Summary', path: '/dashboard', icon: BarChart3 },
       { name: 'Sales Dashboard', path: '/dashboard/sales', icon: TrendingUp },
     ],
   },
@@ -116,50 +121,71 @@ export default function Sidebar() {
         {groups.map((group) => {
           const GroupIcon = group.icon;
           const isExpanded = expandedGroups.includes(group.label);
-          const hasActiveChild = group.items.some(item => location.pathname.startsWith(item.path));
+          const hasActiveChild = group.items.length > 0 
+            ? group.items.some(item => location.pathname.startsWith(item.path))
+            : location.pathname === group.path;
 
           return (
             <div key={group.label} className="space-y-1">
-              <button
-                onClick={() => toggleGroup(group.label)}
-                className={cn(
-                  "w-full flex items-center justify-between px-3 py-2 text-sm font-bold uppercase tracking-wider rounded-lg transition-colors",
-                  hasActiveChild ? "text-secondary" : "text-white-container hover:bg-primary-container/50 hover:text-white"
-                )}
-              >
-                <div className="flex items-center gap-2.5">
-                  <GroupIcon className="w-4 h-4 opacity-70" />
-                  <span>{group.label}</span>
-                </div>
-                {group.items.length > 1 && (
-                  <ChevronDown className={cn("w-4 h-4 transition-transform", isExpanded ? "rotate-180" : "")} />
-                )}
-              </button>
-              
-              {isExpanded && (
-                <div className="mt-1 space-y-1 pl-2 border-l-2 border-primary-container ml-5">
-                  {group.items.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <NavLink
-                        key={item.path}
-                        to={item.path}
-                        className={({ isActive }) =>
-                          cn(
-                            'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                            'hover:bg-primary-container hover:text-white',
-                            isActive
-                              ? 'bg-secondary text-primary font-bold shadow-xs'
-                              : 'text-white/80'
-                          )
-                        }
-                      >
-                        <Icon className="w-4 h-4" />
-                        <span>{item.name}</span>
-                      </NavLink>
-                    );
-                  })}
-                </div>
+              {group.items.length === 0 && group.path ? (
+                <NavLink
+                  to={group.path}
+                  className={({ isActive }) =>
+                    cn(
+                      "w-full flex items-center justify-between px-3 py-2 text-sm font-bold uppercase tracking-wider rounded-lg transition-colors",
+                      isActive ? "text-secondary" : "text-white-container hover:bg-primary-container/50 hover:text-white"
+                    )
+                  }
+                >
+                  <div className="flex items-center gap-2.5">
+                    <GroupIcon className="w-4 h-4 opacity-70" />
+                    <span>{group.label}</span>
+                  </div>
+                </NavLink>
+              ) : (
+                <>
+                  <button
+                    onClick={() => toggleGroup(group.label)}
+                    className={cn(
+                      "w-full flex items-center justify-between px-3 py-2 text-sm font-bold uppercase tracking-wider rounded-lg transition-colors",
+                      hasActiveChild ? "text-secondary" : "text-white-container hover:bg-primary-container/50 hover:text-white"
+                    )}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <GroupIcon className="w-4 h-4 opacity-70" />
+                      <span>{group.label}</span>
+                    </div>
+                    {group.items.length > 1 && (
+                      <ChevronDown className={cn("w-4 h-4 transition-transform", isExpanded ? "rotate-180" : "")} />
+                    )}
+                  </button>
+                  
+                  {isExpanded && (
+                    <div className="mt-1 space-y-1 pl-2 border-l-2 border-primary-container ml-5">
+                      {group.items.map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <NavLink
+                            key={item.path}
+                            to={item.path}
+                            className={({ isActive }) =>
+                              cn(
+                                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                                'hover:bg-primary-container hover:text-white',
+                                isActive
+                                  ? 'bg-secondary text-primary font-bold shadow-xs'
+                                  : 'text-white/80'
+                              )
+                            }
+                          >
+                            <Icon className="w-4 h-4" />
+                            <span>{item.name}</span>
+                          </NavLink>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           );

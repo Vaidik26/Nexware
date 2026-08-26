@@ -6,15 +6,18 @@ interface SalesFiltersProps {
   bootData: any;
 }
 
-export default function SalesFilters({ filters, onChange }: SalesFiltersProps) {
+export default function SalesFilters({ filters, onChange, bootData }: SalesFiltersProps) {
   const update = (key: string, value: any) => {
     onChange({ ...filters, [key]: value });
   };
 
-  const Segment = ({ label, options, value, keyName }: { label: string, options: any[], value: string, keyName: string }) => (
+  const areas = Object.keys(bootData?.areas || {}).sort();
+  const sAreas = Object.keys(bootData?.salesmanAreas || {}).sort();
+
+  const Segment = ({ label, options, value, keyName, scrollable = false }: { label: string, options: any[], value: string, keyName: string, scrollable?: boolean }) => (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{label}</label>
-      <div className="inline-flex flex-wrap bg-white border border-slate-200 rounded-lg p-1 gap-1 w-fit">
+      <div className={clsx("flex bg-white border border-slate-200 rounded-lg p-1 gap-1 w-fit", scrollable ? "overflow-x-auto max-w-[300px] sm:max-w-md no-scrollbar" : "flex-wrap")}>
         {options.map(opt => (
           <button
             key={opt.value}
@@ -22,7 +25,7 @@ export default function SalesFilters({ filters, onChange }: SalesFiltersProps) {
             className={clsx(
               "text-xs font-semibold px-3 py-1.5 rounded-md transition-colors whitespace-nowrap",
               value === opt.value 
-                ? "bg-slate-900 text-white" 
+                ? "bg-primary text-white" 
                 : "text-slate-600 hover:bg-slate-100"
             )}
           >
@@ -68,6 +71,27 @@ export default function SalesFilters({ filters, onChange }: SalesFiltersProps) {
             { label: 'All', value: 'all' },
             { label: 'Active', value: 'active' },
             { label: 'Discontinued', value: 'inactive' }
+          ]} 
+        />
+        <Segment 
+          label="Supervisor Area" 
+          keyName="sarea"
+          value={filters.sarea}
+          scrollable
+          options={[
+            { label: 'All', value: 'all' },
+            ...sAreas.map(a => ({ label: a, value: a }))
+          ]} 
+        />
+
+        <Segment 
+          label="Area" 
+          keyName="area"
+          value={filters.area}
+          scrollable
+          options={[
+            { label: 'All', value: 'all' },
+            ...areas.map(a => ({ label: a, value: a }))
           ]} 
         />
       </div>

@@ -52,9 +52,9 @@ export default function SalesCharts({ data }: { data: any, filters: any, onFilte
                 formatter={(value: number) => new Intl.NumberFormat('en-US').format(value)}
               />
               <Legend wrapperStyle={{ fontSize: '12px' }} />
-              <Bar yAxisId="left" dataKey="Gross" fill="#F59E0B" radius={[4, 4, 0, 0]} maxBarSize={40} />
-              <Bar yAxisId="left" dataKey="Net" fill="#B45309" radius={[4, 4, 0, 0]} maxBarSize={40} />
-              <Line yAxisId="right" type="monotone" dataKey="Volume" stroke="#059669" strokeWidth={3} dot={false} />
+              <Bar yAxisId="left" dataKey="Gross" fill="#80bea6" radius={[4, 4, 0, 0]} maxBarSize={40} />
+              <Bar yAxisId="left" dataKey="Net" fill="#006c49" radius={[4, 4, 0, 0]} maxBarSize={40} />
+              <Line yAxisId="right" type="monotone" dataKey="Volume" stroke="#003527" strokeWidth={3} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -76,7 +76,7 @@ export default function SalesCharts({ data }: { data: any, filters: any, onFilte
                 contentStyle={{ borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '12px' }}
                 formatter={(value: number) => value.toFixed(2) + '%'}
               />
-              <Line type="monotone" dataKey="ReturnPct" name="Return %" stroke="#DC2626" strokeWidth={2} dot={{ r: 3, fill: '#DC2626' }} />
+              <Line type="monotone" dataKey="ReturnPct" name="Return %" stroke="#003527" strokeWidth={2} dot={{ r: 3, fill: '#003527' }} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
