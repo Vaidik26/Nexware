@@ -76,9 +76,9 @@ CLOSED_PICK_STATUSES: list[str] = [
 # Storage buckets & folders
 # ---------------------------------------------------------------------------
 
-BUCKET_CUSTOMER_CONFIRMATION = "Customer Confirmation"
-FOLDER_MOBILE_LPOS = "Mobile-LPOs"
-FOLDER_CUSTOMER_SIGNED = "Customer-Signed"
+BUCKET_CUSTOMER_CONFIRMATION = "customer-confirmations"
+FOLDER_MOBILE_LPOS = "signed_lpos"
+FOLDER_CUSTOMER_SIGNED = "signed_lpos"
 
 
 # ---------------------------------------------------------------------------

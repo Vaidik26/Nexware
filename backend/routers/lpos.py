@@ -337,7 +337,8 @@ async def upload_lpo_pdf(
             detail=f"File exceeds maximum upload size of {settings.MAX_UPLOAD_SIZE_MB} MB.",
         )
 
-    filename = file.filename or f"lpo-{lpo.lpo_number}.pdf"
+    ext = file.filename.rsplit(".", 1)[-1] if (file.filename and "." in file.filename) else "pdf"
+    filename = f"lpo-{lpo.lpo_number}.{ext}"
 
     try:
         from backend.services.storage_service import upload_to_supabase

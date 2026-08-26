@@ -58,7 +58,8 @@ def upload_to_supabase(
     """
     client = _get_client()
     ext = original_filename.rsplit(".", 1)[-1] if "." in original_filename else "pdf"
-    unique_name = f"{uuid.uuid4().hex}.{ext}"
+    base_name = original_filename.rsplit(".", 1)[0] if "." in original_filename else original_filename
+    unique_name = f"{base_name}-{uuid.uuid4().hex[:8]}.{ext}"
     path = f"{folder}/{unique_name}".lstrip("/") if folder else unique_name
 
     client.storage.from_(bucket).upload(
