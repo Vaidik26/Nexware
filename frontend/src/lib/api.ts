@@ -2,12 +2,14 @@ import axios from 'axios';
 import { useAuthStore } from '@/store/authStore';
 
 const getBaseUrl = () => {
-  // VITE_API_URL set explicitly (local dev or via Vercel env vars dashboard)
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) return envUrl.replace(/\/+$/, '');
-  // Production build without explicit env var → same-host /api (only works if frontend+backend are on same Vercel project)
-  if (import.meta.env.PROD) return '/api';
-  // Local dev default
+  
+  if (import.meta.env.PROD) {
+    console.warn('VITE_API_URL is not set. Production requests will fail if not configured.');
+    return '';
+  }
+  
   return 'http://localhost:8000';
 };
 
