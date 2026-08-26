@@ -66,7 +66,9 @@ export default function JobsScreen() {
        status: p.status === 'picking' ? 'in_progress' : 'pending'
       };
      });
-    setJobs(mapped.sort((a, b) => a.id - b.id));
+    // `id` is stringified above for the FlatList key, so sort numerically —
+    // string subtraction yields NaN and leaves the queue in arbitrary order.
+    setJobs(mapped.sort((a: any, b: any) => Number(a.id) - Number(b.id)));
     const isCurrentlyPicking = mapped.some((j: any) => j.status === 'in_progress');
     useAuthStore.getState().setIsPicking(isCurrentlyPicking);
    } else {

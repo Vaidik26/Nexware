@@ -81,7 +81,14 @@ export default function JobDetailScreen() {
   const [activeBox, setActiveBox] = useState<ActiveBox | null>(null);
   const [showCartonSelectModal, setShowCartonSelectModal] = useState(false);
   const [cartonSelectMode, setCartonSelectMode] = useState<'new' | 'change'>('new'); // 'change' keeps contents
-  const [pendingLooseItem, setPendingLooseItem] = useState<PickItem | null>(null); // item waiting for box selection
+  // Item waiting for box selection. It carries one extra field the API never
+  // sees: `box_qty` is the amount just entered, i.e. how much of this item goes
+  // into THIS box, as opposed to `picked_qty` which is the running total across
+  // every box. The two diverge whenever a line is split across cartons, so the
+  // staging value is kept here rather than on PickItem, which mirrors an API row.
+  const [pendingLooseItem, setPendingLooseItem] = useState<
+    (PickItem & { box_qty?: number }) | null
+  >(null);
 
   // ── Sealed boxes (completed this session, shown as history strip) ──
   interface SealedBoxSummary { id: number; carton_name: string; item_count: number; total_qty: number; weight: number; }

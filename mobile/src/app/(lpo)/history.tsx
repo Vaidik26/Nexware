@@ -24,7 +24,7 @@ export default function LpoHistoryScreen() {
     }
   });
 
- const filteredLpos = lpos.filter((lpo) => {
+ const filteredLpos = lpos.filter((lpo: any) => {
   if (filter === 'ALL') return true;
   if (filter === 'UPLOADED') return !!lpo.signed_lpo_url;
   if (filter === 'PENDING') return !lpo.signed_lpo_url;
