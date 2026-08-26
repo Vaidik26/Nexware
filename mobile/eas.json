@@ -13,7 +13,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://nexware-backend.vercel.app"
+        "EXPO_PUBLIC_API_URL": "https://nexware-backend.up.railway.app"
       }
     },
     "production": {
@@ -21,7 +21,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://nexware-backend.vercel.app"
+        "EXPO_PUBLIC_API_URL": "https://nexware-backend.up.railway.app"
       }
     }
   }

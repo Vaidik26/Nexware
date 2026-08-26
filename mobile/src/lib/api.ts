@@ -1,19 +1,16 @@
 import axios from 'axios';
-import { Platform } from 'react-native';
 import { getToken, clearSession } from './session';
 import { useAuthStore } from '../store/authStore';
 
 const getBaseUrl = () => {
- if (process.env.EXPO_PUBLIC_API_URL) {
-  return process.env.EXPO_PUBLIC_API_URL;
- }
- return 'http://localhost:8000/api';
+ // EXPO_PUBLIC_API_URL is set in .env (for Expo Go / local dev)
+ // and in eas.json env block (for EAS cloud APK builds).
+ // Fallback is the production Vercel URL so the app NEVER
+ // falls back to localhost — works everywhere without changes.
+ return process.env.EXPO_PUBLIC_API_URL || 'https://nexware-backend.up.railway.app';
 };
 
-let baseURL = getBaseUrl();
-if (Platform.OS === 'android' && (baseURL.includes('localhost') || baseURL.includes('127.0.0.1'))) {
- baseURL = baseURL.replace('localhost', '10.0.2.2').replace('127.0.0.1', '10.0.2.2');
-}
+const baseURL = getBaseUrl();
 
 export const api = axios.create({
  baseURL,
