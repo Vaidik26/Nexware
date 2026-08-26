@@ -7,8 +7,26 @@ const fmt = (v: number, kg: boolean = false) => {
 };
 
 export default function SalesKPIs({ data }: { data: any }) {
-  if (!data || !data.kpis) return null;
-  const k = data.kpis;
+  if (!data || !data.skus) return null;
+
+  let gross = 0, rgross = 0, kg = 0, qty = 0, rqty = 0;
+  data.skus.forEach((a: any) => {
+    gross += Number(a[1]) || 0;
+    rgross += Number(a[2]) || 0;
+    kg += Number(a[3]) || 0;
+    qty += Number(a[4]) || 0;
+    rqty += Number(a[5]) || 0;
+  });
+
+  const k = {
+    gross,
+    net: gross - rgross,
+    rgross,
+    kg,
+    qty,
+    rqty,
+    skus: data.skus.length
+  };
 
   const KpiCard = ({ label, value, sub, borderColor, valueColor = "text-slate-900" }: any) => (
     <div className="relative bg-white border border-slate-200 rounded-xl p-4 overflow-hidden shadow-sm flex flex-col justify-center min-h-[100px]">
