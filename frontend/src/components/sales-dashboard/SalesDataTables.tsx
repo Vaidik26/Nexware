@@ -1,4 +1,6 @@
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
+import { Maximize2, Minimize2 } from 'lucide-react';
+import { clsx } from 'clsx';
 
 const formatNum = (v: number, isKg = false) => {
   if (!v) return '—';
@@ -8,6 +10,8 @@ const formatNum = (v: number, isKg = false) => {
 };
 
 export default function SalesDataTables({ data, bootData }: { data: any, bootData: any }) {
+  const [maximizedTable, setMaximizedTable] = useState<string | null>(null);
+
   if (!data || !bootData) return null;
 
   // Process raw SKU data from the RPC response and catalogue
@@ -45,7 +49,7 @@ export default function SalesDataTables({ data, bootData }: { data: any, bootDat
       curr.returns += s.returns;
       curr.kg += s.kg;
     });
-    return Array.from(map.values()).sort((a, b) => b.gross - a.gross);
+    return Array.from(map.values()).sort((a: any, b: any) => b.gross - a.gross);
   }, [processedSkus]);
 
   // Aggregate for Product
@@ -59,70 +63,89 @@ export default function SalesDataTables({ data, bootData }: { data: any, bootDat
       curr.returns += s.returns;
       curr.kg += s.kg;
     });
-    return Array.from(map.values()).sort((a, b) => b.gross - a.gross);
+    return Array.from(map.values()).sort((a: any, b: any) => b.gross - a.gross);
   }, [processedSkus]);
 
-  const SimpleTable = ({ title, columns, rowData }: { title: string, columns: any[], rowData: any[] }) => (
-    <div className="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col h-96">
-      <div className="p-4 border-b border-slate-100 flex-none">
-        <h2 className="text-sm font-bold text-slate-900">{title}</h2>
-      </div>
-      <div className="overflow-auto flex-1 p-0">
-        <table className="w-full text-xs text-left">
-          <thead className="bg-slate-50 sticky top-0 border-b border-slate-200">
-            <tr>
-              {columns.map((c, i) => (
-                <th key={i} className={`p-3 font-semibold text-slate-600 ${c.align === 'right' ? 'text-right' : ''}`}>
-                  {c.header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rowData.length === 0 ? (
+  const SimpleTable = ({ title, columns, rowData }: { title: string, columns: any[], rowData: any[] }) => {
+    const isMax = maximizedTable === title;
+
+    return (
+      <div className={clsx(
+        "bg-white flex flex-col transition-all duration-300",
+        isMax 
+          ? "fixed inset-4 z-50 rounded-2xl shadow-2xl border-2 border-primary overflow-hidden" 
+          : "border border-slate-200 rounded-xl shadow-sm h-96 relative"
+      )}>
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+          <h2 className="text-sm font-bold text-slate-900">{title}</h2>
+          <button 
+            onClick={() => setMaximizedTable(isMax ? null : title)}
+            className="p-1.5 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
+            title={isMax ? "Restore" : "View Full Screen"}
+          >
+            {isMax ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+        </div>
+        <div className="overflow-auto flex-1 p-0">
+          <table className="w-full text-xs text-left">
+            <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
               <tr>
-                <td colSpan={columns.length} className="text-center p-8 text-slate-400">No data</td>
-              </tr>
-            ) : rowData.map((row, i) => (
-              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                {columns.map((c, j) => (
-                  <td key={j} className={`p-3 text-slate-700 ${c.align === 'right' ? 'text-right' : ''} ${c.bold ? 'font-semibold' : ''}`}>
-                    {c.render ? c.render(row) : row[c.key]}
-                  </td>
+                {columns.map((c, i) => (
+                  <th key={i} className={clsx("p-3 font-semibold text-slate-600 whitespace-nowrap", c.align === 'right' && 'text-right')}>
+                    {c.header}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rowData.length === 0 ? (
+                <tr>
+                  <td colSpan={columns.length} className="text-center p-8 text-slate-400">No data</td>
+                </tr>
+              ) : rowData.map((row, i) => (
+                <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                  {columns.map((c, j) => (
+                    <td key={j} className={clsx("p-3 text-slate-700 whitespace-nowrap", c.align === 'right' && 'text-right', c.bold && 'font-semibold')}>
+                      {c.render ? c.render(row) : row[c.key]}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-      <SimpleTable 
-        title="Category" 
-        columns={[
-          { header: 'Category', key: 'name', bold: true },
-          { header: 'Gross', key: 'gross', align: 'right', render: (r: any) => formatNum(r.gross) },
-          { header: 'Net', key: 'net', align: 'right', render: (r: any) => formatNum(r.net) },
-          { header: 'Returns', key: 'returns', align: 'right', render: (r: any) => formatNum(r.returns) },
-          { header: 'Volume (kg)', key: 'kg', align: 'right', render: (r: any) => formatNum(r.kg, true) },
-        ]}
-        rowData={categoryData}
-      />
-      <SimpleTable 
-        title="Product" 
-        columns={[
-          { header: 'Product', key: 'name', bold: true },
-          { header: 'Gross', key: 'gross', align: 'right', render: (r: any) => formatNum(r.gross) },
-          { header: 'Net', key: 'net', align: 'right', render: (r: any) => formatNum(r.net) },
-          { header: 'Returns', key: 'returns', align: 'right', render: (r: any) => formatNum(r.returns) },
-          { header: 'Volume (kg)', key: 'kg', align: 'right', render: (r: any) => formatNum(r.kg, true) },
-        ]}
-        rowData={productData}
-      />
-      <div className="lg:col-span-2">
+    <>
+      {maximizedTable && (
+        <div className="fixed inset-0 bg-slate-900/50 z-40 backdrop-blur-sm" onClick={() => setMaximizedTable(null)} />
+      )}
+      <div className="grid grid-cols-1 gap-4 mt-4">
+        <SimpleTable 
+          title="Category" 
+          columns={[
+            { header: 'Category', key: 'name', bold: true },
+            { header: 'Gross', key: 'gross', align: 'right', render: (r: any) => formatNum(r.gross) },
+            { header: 'Net', key: 'net', align: 'right', render: (r: any) => formatNum(r.net) },
+            { header: 'Returns', key: 'returns', align: 'right', render: (r: any) => formatNum(r.returns) },
+            { header: 'Volume (kg)', key: 'kg', align: 'right', render: (r: any) => formatNum(r.kg, true) },
+          ]}
+          rowData={categoryData}
+        />
+        <SimpleTable 
+          title="Product" 
+          columns={[
+            { header: 'Product', key: 'name', bold: true },
+            { header: 'Gross', key: 'gross', align: 'right', render: (r: any) => formatNum(r.gross) },
+            { header: 'Net', key: 'net', align: 'right', render: (r: any) => formatNum(r.net) },
+            { header: 'Returns', key: 'returns', align: 'right', render: (r: any) => formatNum(r.returns) },
+            { header: 'Volume (kg)', key: 'kg', align: 'right', render: (r: any) => formatNum(r.kg, true) },
+          ]}
+          rowData={productData}
+        />
         <SimpleTable 
           title="SKU Detail" 
           columns={[
@@ -136,8 +159,6 @@ export default function SalesDataTables({ data, bootData }: { data: any, bootDat
           ]}
           rowData={[...processedSkus].sort((a, b) => b.gross - a.gross)}
         />
-      </div>
-      <div className="lg:col-span-2">
         <SimpleTable 
           title="Customers (Top N)" 
           columns={[
@@ -151,6 +172,6 @@ export default function SalesDataTables({ data, bootData }: { data: any, bootDat
           rowData={data.customers || []}
         />
       </div>
-    </div>
+    </>
   );
 }

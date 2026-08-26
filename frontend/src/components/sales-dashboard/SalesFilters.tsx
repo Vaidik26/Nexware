@@ -1,18 +1,37 @@
 import { clsx } from 'clsx';
+import { useMemo } from 'react';
 
 interface SalesFiltersProps {
   filters: any;
   onChange: (filters: any) => void;
   bootData: any;
+  currentData: any;
 }
 
-export default function SalesFilters({ filters, onChange, bootData }: SalesFiltersProps) {
+export default function SalesFilters({ filters, onChange, bootData, currentData }: SalesFiltersProps) {
   const update = (key: string, value: any) => {
     onChange({ ...filters, [key]: value });
   };
 
   const areas = Object.keys(bootData?.areas || {}).sort();
   const sAreas = Object.keys(bootData?.salesmanAreas || {}).sort();
+
+  // Extract products and SKUs from catalogue
+  const allProducts = useMemo(() => {
+    if (!bootData?.catalogue) return [];
+    const set = new Set(bootData.catalogue.map((c: any) => c.product));
+    return Array.from(set).sort();
+  }, [bootData]);
+
+  const allSkus = useMemo(() => {
+    if (!bootData?.catalogue) return [];
+    return bootData.catalogue.map((c: any) => ({ value: c.code, label: `${c.code} - ${c.desc}` })).sort((a: any, b: any) => a.label.localeCompare(b.label));
+  }, [bootData]);
+
+  const allCustomers = useMemo(() => {
+    if (!currentData?.customers) return [];
+    return currentData.customers.map((c: any) => ({ value: c[0], label: `${c[0]} - ${c[1]}` })).sort((a: any, b: any) => a.label.localeCompare(b.label));
+  }, [currentData]);
 
   const Segment = ({ label, options, value, keyName, scrollable = false }: { label: string, options: any[], value: string, keyName: string, scrollable?: boolean }) => (
     <div className="flex flex-col gap-1.5">
@@ -37,7 +56,7 @@ export default function SalesFilters({ filters, onChange, bootData }: SalesFilte
   );
 
   return (
-    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4">
       <div className="flex flex-wrap gap-4 items-end">
         <Segment 
           label="Channel" 
@@ -50,6 +69,34 @@ export default function SalesFilters({ filters, onChange, bootData }: SalesFilte
           ]} 
         />
         
+        <div className="flex flex-col gap-1.5 min-w-[200px] flex-1 max-w-xs">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Area</label>
+          <select
+            value={filters.area}
+            onChange={(e) => update('area', e.target.value)}
+            className="w-full bg-white border border-slate-200 rounded-lg p-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+          >
+            <option value="all">All areas (overall)</option>
+            {areas.map(a => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1.5 min-w-[200px] flex-1 max-w-xs">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Supervisor Area</label>
+          <select
+            value={filters.sarea}
+            onChange={(e) => update('sarea', e.target.value)}
+            className="w-full bg-white border border-slate-200 rounded-lg p-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+          >
+            <option value="all">All supervisor areas</option>
+            {sAreas.map(a => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        </div>
+
         <Segment 
           label="Period" 
           keyName="period"
@@ -60,6 +107,7 @@ export default function SalesFilters({ filters, onChange, bootData }: SalesFilte
             { label: '5 yr', value: 'last60' },
             { label: 'YTD', value: 'ytd' },
             { label: 'All', value: 'all' },
+            { label: 'Custom', value: 'custom' },
           ]} 
         />
 
@@ -73,30 +121,56 @@ export default function SalesFilters({ filters, onChange, bootData }: SalesFilte
             { label: 'Discontinued', value: 'inactive' }
           ]} 
         />
-        <div className="flex flex-col gap-1.5 min-w-[200px]">
-          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Supervisor Area</label>
+      </div>
+
+      <div className="flex flex-wrap gap-4 items-end">
+        <div className="flex flex-col gap-1.5 min-w-[200px] flex-1 max-w-xs">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Product</label>
           <select
-            value={filters.sarea}
-            onChange={(e) => update('sarea', e.target.value)}
+            value={filters.products.size === 0 ? 'all' : Array.from(filters.products)[0] as string}
+            onChange={(e) => {
+              const val = e.target.value;
+              update('products', val === 'all' ? new Set() : new Set([val]));
+            }}
             className="w-full bg-white border border-slate-200 rounded-lg p-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
           >
-            <option value="all">All Supervisor Areas</option>
-            {sAreas.map(a => (
-              <option key={a} value={a}>{a}</option>
+            <option value="all">All products</option>
+            {allProducts.map((p: any) => (
+              <option key={p} value={p}>{p}</option>
             ))}
           </select>
         </div>
 
-        <div className="flex flex-col gap-1.5 min-w-[200px]">
-          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Area</label>
+        <div className="flex flex-col gap-1.5 min-w-[200px] flex-1 max-w-xs">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">SKU</label>
           <select
-            value={filters.area}
-            onChange={(e) => update('area', e.target.value)}
+            value={filters.skus.size === 0 ? 'all' : Array.from(filters.skus)[0] as string}
+            onChange={(e) => {
+              const val = e.target.value;
+              update('skus', val === 'all' ? new Set() : new Set([val]));
+            }}
             className="w-full bg-white border border-slate-200 rounded-lg p-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
           >
-            <option value="all">All Areas</option>
-            {areas.map(a => (
-              <option key={a} value={a}>{a}</option>
+            <option value="all">All SKUs</option>
+            {allSkus.map((s: any) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1.5 min-w-[200px] flex-1 max-w-xs">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Customer</label>
+          <select
+            value={filters.customers.size === 0 ? 'all' : Array.from(filters.customers)[0] as string}
+            onChange={(e) => {
+              const val = e.target.value;
+              update('customers', val === 'all' ? new Set() : new Set([val]));
+            }}
+            className="w-full bg-white border border-slate-200 rounded-lg p-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+          >
+            <option value="all">All customers</option>
+            {allCustomers.map((c: any) => (
+              <option key={c.value} value={c.value}>{c.label}</option>
             ))}
           </select>
         </div>

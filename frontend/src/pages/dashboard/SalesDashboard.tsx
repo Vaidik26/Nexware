@@ -89,7 +89,7 @@ export default function SalesDashboard() {
         </div>
       </div>
       
-      <SalesFilters filters={filters} onChange={handleFilterChange} bootData={bootData} />
+      <SalesFilters filters={filters} onChange={handleFilterChange} bootData={bootData} currentData={data} />
       
       {loading ? (
         <div className="flex justify-center py-20">
