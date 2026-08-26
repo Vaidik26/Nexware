@@ -97,7 +97,7 @@ export default function SalesDashboard() {
         </div>
       ) : (
         <>
-          <SalesKPIs data={data} bootData={bootData} />
+          <SalesKPIs data={data} />
           <SalesCharts data={data} filters={filters} onFilterChange={handleFilterChange} />
           <SalesDataTables data={data} bootData={bootData} />
         </>
