@@ -18,6 +18,7 @@ const queryClient = new QueryClient({
 // Lazy loaded routes for Code Splitting
 const LoginPage = React.lazy(() => import('@/pages/auth/LoginPage'));
 const MarketDashboard = React.lazy(() => import('@/pages/dashboard/MarketDashboard'));
+const SalesDashboard = React.lazy(() => import('@/pages/dashboard/SalesDashboard'));
 const SalesCatalogue = React.lazy(() => import('@/pages/warehouse/SalesCatalogue'));
 const OrderUpload = React.lazy(() => import('@/pages/warehouse/OrderUpload'));
 const PickLists = React.lazy(() => import('@/pages/warehouse/PickLists'));
@@ -135,6 +136,7 @@ export default function App() {
               >
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<MarketDashboard />} />
+                <Route path="dashboard/sales" element={<SalesDashboard />} />
                 <Route path="warehouse/catalogue" element={<SalesCatalogue />} />
                 <Route path="warehouse/lpos" element={<LpoManagement />} />
                 <Route path="warehouse/lpos/:id" element={<LpoDetails />} />

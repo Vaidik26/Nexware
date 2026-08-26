@@ -1,0 +1,156 @@
+import React, { useMemo } from 'react';
+
+const formatNum = (v: number, isKg = false) => {
+  if (!v) return '—';
+  return new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: isKg ? 0 : 2
+  }).format(v);
+};
+
+export default function SalesDataTables({ data, bootData }: { data: any, bootData: any }) {
+  if (!data || !bootData) return null;
+
+  // Process raw SKU data from the RPC response and catalogue
+  const processedSkus = useMemo(() => {
+    if (!data.skus || !bootData.catalogue) return [];
+    
+    // catalogue is an array of {code, desc, product, cat, active}
+    const catMap = new Map(bootData.catalogue.map((c: any) => [c.code, c]));
+
+    return data.skus.map((s: any) => {
+      const code = String(s[0]);
+      const meta = catMap.get(code) || { product: 'Other', cat: 'OTHER ITEMS', desc: code };
+      return {
+        code,
+        desc: meta.desc,
+        product: meta.product,
+        cat: meta.cat,
+        gross: Number(s[1]) || 0,
+        returns: Number(s[2]) || 0,
+        net: (Number(s[1]) || 0) - (Number(s[2]) || 0),
+        kg: Number(s[3]) || 0,
+        qty: Number(s[4]) || 0
+      };
+    });
+  }, [data.skus, bootData.catalogue]);
+
+  // Aggregate for Category
+  const categoryData = useMemo(() => {
+    const map = new Map();
+    processedSkus.forEach((s: any) => {
+      if (!map.has(s.cat)) map.set(s.cat, { name: s.cat, gross: 0, net: 0, returns: 0, kg: 0 });
+      const curr = map.get(s.cat);
+      curr.gross += s.gross;
+      curr.net += s.net;
+      curr.returns += s.returns;
+      curr.kg += s.kg;
+    });
+    return Array.from(map.values()).sort((a, b) => b.gross - a.gross);
+  }, [processedSkus]);
+
+  // Aggregate for Product
+  const productData = useMemo(() => {
+    const map = new Map();
+    processedSkus.forEach((s: any) => {
+      if (!map.has(s.product)) map.set(s.product, { name: s.product, gross: 0, net: 0, returns: 0, kg: 0 });
+      const curr = map.get(s.product);
+      curr.gross += s.gross;
+      curr.net += s.net;
+      curr.returns += s.returns;
+      curr.kg += s.kg;
+    });
+    return Array.from(map.values()).sort((a, b) => b.gross - a.gross);
+  }, [processedSkus]);
+
+  const SimpleTable = ({ title, columns, rowData }: { title: string, columns: any[], rowData: any[] }) => (
+    <div className="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col h-96">
+      <div className="p-4 border-b border-slate-100 flex-none">
+        <h2 className="text-sm font-bold text-slate-900">{title}</h2>
+      </div>
+      <div className="overflow-auto flex-1 p-0">
+        <table className="w-full text-xs text-left">
+          <thead className="bg-slate-50 sticky top-0 border-b border-slate-200">
+            <tr>
+              {columns.map((c, i) => (
+                <th key={i} className={`p-3 font-semibold text-slate-600 ${c.align === 'right' ? 'text-right' : ''}`}>
+                  {c.header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rowData.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="text-center p-8 text-slate-400">No data</td>
+              </tr>
+            ) : rowData.map((row, i) => (
+              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                {columns.map((c, j) => (
+                  <td key={j} className={`p-3 text-slate-700 ${c.align === 'right' ? 'text-right' : ''} ${c.bold ? 'font-semibold' : ''}`}>
+                    {c.render ? c.render(row) : row[c.key]}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+      <SimpleTable 
+        title="Category" 
+        columns={[
+          { header: 'Category', key: 'name', bold: true },
+          { header: 'Gross', key: 'gross', align: 'right', render: (r: any) => formatNum(r.gross) },
+          { header: 'Net', key: 'net', align: 'right', render: (r: any) => formatNum(r.net) },
+          { header: 'Returns', key: 'returns', align: 'right', render: (r: any) => formatNum(r.returns) },
+          { header: 'Volume (kg)', key: 'kg', align: 'right', render: (r: any) => formatNum(r.kg, true) },
+        ]}
+        rowData={categoryData}
+      />
+      <SimpleTable 
+        title="Product" 
+        columns={[
+          { header: 'Product', key: 'name', bold: true },
+          { header: 'Gross', key: 'gross', align: 'right', render: (r: any) => formatNum(r.gross) },
+          { header: 'Net', key: 'net', align: 'right', render: (r: any) => formatNum(r.net) },
+          { header: 'Returns', key: 'returns', align: 'right', render: (r: any) => formatNum(r.returns) },
+          { header: 'Volume (kg)', key: 'kg', align: 'right', render: (r: any) => formatNum(r.kg, true) },
+        ]}
+        rowData={productData}
+      />
+      <div className="lg:col-span-2">
+        <SimpleTable 
+          title="SKU Detail" 
+          columns={[
+            { header: 'Code', key: 'code', bold: true },
+            { header: 'Description', key: 'desc' },
+            { header: 'Gross', key: 'gross', align: 'right', render: (r: any) => formatNum(r.gross) },
+            { header: 'Net', key: 'net', align: 'right', render: (r: any) => formatNum(r.net) },
+            { header: 'Returns', key: 'returns', align: 'right', render: (r: any) => formatNum(r.returns) },
+            { header: 'Volume (kg)', key: 'kg', align: 'right', render: (r: any) => formatNum(r.kg, true) },
+            { header: 'Qty', key: 'qty', align: 'right', render: (r: any) => formatNum(r.qty, true) },
+          ]}
+          rowData={[...processedSkus].sort((a, b) => b.gross - a.gross)}
+        />
+      </div>
+      <div className="lg:col-span-2">
+        <SimpleTable 
+          title="Customers (Top N)" 
+          columns={[
+            { header: 'ID', key: '0', bold: true },
+            { header: 'Name', key: '1' },
+            { header: 'Gross', key: '2', align: 'right', render: (r: any) => formatNum(r[2]) },
+            { header: 'Net', key: '4', align: 'right', render: (r: any) => formatNum((r[2] || 0) - (r[3] || 0)) },
+            { header: 'Returns', key: '3', align: 'right', render: (r: any) => formatNum(r[3]) },
+            { header: 'Volume (kg)', key: '5', align: 'right', render: (r: any) => formatNum(r[5], true) },
+          ]}
+          rowData={data.customers || []}
+        />
+      </div>
+    </div>
+  );
+}

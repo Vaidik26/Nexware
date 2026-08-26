@@ -26,6 +26,7 @@ const groups = [
     icon: BarChart3,
     items: [
       { name: 'Executive Summary', path: '/dashboard', icon: BarChart3 },
+      { name: 'Sales Dashboard', path: '/dashboard/sales', icon: TrendingUp },
     ],
   },
   {
