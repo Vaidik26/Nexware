@@ -13,12 +13,13 @@ import logging
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from backend.constants import ACTIVE_PICK_STATUSES
 from backend.database import get_db
-from backend.dependencies import get_current_admin, get_current_user
+from backend.dependencies import get_current_admin, get_current_picker, get_current_user
 from backend.models.picklist import Picklist, PicklistAssignment
 from backend.models.users import AdminUser, DashboardUser, PickerUser, SalesUser
 from backend.schemas.auth import (
@@ -167,6 +168,28 @@ async def create_picker(
     await db.refresh(picker)
     logger.info("Picker created: id=%s", picker.id)
     return picker
+
+
+class PushTokenBody(BaseModel):
+    token: str
+
+
+@pickers_router.post("/me/push-token")
+async def register_push_token(
+    body: PushTokenBody,
+    db: AsyncSession = Depends(get_db),
+    current_picker: PickerUser = Depends(get_current_picker),
+):
+    """
+    Register the device's Expo push token.
+
+    This moved here from the deleted notifications router. The in-app feed is
+    gone — live updates come over the WebSocket now — but push still matters: it
+    is the only channel that reaches a picker whose app is closed.
+    """
+    current_picker.push_token = body.token
+    await db.commit()
+    return {"message": "Push token updated"}
 
 
 @pickers_router.patch("/me/status", response_model=PickerOut)

@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, model_validator
-from sqlalchemy import delete, desc
+from sqlalchemy import desc
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -27,7 +27,6 @@ from backend.core.utils import PREFIX_PICKLIST, flush_with_prefixed_id
 from backend.database import get_db
 from backend.dependencies import get_current_admin, get_current_picker, get_current_user
 from backend.models.customer import Customer
-from backend.models.notification import Notification
 from backend.models.order import SalesOrder
 from backend.models.picklist import (
     Picklist,
@@ -325,28 +324,39 @@ async def _pick_least_loaded_picker(
 
 
 def _notify_assignment(
-    db: AsyncSession,
     picker: PickerUser,
     picklist: Picklist,
     job_label: Optional[str],
     background_tasks: Optional[BackgroundTasks],
 ) -> None:
-    """Write the in-app alert and schedule the push for a newly assigned job."""
+    """
+    Schedule the device push for a newly assigned job.
+
+    There is no longer an in-app notification table — live updates go over the
+    WebSocket. Push is still sent here because it has to reach a device whose
+    app is closed, which a socket cannot do. Callers pair this with
+    ``broadcast_event`` *after* their commit.
+    """
     title = f"New Job Assigned: {job_label}" if job_label else "New Pick List Assigned"
     message = (
         f"Job {job_label} (Order #{picklist.order_number}) has been routed to your terminal."
         if job_label
         else f"Order #{picklist.order_number} has been assigned to you."
     )
-    db.add(
-        Notification(
-            picker_id=picker.id,
-            type="pick_assignment",
-            title=title,
-            message=message,
-        )
-    )
     trigger_push(picker.push_token, title, message, background_tasks=background_tasks)
+
+
+async def broadcast_event(event: str, **payload) -> None:
+    """
+    Push a live update to every connected client.
+
+    Always call this *after* the transaction commits: the socket message tells
+    clients to refetch, and refetching before the commit lands would return the
+    pre-change state.
+    """
+    from backend.ws_manager import manager
+
+    await manager.broadcast({"event": event, **payload})
 
 
 # ─── Reads ────────────────────────────────────────────────────────────────────
@@ -526,9 +536,16 @@ async def assign_picklist(
     picklist.status = "assigned"
     picker.is_available = False
 
-    _notify_assignment(db, picker, picklist, None, background_tasks)
+    _notify_assignment(picker, picklist, None, background_tasks)
     await db.commit()
 
+    await broadcast_event(
+        "PICKLIST_ASSIGNED",
+        picklist_id=picklist.id,
+        picker_id=picker.id,
+        order_number=picklist.order_number,
+        message=f"New picklist assigned: {picklist.order_number}",
+    )
     return {"message": "Pick list assigned", "picklist_id": picklist_id}
 
 
@@ -554,9 +571,17 @@ async def auto_assign_existing(
     picker.is_available = False
 
     job_label = f"P-{str(db_picklist.picker_job_number).zfill(3)}"
-    _notify_assignment(db, picker, db_picklist, job_label, background_tasks)
+    _notify_assignment(picker, db_picklist, job_label, background_tasks)
 
     await db.commit()
+
+    await broadcast_event(
+        "PICKLIST_ASSIGNED",
+        picklist_id=db_picklist.id,
+        picker_id=picker.id,
+        order_number=db_picklist.order_number,
+        message=f"New picklist assigned: {db_picklist.order_number}",
+    )
     return {"message": "Auto-assigned successfully", "picker_name": picker.full_name}
 
 
@@ -601,11 +626,18 @@ async def direct_assign_picklist(
     picker.is_available = False
 
     job_label = f"P-{str(next_job_number).zfill(3)}"
-    _notify_assignment(db, picker, db_picklist, job_label, background_tasks)
+    _notify_assignment(picker, db_picklist, job_label, background_tasks)
 
     await db.commit()
     await db.refresh(db_picklist)
 
+    await broadcast_event(
+        "PICKLIST_ASSIGNED",
+        picklist_id=db_picklist.id,
+        picker_id=picker.id,
+        order_number=db_picklist.order_number,
+        message=f"New picklist assigned: {db_picklist.order_number}",
+    )
     return {
         "message": "Pick list generated and assigned to staff directly",
         "picklist_id": db_picklist.id,
@@ -663,11 +695,18 @@ async def direct_assign_auto(
     picker.is_available = False
 
     job_label = f"P-{str(next_job_number).zfill(3)}"
-    _notify_assignment(db, picker, db_picklist, job_label, background_tasks)
+    _notify_assignment(picker, db_picklist, job_label, background_tasks)
 
     await db.commit()
     await db.refresh(db_picklist)
 
+    await broadcast_event(
+        "PICKLIST_ASSIGNED",
+        picklist_id=db_picklist.id,
+        picker_id=picker.id,
+        order_number=db_picklist.order_number,
+        message=f"New picklist assigned: {db_picklist.order_number}",
+    )
     return {
         "message": "Auto-assigned to picker successfully",
         "picklist_id": db_picklist.id,
@@ -1352,16 +1391,10 @@ async def return_to_picker(
     )
     assignment = assignment_res.scalars().first()
 
+    picker_id = None
     if assignment and assignment.picker:
         picker = assignment.picker
-        db.add(
-            Notification(
-                picker_id=picker.id,
-                type="pick_returned",
-                title="Pick List Returned for Re-picking",
-                message=f"Order #{pl.order_number} returned: {reason}",
-            )
-        )
+        picker_id = picker.id
         trigger_push(
             picker.push_token,
             "Pick List Returned for Correction",
@@ -1370,6 +1403,14 @@ async def return_to_picker(
         )
 
     await db.commit()
+
+    await broadcast_event(
+        "PICKLIST_RETURNED",
+        picklist_id=pl.id,
+        picker_id=picker_id,
+        order_number=pl.order_number,
+        message=f"Order #{pl.order_number} returned: {reason}",
+    )
     return {"message": "Returned to picker"}
 
 
@@ -1469,13 +1510,16 @@ async def _release_pickers_and_purge(
     pl: Picklist,
     background_tasks: Optional[BackgroundTasks],
     notify_cancellation: bool,
-) -> None:
+) -> List[int]:
     """
-    Free every picker assigned to ``pl``, clear their stale alerts, and delete the
-    job together with the sales order it came from.
+    Free every picker assigned to ``pl`` and delete the job together with the
+    sales order it came from.
 
     Shared by the cancel and the purge-on-complete endpoints, which differ only
     in whether the picker is told the job was cancelled.
+
+    Returns the ids of the released pickers so the caller can name them in the
+    WebSocket event it broadcasts after committing.
     """
     assignment_res = await db.execute(
         select(PicklistAssignment)
@@ -1483,29 +1527,13 @@ async def _release_pickers_and_purge(
         .filter(PicklistAssignment.picklist_id == pl.id)
     )
 
+    released: List[int] = []
     for assign in assignment_res.scalars().unique().all():
         picker = assign.picker
         if picker:
             picker.is_available = True
-            await db.execute(
-                delete(Notification).where(
-                    (Notification.picker_id == picker.id)
-                    & (Notification.message.ilike(f"%{pl.order_number}%"))
-                    & (Notification.type == "pick_assignment")
-                )
-            )
+            released.append(picker.id)
             if notify_cancellation:
-                db.add(
-                    Notification(
-                        picker_id=picker.id,
-                        type="job_cancelled",
-                        title="Assigned Job Cancelled",
-                        message=(
-                            f"Order #{pl.order_number} assigned to you has been cancelled "
-                            "by admin and removed from your queue."
-                        ),
-                    )
-                )
                 trigger_push(
                     picker.push_token,
                     "Assigned Job Cancelled",
@@ -1524,6 +1552,7 @@ async def _release_pickers_and_purge(
     # Items, boxes and box-items go with the parent via ON DELETE CASCADE.
     await db.delete(pl)
     await db.commit()
+    return released
 
 
 @router.delete("/{picklist_id}")
@@ -1540,7 +1569,18 @@ async def cancel_and_purge_picklist(
     if not pl:
         raise HTTPException(status_code=404, detail="Pick list job not found")
 
-    await _release_pickers_and_purge(db, pl, background_tasks, notify_cancellation=True)
+    order_number = pl.order_number
+    released = await _release_pickers_and_purge(
+        db, pl, background_tasks, notify_cancellation=True
+    )
+
+    await broadcast_event(
+        "PICKLIST_CANCELLED",
+        picklist_id=picklist_id,
+        picker_ids=released,
+        order_number=order_number,
+        message=f"Order #{order_number} has been cancelled and removed from the queue.",
+    )
     return {"message": "Ongoing job cancelled and removed from database successfully."}
 
 
@@ -1555,7 +1595,15 @@ async def purge_completed_picklist(
     if not pl:
         raise HTTPException(status_code=404, detail="Pick list not found")
 
-    await _release_pickers_and_purge(db, pl, None, notify_cancellation=False)
+    order_number = pl.order_number
+    released = await _release_pickers_and_purge(db, pl, None, notify_cancellation=False)
+
+    await broadcast_event(
+        "PICKLIST_PURGED",
+        picklist_id=picklist_id,
+        picker_ids=released,
+        order_number=order_number,
+    )
     return {"message": "Order completed and all operational data cleanly purged from the database."}
 
 
@@ -1594,6 +1642,7 @@ async def reassign_picklist(
     )
     old_assignments = assignment_res.scalars().unique().all()
 
+    old_picker_id = None
     if old_assignments:
         old_assignment = old_assignments[-1]
         if old_assignment.picker_id == payload.new_picker_id:
@@ -1604,14 +1653,7 @@ async def reassign_picklist(
         old_picker = old_assignment.picker
         if old_picker:
             old_picker.is_available = True
-            db.add(
-                Notification(
-                    picker_id=old_picker.id,
-                    type="job_cancelled",
-                    title="Job Reassigned",
-                    message=f"Order #{picklist.order_number} has been reassigned to another picker.",
-                )
-            )
+            old_picker_id = old_picker.id
             trigger_push(
                 old_picker.push_token,
                 "Job Reassigned",
@@ -1622,14 +1664,6 @@ async def reassign_picklist(
     db.add(PicklistAssignment(picklist_id=picklist_id, picker_id=new_picker.id))
     new_picker.is_available = False
 
-    db.add(
-        Notification(
-            picker_id=new_picker.id,
-            type="pick_assignment",
-            title="New Job Assigned",
-            message=f"Order #{picklist.order_number} has been reassigned to you.",
-        )
-    )
     trigger_push(
         new_picker.push_token,
         "New Job Assigned",
@@ -1638,6 +1672,15 @@ async def reassign_picklist(
     )
 
     await db.commit()
+
+    await broadcast_event(
+        "PICKLIST_REASSIGNED",
+        picklist_id=picklist_id,
+        picker_id=new_picker.id,
+        previous_picker_id=old_picker_id,
+        order_number=picklist.order_number,
+        message=f"Order #{picklist.order_number} has been reassigned.",
+    )
     return {"message": "Reassigned successfully"}
 
 

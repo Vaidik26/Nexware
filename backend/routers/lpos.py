@@ -365,7 +365,7 @@ async def upload_lpo_pdf(
         db.add(PicklistAssignment(picklist_id=db_picklist.id, picker_id=picker.id))
         db_picklist.status = "assigned"
         picker.is_available = False
-        _notify_assignment(db, picker, db_picklist, None, background_tasks)
+        _notify_assignment(picker, db_picklist, None, background_tasks)
 
         lpo.status = "processed"
 
@@ -463,7 +463,7 @@ async def approve_lpo(
     db.add(PicklistAssignment(picklist_id=db_picklist.id, picker_id=picker.id))
     db_picklist.status = "assigned"
     picker.is_available = False
-    _notify_assignment(db, picker, db_picklist, None, background_tasks)
+    _notify_assignment(picker, db_picklist, None, background_tasks)
 
     lpo.status = "processed"
     await db.commit()

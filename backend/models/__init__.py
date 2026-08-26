@@ -13,7 +13,6 @@ from backend.models.users import (
     SalesUser,
     USER_TYPE_MODELS,
 )
-from backend.models.notification import Notification
 from backend.models.products import CartonType, Product
 from backend.models.order import SalesOrder
 from backend.models.customer import Customer
@@ -34,7 +33,6 @@ __all__ = [
     "SalesUser",
     "DashboardUser",
     "USER_TYPE_MODELS",
-    "Notification",
     "Product",
     "CartonType",
     "SalesOrder",

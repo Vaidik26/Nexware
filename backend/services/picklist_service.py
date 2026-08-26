@@ -3,12 +3,11 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 from fastapi import HTTPException
-from sqlalchemy import delete, func, update
+from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
-from backend.models.notification import Notification
 from backend.models.order import SalesOrder
 from backend.models.picklist import Picklist, PicklistAssignment
 from backend.models.products import Product
@@ -49,7 +48,7 @@ async def verify_picklist_service(picklist_id: int, db: AsyncSession) -> Dict[st
     # 2. Mark as verified
     pl.status = "verified"
 
-    # 3. Cleanup assignments and notifications
+    # 3. Close out assignments and free the pickers
     assignment_res = await db.execute(
         select(PicklistAssignment)
         .options(selectinload(PicklistAssignment.picker))
@@ -58,15 +57,8 @@ async def verify_picklist_service(picklist_id: int, db: AsyncSession) -> Dict[st
 
     for assign in assignment_res.scalars().unique().all():
         assign.completed_at = datetime.now(timezone.utc)
-        picker = assign.picker
-        if picker:
-            picker.is_available = True
-            await db.execute(
-                delete(Notification).where(
-                    (Notification.picker_id == picker.id)
-                    & (Notification.message.ilike(f"%{pl.order_number}%"))
-                )
-            )
+        if assign.picker:
+            assign.picker.is_available = True
 
     # 4. Atomic inventory deduction, keyed on the product FK rather than a
     #    barcode string — a line and its product can no longer drift apart.

@@ -11,16 +11,31 @@ generated version could not run:
   ``pick_list_box_items``, and ``users`` before the ``lpos`` foreign keys that
   referenced it. PostgreSQL refuses both. Drops here go children-first.
 * It added ``lpos.internal_ref``, ``lpos.customer_id`` and
-  ``notifications.picker_id`` as NOT NULL columns to populated tables with no
-  default, which aborts on the first existing row. ``lpos`` and
-  ``notifications`` are dropped and recreated instead — their old rows point at
-  ``users`` and carry a JSON item blob that has no meaning under the new schema.
+  ``notifications.picker_id`` as NOT NULL columns with no default, which aborts
+  on the first existing row.
+* It dropped and recreated ``sales_items`` and ``users``, discarding the item
+  master and every account.
 
-THIS MIGRATION IS DESTRUCTIVE. It drops ``users``, ``sales_items``, ``lpos``,
-``notifications`` and the whole ``pick_lists`` family, and does not carry their
-rows across. That is deliberate and was agreed for a development database that
-gets reseeded. Do not run it against an environment whose data matters without
-first writing the backfill it intentionally omits.
+MASTER DATA IS PRESERVED. The two populated tables that change shape are
+migrated in place rather than rebuilt:
+
+* ``sales_items`` is RENAMEd to ``products`` with its columns, indexes and id
+  sequence renamed alongside. Every row, and every id, survives untouched.
+* ``users`` is split by ``role`` into the four persona tables with an
+  INSERT..SELECT that carries the bcrypt hashes across, so existing passwords
+  keep working. Pickers and sales reps get their email as ``username``, which is
+  one of the two identifiers the old login already accepted — nobody has to
+  change how they sign in. Only after the backfill is ``users`` dropped.
+
+``customers``, ``raw_materials``, ``captured_prices`` and ``carton_types`` are
+not touched at all beyond one added index.
+
+The picklist family and ``lpos`` ARE dropped and recreated. They were verified
+empty before this was written; if that is no longer true, stop and write the
+backfill first.
+
+``notifications`` is dropped and NOT recreated. The in-app feed is retired in
+favour of the WebSocket channel; Expo push survives on ``picker_users.push_token``.
 """
 from alembic import op
 import sqlalchemy as sa
@@ -62,15 +77,17 @@ def upgrade() -> None:
     op.drop_index(op.f('ix_notifications_user_id'), table_name='notifications')
     op.drop_table('notifications')
 
-    op.drop_index(op.f('ix_users_email'), table_name='users')
-    op.drop_index(op.f('ix_users_id'), table_name='users')
-    op.drop_table('users')
-
-    op.drop_index(op.f('ix_sales_items_id'), table_name='sales_items')
-    op.drop_index(op.f('ix_sales_items_item_number'), table_name='sales_items')
-    op.drop_index(op.f('ix_sales_items_primary_barcode'), table_name='sales_items')
-    op.drop_index(op.f('ix_sales_items_secondary_barcode'), table_name='sales_items')
-    op.drop_table('sales_items')
+    # ── sales_items → products, in place ──────────────────────────────────────
+    # A rename keeps all 228 rows, the primary key values and the sequence
+    # position. Rebuilding the table would have thrown the item master away.
+    op.rename_table('sales_items', 'products')
+    op.alter_column('products', 'item_number', new_column_name='product_code')
+    op.alter_column('products', 'item_name', new_column_name='name')
+    op.execute('ALTER INDEX ix_sales_items_id RENAME TO ix_products_id')
+    op.execute('ALTER INDEX ix_sales_items_item_number RENAME TO ix_products_product_code')
+    op.execute('ALTER INDEX ix_sales_items_primary_barcode RENAME TO ix_products_primary_barcode')
+    op.execute('ALTER INDEX ix_sales_items_secondary_barcode RENAME TO ix_products_secondary_barcode')
+    op.execute('ALTER SEQUENCE sales_items_id_seq RENAME TO products_id_seq')
 
     # ── The four persona tables ───────────────────────────────────────────────
     op.create_table(
@@ -131,43 +148,53 @@ def upgrade() -> None:
     op.create_index(op.f('ix_dashboard_users_email'), 'dashboard_users', ['email'], unique=True)
     op.create_index(op.f('ix_dashboard_users_id'), 'dashboard_users', ['id'], unique=False)
 
-    # ── Catalogue ─────────────────────────────────────────────────────────────
-    op.create_table(
-        'products',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('product_code', sa.String(), nullable=False),
-        sa.Column('name', sa.String(), nullable=False),
-        sa.Column('primary_barcode', sa.String(), nullable=False),
-        sa.Column('secondary_barcode', sa.String(), nullable=True),
-        sa.Column('unit', sa.String(), nullable=False),
-        sa.Column('bin_location', sa.String(), nullable=True),
-        sa.Column('standard_carton_quantity', sa.Integer(), nullable=True, server_default=sa.text('1')),
-        sa.Column('packaging_weight', sa.Float(), nullable=True, server_default=sa.text('0.0')),
-        sa.Column('sku_size_category', sa.String(), nullable=True, server_default='>100g'),
-        sa.Column('available_quantity', sa.Integer(), nullable=True, server_default=sa.text('0')),
-        sa.Column('max_order_quantity', sa.Integer(), nullable=True),
-        sa.PrimaryKeyConstraint('id'),
+    # ── Carry the existing accounts across, then retire `users` ───────────────
+    # bcrypt hashes move verbatim, so everyone's current password still works.
+    # Pickers and sales reps take their email as `username`: the old login
+    # accepted either email or full_name, so this keeps every existing sign-in
+    # working unchanged. Rename them later via PATCH /pickers/{id} if you want
+    # shorter handles.
+    #
+    # COALESCE on the boolean flags because they were nullable on `users` and
+    # are NOT NULL here. Rows without a password hash cannot log in and are not
+    # carried over.
+    op.execute(
+        """
+        INSERT INTO admin_users (email, full_name, hashed_password, is_active, created_at)
+        SELECT email, full_name, hashed_password, COALESCE(is_active, true), created_at
+        FROM users
+        WHERE role = 'admin' AND hashed_password IS NOT NULL AND email IS NOT NULL
+        """
     )
-    op.create_index(op.f('ix_products_id'), 'products', ['id'], unique=False)
-    op.create_index(op.f('ix_products_primary_barcode'), 'products', ['primary_barcode'], unique=True)
-    op.create_index(op.f('ix_products_product_code'), 'products', ['product_code'], unique=True)
-    op.create_index(op.f('ix_products_secondary_barcode'), 'products', ['secondary_barcode'], unique=False)
+    op.execute(
+        """
+        INSERT INTO picker_users
+            (username, full_name, hashed_password, is_available, is_active, push_token, created_at)
+        SELECT COALESCE(email, full_name), full_name, hashed_password,
+               COALESCE(is_available, true), COALESCE(is_active, true), push_token, created_at
+        FROM users
+        WHERE role = 'picker' AND hashed_password IS NOT NULL
+        """
+    )
+    op.execute(
+        """
+        INSERT INTO sales_users
+            (username, display_name, hashed_password, is_active, created_at)
+        SELECT COALESCE(email, full_name), full_name, hashed_password,
+               COALESCE(is_active, true), created_at
+        FROM users
+        WHERE role IN ('sales_person', 'sales') AND hashed_password IS NOT NULL
+        """
+    )
 
-    # ── Notifications ─────────────────────────────────────────────────────────
-    op.create_table(
-        'notifications',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('picker_id', sa.Integer(), nullable=False),
-        sa.Column('type', sa.String(), nullable=True),
-        sa.Column('title', sa.String(), nullable=True),
-        sa.Column('message', sa.String(), nullable=True),
-        sa.Column('is_read', sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
-        sa.ForeignKeyConstraint(['picker_id'], ['picker_users.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'),
-    )
-    op.create_index(op.f('ix_notifications_id'), 'notifications', ['id'], unique=False)
-    op.create_index(op.f('ix_notifications_picker_id'), 'notifications', ['picker_id'], unique=False)
+    op.drop_index(op.f('ix_users_email'), table_name='users')
+    op.drop_index(op.f('ix_users_id'), table_name='users')
+    op.drop_table('users')
+
+    # `notifications` is dropped above and deliberately NOT recreated. The
+    # in-app feed is retired: live updates now go over the WebSocket, and Expo
+    # push (which still reaches a closed app) needs only the push_token column
+    # on picker_users.
 
     # ── LPOs ──────────────────────────────────────────────────────────────────
     op.create_table(
@@ -323,14 +350,18 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """
-    Restore the previous *schema*. It does not restore data — the rows this
-    migration dropped are gone and the empty old tables are all a downgrade can
-    offer.
+    Reverse the schema change.
+
+    The item master survives a round trip — ``products`` is renamed back rather
+    than rebuilt. Accounts are rebuilt from the four persona tables before those
+    are dropped, so logins survive too. What cannot come back is anything
+    written to the new picklist/LPO tables after the upgrade; those are dropped.
     """
     op.alter_column('raw_materials', 'market_type', existing_type=sa.VARCHAR(), nullable=True)
     op.alter_column('raw_materials', 'category', existing_type=sa.VARCHAR(), nullable=True)
     op.drop_index(op.f('ix_captured_prices_material_id'), table_name='captured_prices')
 
+    # Children before parents.
     for table in (
         'picklist_assignments',
         'picklist_box_items',
@@ -339,15 +370,20 @@ def downgrade() -> None:
         'picklists',
         'lpo_items',
         'lpos',
-        'notifications',
-        'products',
-        'admin_users',
-        'picker_users',
-        'sales_users',
-        'dashboard_users',
     ):
         op.drop_table(table)
 
+    # ── products → sales_items, in place ──────────────────────────────────────
+    op.execute('ALTER SEQUENCE products_id_seq RENAME TO sales_items_id_seq')
+    op.execute('ALTER INDEX ix_products_secondary_barcode RENAME TO ix_sales_items_secondary_barcode')
+    op.execute('ALTER INDEX ix_products_primary_barcode RENAME TO ix_sales_items_primary_barcode')
+    op.execute('ALTER INDEX ix_products_product_code RENAME TO ix_sales_items_item_number')
+    op.execute('ALTER INDEX ix_products_id RENAME TO ix_sales_items_id')
+    op.alter_column('products', 'name', new_column_name='item_name')
+    op.alter_column('products', 'product_code', new_column_name='item_number')
+    op.rename_table('products', 'sales_items')
+
+    # ── Rebuild `users` from the persona tables, then drop them ───────────────
     op.create_table(
         'users',
         sa.Column('id', sa.INTEGER(), autoincrement=True, nullable=False),
@@ -365,26 +401,32 @@ def downgrade() -> None:
     op.create_index(op.f('ix_users_id'), 'users', ['id'], unique=False)
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
 
-    op.create_table(
-        'sales_items',
-        sa.Column('id', sa.INTEGER(), autoincrement=True, nullable=False),
-        sa.Column('item_number', sa.VARCHAR(), nullable=False),
-        sa.Column('item_name', sa.VARCHAR(), nullable=False),
-        sa.Column('primary_barcode', sa.VARCHAR(), nullable=False),
-        sa.Column('secondary_barcode', sa.VARCHAR(), nullable=True),
-        sa.Column('unit', sa.VARCHAR(), nullable=False),
-        sa.Column('bin_location', sa.VARCHAR(), nullable=True),
-        sa.Column('standard_carton_quantity', sa.INTEGER(), server_default=sa.text('1'), nullable=True),
-        sa.Column('packaging_weight', sa.DOUBLE_PRECISION(precision=53), server_default=sa.text('0.0'), nullable=True),
-        sa.Column('sku_size_category', sa.VARCHAR(), server_default=sa.text("'>100g'::character varying"), nullable=True),
-        sa.Column('available_quantity', sa.INTEGER(), server_default=sa.text('0'), nullable=True),
-        sa.Column('max_order_quantity', sa.INTEGER(), nullable=True),
-        sa.PrimaryKeyConstraint('id', name=op.f('sales_items_pkey')),
+    op.execute(
+        """
+        INSERT INTO users (email, full_name, role, hashed_password, is_active, created_at)
+        SELECT email, full_name, 'admin', hashed_password, is_active, created_at
+        FROM admin_users
+        """
     )
-    op.create_index(op.f('ix_sales_items_id'), 'sales_items', ['id'], unique=False)
-    op.create_index(op.f('ix_sales_items_item_number'), 'sales_items', ['item_number'], unique=True)
-    op.create_index(op.f('ix_sales_items_primary_barcode'), 'sales_items', ['primary_barcode'], unique=True)
-    op.create_index(op.f('ix_sales_items_secondary_barcode'), 'sales_items', ['secondary_barcode'], unique=False)
+    op.execute(
+        """
+        INSERT INTO users
+            (email, full_name, role, hashed_password, is_available, is_active, push_token, created_at)
+        SELECT username, full_name, 'picker', hashed_password,
+               is_available, is_active, push_token, created_at
+        FROM picker_users
+        """
+    )
+    op.execute(
+        """
+        INSERT INTO users (email, full_name, role, hashed_password, is_active, created_at)
+        SELECT username, display_name, 'sales_person', hashed_password, is_active, created_at
+        FROM sales_users
+        """
+    )
+
+    for table in ('admin_users', 'picker_users', 'sales_users', 'dashboard_users'):
+        op.drop_table(table)
 
     op.create_table(
         'notifications',

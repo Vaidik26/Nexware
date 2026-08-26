@@ -23,7 +23,7 @@ export default function PickerLayout() {
  useEffect(() => {
   registerForPushNotificationsAsync().then(token => {
    if (token) {
-    api.post('/notifications/push-token', { token }).catch(() => {});
+    api.post('/pickers/me/push-token', { token }).catch(() => {});
    }
   });
 
@@ -64,7 +64,6 @@ export default function PickerLayout() {
      tabBarIcon: ({ color }) => <ListTodo size={24} color={color} />,
     }}
    />
-   <Tabs.Screen name="alerts" options={{ href: null }} />
    <Tabs.Screen
     name="profile"
     options={{
