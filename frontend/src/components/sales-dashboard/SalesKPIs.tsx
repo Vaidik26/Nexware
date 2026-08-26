@@ -1,5 +1,3 @@
-import React from 'react';
-
 const fmt = (v: number, kg: boolean = false) => {
   if (v == null || isNaN(v)) return "—";
   const a = Math.abs(v);

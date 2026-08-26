@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 
 const formatNum = (v: number, isKg = false) => {
   if (!v) return '—';
@@ -19,7 +19,7 @@ export default function SalesDataTables({ data, bootData }: { data: any, bootDat
 
     return data.skus.map((s: any) => {
       const code = String(s[0]);
-      const meta = catMap.get(code) || { product: 'Other', cat: 'OTHER ITEMS', desc: code };
+      const meta: any = catMap.get(code) || { product: 'Other', cat: 'OTHER ITEMS', desc: code };
       return {
         code,
         desc: meta.desc,

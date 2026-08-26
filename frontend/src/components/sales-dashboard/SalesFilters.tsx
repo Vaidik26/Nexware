@@ -1,4 +1,3 @@
-import React from 'react';
 import { clsx } from 'clsx';
 
 interface SalesFiltersProps {
@@ -7,7 +6,7 @@ interface SalesFiltersProps {
   bootData: any;
 }
 
-export default function SalesFilters({ filters, onChange, bootData }: SalesFiltersProps) {
+export default function SalesFilters({ filters, onChange }: SalesFiltersProps) {
   const update = (key: string, value: any) => {
     onChange({ ...filters, [key]: value });
   };
