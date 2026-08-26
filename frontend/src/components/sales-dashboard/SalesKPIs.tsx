@@ -1,3 +1,5 @@
+import { Banknote, TrendingUp, PackageSearch, Scale, Hash, Layers } from 'lucide-react';
+
 const fmt = (v: number, kg: boolean = false) => {
   if (v == null || isNaN(v)) return "—";
   const a = Math.abs(v);
@@ -6,16 +8,20 @@ const fmt = (v: number, kg: boolean = false) => {
   return Math.round(v).toLocaleString();
 };
 
-export default function SalesKPIs({ data }: { data: any; bootData: any }) {
+export default function SalesKPIs({ data }: { data: any }) {
   if (!data || !data.kpis) return null;
   const k = data.kpis;
 
-  const KpiCard = ({ label, value, sub, colorClass }: any) => (
-    <div className="relative bg-white border border-slate-200 rounded-xl p-4 overflow-hidden shadow-sm">
-      <div className={`absolute left-0 top-0 bottom-0 w-1 ${colorClass}`}></div>
-      <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">{label}</div>
-      <div className="text-2xl font-extrabold text-slate-900 whitespace-nowrap">{value}</div>
-      {sub && <div className="text-xs text-slate-500 mt-1 font-medium">{sub}</div>}
+  const KpiCard = ({ label, value, sub, Icon, colorTheme }: any) => (
+    <div className="p-4 rounded-2xl bg-surface-container-lowest border border-outline-variant shadow-sm hover:shadow-md transition-all group flex flex-col justify-between">
+      <div>
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 border group-hover:scale-105 transition-transform ${colorTheme}`}>
+          <Icon className="w-5 h-5" />
+        </div>
+        <div className="text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-1">{label}</div>
+        <div className="text-2xl font-extrabold text-on-surface whitespace-nowrap">{value}</div>
+        {sub && <div className="text-xs text-slate-500 mt-2 font-medium">{sub}</div>}
+      </div>
     </div>
   );
 
@@ -25,34 +31,43 @@ export default function SalesKPIs({ data }: { data: any; bootData: any }) {
         label="Gross Sales" 
         value={fmt(k.gross)} 
         sub="before returns" 
-        colorClass="bg-amber-500" 
+        Icon={Banknote}
+        colorTheme="bg-indigo-50 text-indigo-700 border-indigo-200" 
       />
       <KpiCard 
         label="Net Sales" 
         value={fmt(k.net)} 
-        colorClass="bg-amber-700" 
+        sub="after returns"
+        Icon={TrendingUp}
+        colorTheme="bg-emerald-50 text-emerald-700 border-emerald-200" 
       />
       <KpiCard 
         label="Volume Sold" 
         value={fmt(k.kg, true)} 
         sub="gross kg" 
-        colorClass="bg-emerald-600" 
+        Icon={Scale}
+        colorTheme="bg-amber-50 text-amber-700 border-amber-200" 
       />
       <KpiCard 
         label="Qty Sold" 
         value={fmt(k.qty, true)} 
-        colorClass="bg-emerald-600" 
+        sub="gross units"
+        Icon={Hash}
+        colorTheme="bg-sky-50 text-sky-700 border-sky-200" 
       />
       <KpiCard 
         label="Avg Price / kg" 
         value={(k.kg > 0 ? k.gross / k.kg : 0).toFixed(3)} 
         sub="blended, gross" 
-        colorClass="bg-slate-800" 
+        Icon={PackageSearch}
+        colorTheme="bg-violet-50 text-violet-700 border-violet-200" 
       />
       <KpiCard 
         label="SKUs in view" 
         value={k.skus || "—"} 
-        colorClass="bg-slate-800" 
+        sub="distinct items"
+        Icon={Layers}
+        colorTheme="bg-rose-50 text-rose-700 border-rose-200" 
       />
     </div>
   );
