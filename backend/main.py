@@ -61,6 +61,20 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("JWT configuration issue: %s", exc)
 
+    # Storage is checked here rather than only at upload time: an anon key in
+    # SUPABASE_SERVICE_KEY fails as an opaque RLS violation halfway through a
+    # customer's LPO upload, which is a bad place to discover it.
+    try:
+        from backend.services.storage_service import storage_config_error
+
+        problem = storage_config_error()
+        if problem:
+            logger.warning("Supabase storage will not work:\n%s", problem)
+        else:
+            logger.info("Supabase storage configured with a service-role key.")
+    except Exception as exc:
+        logger.warning("Could not verify Supabase storage configuration: %s", exc)
+
     yield
     logger.info("Application shutdown.")
 
