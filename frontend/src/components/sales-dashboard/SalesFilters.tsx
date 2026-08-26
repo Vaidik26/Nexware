@@ -73,27 +73,33 @@ export default function SalesFilters({ filters, onChange, bootData }: SalesFilte
             { label: 'Discontinued', value: 'inactive' }
           ]} 
         />
-        <Segment 
-          label="Supervisor Area" 
-          keyName="sarea"
-          value={filters.sarea}
-          scrollable
-          options={[
-            { label: 'All', value: 'all' },
-            ...sAreas.map(a => ({ label: a, value: a }))
-          ]} 
-        />
+        <div className="flex flex-col gap-1.5 min-w-[200px]">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Supervisor Area</label>
+          <select
+            value={filters.sarea}
+            onChange={(e) => update('sarea', e.target.value)}
+            className="w-full bg-white border border-slate-200 rounded-lg p-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+          >
+            <option value="all">All Supervisor Areas</option>
+            {sAreas.map(a => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        </div>
 
-        <Segment 
-          label="Area" 
-          keyName="area"
-          value={filters.area}
-          scrollable
-          options={[
-            { label: 'All', value: 'all' },
-            ...areas.map(a => ({ label: a, value: a }))
-          ]} 
-        />
+        <div className="flex flex-col gap-1.5 min-w-[200px]">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Area</label>
+          <select
+            value={filters.area}
+            onChange={(e) => update('area', e.target.value)}
+            className="w-full bg-white border border-slate-200 rounded-lg p-2 text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+          >
+            <option value="all">All Areas</option>
+            {areas.map(a => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
   );
