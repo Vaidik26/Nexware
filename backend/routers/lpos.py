@@ -15,6 +15,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.future import select
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -354,7 +355,12 @@ async def upload_lpo_pdf(
     try:
         from backend.services.storage_service import upload_to_supabase
 
-        public_url = upload_to_supabase(
+        # run_in_threadpool: the Supabase SDK uses a synchronous HTTP client, and
+        # calling it directly from an async endpoint blocks the event loop for the
+        # whole upload — freezing every other request on the server while one
+        # picker's PDF goes up. Offloading it keeps the API responsive.
+        public_url = await run_in_threadpool(
+            upload_to_supabase,
             file_bytes=file_bytes,
             original_filename=filename,
             bucket=BUCKET_CUSTOMER_CONFIRMATION,

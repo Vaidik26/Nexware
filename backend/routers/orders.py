@@ -13,10 +13,16 @@ from typing import List
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.future import select
 
 from backend.config import settings
-from backend.constants import ALLOWED_PDF_MIME_TYPES, MAX_UPLOAD_SIZE_BYTES
+from backend.constants import (
+    ALLOWED_PDF_MIME_TYPES,
+    BUCKET_CUSTOMER_CONFIRMATION,
+    FOLDER_CUSTOMER_SIGNED,
+    MAX_UPLOAD_SIZE_BYTES,
+)
 from backend.database import get_db
 from backend.dependencies import get_current_admin
 from backend.models.order import SalesOrder
@@ -61,7 +67,9 @@ async def upload_lpo(
     try:
         with open(tmp_path, "wb") as f:
             f.write(file_bytes)
-        extracted_data = parse_lpo_pdf(tmp_path)
+        # Parsing is CPU-bound and synchronous. Run it off the event loop so a
+        # large document does not stall every other in-flight request.
+        extracted_data = await run_in_threadpool(parse_lpo_pdf, tmp_path)
     except Exception as exc:
         logger.exception("PDF parsing failed for file '%s': %s", file.filename, exc)
         raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(exc)}")
@@ -103,11 +111,16 @@ async def upload_signed_lpo(
 
     try:
         from backend.services.storage_service import upload_to_supabase
-        public_url = upload_to_supabase(
+        # run_in_threadpool: the Supabase SDK uses a synchronous HTTP client, and
+        # calling it directly from an async endpoint blocks the event loop for the
+        # whole upload — freezing every other request on the server while one
+        # picker's PDF goes up. Offloading it keeps the API responsive.
+        public_url = await run_in_threadpool(
+            upload_to_supabase,
             file_bytes=file_bytes,
             original_filename=file.filename,
-            bucket="Customer Confirmation",
-            folder="Customer-Signed",
+            bucket=BUCKET_CUSTOMER_CONFIRMATION,
+            folder=FOLDER_CUSTOMER_SIGNED,
             content_type="application/pdf",
         )
     except HTTPException:
@@ -118,6 +131,6 @@ async def upload_signed_lpo(
     return {
         "filename": file.filename,
         "url": public_url,
-        "bucket": "Customer Confirmation",
-        "folder": "Customer-Signed",
+        "bucket": BUCKET_CUSTOMER_CONFIRMATION,
+        "folder": FOLDER_CUSTOMER_SIGNED,
     }

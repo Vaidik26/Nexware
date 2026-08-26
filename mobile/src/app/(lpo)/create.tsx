@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LogOut, Plus, Trash2, QrCode, Share, Search } from 'lucide-react-native';
 import { useAuthStore } from '../../store/authStore';
 import api from '../../lib/api';
+import { getCatalogue } from '../../lib/catalogueCache';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -115,8 +116,10 @@ export default function LpoCreateScreen() {
 
  const fetchCatalogue = async () => {
   try {
-   const res = await api.get('/catalogue');
-   setCatalogue(res.data || []);
+   // Served from the shared cache: instant on every visit after the first, and
+   // refreshed in the background when stale.
+   const items = await getCatalogue(setCatalogue);
+   setCatalogue(items);
   } catch (err) {
    // Handle error quietly
   }

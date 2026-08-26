@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, FileText, Download, UploadCloud, Edit2, Search, Plus, Trash2 } from 'lucide-react-native';
 import api from '../../../lib/api';
+import { getCatalogue } from '../../../lib/catalogueCache';
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -110,8 +111,10 @@ export default function LpoOrderDetailsScreen() {
 
  const fetchCatalogue = async () => {
   try {
-   const res = await api.get('/catalogue');
-   setCatalogue(res.data || []);
+   // Shared cache with the create screen: opening an order to edit no longer
+   // re-downloads the whole product list.
+   const items = await getCatalogue(setCatalogue);
+   setCatalogue(items);
   } catch (err) {
    console.error(err);
   }

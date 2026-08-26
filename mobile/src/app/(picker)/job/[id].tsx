@@ -6,6 +6,7 @@ import { ArrowLeft, CheckCircle, CheckCircle2, Box, Scan, AlertCircle, Package, 
 import PickItemRow from '../../../components/PickItemRow';
 import { playTickSound } from '../../../lib/alertSound';
 import api from '../../../lib/api';
+import { markJobSubmitted } from '../../../lib/jobSignals';
 import QRCode from 'react-native-qrcode-svg';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { captureRef } from 'react-native-view-shot';
@@ -43,6 +44,11 @@ interface ActiveBox {
   carton_name: string;
   contents: BoxContent[]; // items scanned into this box so far
 }
+
+// Carton types are shared across every job and effectively static, so they live
+// outside the component and survive navigation between jobs.
+const CARTON_CACHE_TTL_MS = 10 * 60 * 1000;
+let _cartonCache: { value: CartonType[] | null; at: number } = { value: null, at: 0 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -590,6 +596,9 @@ export default function JobDetailScreen() {
     setIsSubmitting(true);
     try {
       await api.post(`/picklists/${id}/complete-picking`);
+      // Tell the jobs list this one is done before navigating, so it disappears
+      // on arrival instead of lingering until the list's own refetch returns.
+      markJobSubmitted(String(id));
       setShowConfirm(false);
       router.back();
     } catch (err: any) {

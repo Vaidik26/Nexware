@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { View, Text, FlatList, RefreshControl, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
 import api from '../../lib/api';
+import { isJobSubmitted, reconcileSubmittedJobs } from '../../lib/jobSignals';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, Filter } from 'lucide-react-native';
 import JobCard from '../../components/JobCard';
@@ -39,8 +40,13 @@ export default function JobsScreen() {
    const res = jobsResult.value;
 
    if (res && res.data && Array.isArray(res.data)) {
+    // Drop ids the server no longer reports, so the hide-list cannot grow stale.
+    reconcileSubmittedJobs(res.data.map((p: any) => p.id));
     const mapped = res.data
      .filter((p: any) => p.status === 'assigned' || p.status === 'picking')
+     // A job the picker just submitted is hidden immediately; the server will
+     // stop returning it as 'picking' a moment later anyway.
+     .filter((p: any) => !isJobSubmitted(p.id))
      .map((p: any) => {
       const jobNum = p.picker_job_number;
       const label = jobNum ? `P-${String(jobNum).padStart(3, '0')}` : `P-${String(p.id).padStart(3, '0')}`;
@@ -93,6 +99,14 @@ export default function JobsScreen() {
       if (data.event === 'PICKLIST_ASSIGNED' && data.picker_id === picker?.id) {
         fetchAssignedJobs();
       } else if (data.event === 'ORDER_CREATED') {
+        fetchAssignedJobs();
+      } else if (
+        data.event === 'READY_FOR_AUDIT' ||
+        data.event === 'PICKLIST_CANCELLED' ||
+        data.event === 'PICKLIST_REASSIGNED' ||
+        data.event === 'PICKLIST_RETURNED'
+      ) {
+        // These all change what belongs in this picker's queue.
         fetchAssignedJobs();
       }
     } catch (err) {
