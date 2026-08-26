@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 from fastapi import HTTPException
-from sqlalchemy import func, update
+from sqlalchemy import Float, Integer, column, func, update, values
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -62,20 +62,40 @@ async def verify_picklist_service(picklist_id: int, db: AsyncSession) -> Dict[st
 
     # 4. Atomic inventory deduction, keyed on the product FK rather than a
     #    barcode string — a line and its product can no longer drift apart.
+    #
+    #    Issued as ONE statement for the whole picklist. It used to be an UPDATE
+    #    per line, so verifying a 30-line order cost 30 round trips to a remote
+    #    database — the single biggest reason submission felt slow. The deduction
+    #    is still atomic and still floors at zero; the arithmetic just happens
+    #    set-wise via a VALUES join.
+    deductions: Dict[int, float] = {}
     for item in pl.items:
         if item.is_picked and not item.missing_approved:
-            await db.execute(
-                update(Product)
-                .where(Product.id == item.product_id)
-                .values(
-                    available_quantity=func.greatest(
-                        0, Product.available_quantity - item.quantity
-                    )
+            # A product can appear twice (a full-carton line and a loose line),
+            # so quantities are summed before the update rather than overwriting.
+            deductions[item.product_id] = deductions.get(item.product_id, 0) + item.quantity
+
+    if deductions:
+        wanted = values(
+            column("product_id", Integer),
+            column("qty", Float),
+            name="deductions",
+        ).data(list(deductions.items()))
+
+        await db.execute(
+            update(Product)
+            .where(Product.id == wanted.c.product_id)
+            .values(
+                available_quantity=func.greatest(
+                    0, Product.available_quantity - wanted.c.qty
                 )
             )
-            logger.info(
-                "Atomically deducted %s units from product %s", item.quantity, item.product_id
-            )
+        )
+        logger.info(
+            "Deducted stock for %d product(s) on picklist %s in one statement",
+            len(deductions),
+            picklist_id,
+        )
 
     # 5. Update parent sales order
     if pl.sales_order_id:

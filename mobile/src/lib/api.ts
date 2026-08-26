@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getToken, clearSession } from './session';
+import { getToken, peekToken, clearSession } from './session';
 import { useAuthStore } from '../store/authStore';
 
 const getBaseUrl = () => {
@@ -22,11 +22,16 @@ export const api = axios.create({
 
 api.interceptors.request.use(async (config) => {
  try {
-  // Race timeout on SecureStore to prevent Android KeyStore hanging on app reopen
-  const tokenPromise = getToken();
-  const timerPromise = new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Token read timeout')), 1200));
-  const token = await Promise.race([tokenPromise, timerPromise]);
-  
+  // getToken() serves from an in-memory cache after the first call, so the
+  // Android KeyStore is touched once per app launch rather than once per
+  // request. The 1.2s race that used to guard every call is only needed for
+  // that first cold read.
+  let token = peekToken();
+  if (token === undefined) {
+   const timerPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200));
+   token = await Promise.race([getToken(), timerPromise]);
+  }
+
   if (token && typeof token === 'string') {
    config.headers.Authorization = `Bearer ${token}`;
   }

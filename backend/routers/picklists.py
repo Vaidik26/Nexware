@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, model_validator
-from sqlalchemy import desc
+from sqlalchemy import case, desc
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -307,18 +307,25 @@ async def _pick_least_loaded_picker(
     if not candidates:
         raise HTTPException(status_code=400, detail="No available pickers right now")
 
-    loads = []
-    for candidate in candidates:
-        count_result = await db.execute(
-            select(sqlfunc.count(PicklistAssignment.id))
-            .join(Picklist, PicklistAssignment.picklist_id == Picklist.id)
-            .filter(
-                PicklistAssignment.picker_id == candidate.id,
-                Picklist.status.in_(ACTIVE_PICK_STATUSES),
-            )
+    # One grouped COUNT for the whole pool. This used to be a COUNT per picker,
+    # which on a remote database meant the assignment latency grew linearly with
+    # how many staff were on shift — exactly backwards.
+    load_rows = await db.execute(
+        select(
+            PicklistAssignment.picker_id,
+            sqlfunc.count(PicklistAssignment.id),
         )
-        loads.append((count_result.scalar() or 0, candidate))
+        .join(Picklist, PicklistAssignment.picklist_id == Picklist.id)
+        .filter(
+            PicklistAssignment.picker_id.in_([c.id for c in candidates]),
+            Picklist.status.in_(ACTIVE_PICK_STATUSES),
+        )
+        .group_by(PicklistAssignment.picker_id)
+    )
+    # Pickers with no active jobs are absent from the GROUP BY and default to 0.
+    by_picker = {picker_id: total for picker_id, total in load_rows.all()}
 
+    loads = [(by_picker.get(c.id, 0), c) for c in candidates]
     min_load = min(load for load, _ in loads)
     return random.choice([picker for load, picker in loads if load == min_load])
 
@@ -384,12 +391,106 @@ async def list_picklists(
     return result.scalars().all()
 
 
+@router.get("/my/summary")
+async def my_picklists_summary(
+    db: AsyncSession = Depends(get_db),
+    current_picker: PickerUser = Depends(get_current_picker),
+):
+    """
+    The picker's job list, aggregated server-side.
+
+    The jobs screen only ever showed a count, a progress figure and a bin range,
+    but it was fetching every item, box, box-item and product of every open job
+    to compute them on the phone. On a large order that is a payload measured in
+    hundreds of kilobytes over a mobile connection, parsed on a low-end device,
+    to render six numbers.
+
+    This is one query returning one row per job. Use GET /picklists/{id} for the
+    full detail when the picker actually opens a job.
+    """
+    picked_case = case((PicklistItem.is_picked.is_(True), 1))
+
+    # Correlated scalar subqueries rather than extra joins: joining boxes as well
+    # as items would multiply the rows and corrupt every count in the SELECT.
+    unaudited_boxes = (
+        select(sqlfunc.count(PicklistBox.id))
+        .where(PicklistBox.picklist_id == Picklist.id, PicklistBox.is_audited.is_(False))
+        .correlate(Picklist)
+        .scalar_subquery()
+    )
+    total_boxes = (
+        select(sqlfunc.count(PicklistBox.id))
+        .where(PicklistBox.picklist_id == Picklist.id)
+        .correlate(Picklist)
+        .scalar_subquery()
+    )
+
+    result = await db.execute(
+        select(
+            Picklist.id,
+            Picklist.picklist_number,
+            Picklist.order_number,
+            Picklist.status,
+            Picklist.picker_job_number,
+            Picklist.delivery_date,
+            Picklist.created_at,
+            Customer.name.label("customer_name"),
+            sqlfunc.count(PicklistItem.id).label("total_items"),
+            sqlfunc.count(picked_case).label("picked_items"),
+            sqlfunc.count(case((PicklistItem.is_audited.is_(False), 1))).label("unaudited_items"),
+            unaudited_boxes.label("unaudited_boxes"),
+            total_boxes.label("total_boxes"),
+            sqlfunc.min(PicklistItem.bin_location).label("start_bin"),
+            sqlfunc.max(PicklistItem.bin_location).label("end_bin"),
+        )
+        .join(PicklistAssignment, PicklistAssignment.picklist_id == Picklist.id)
+        .join(Customer, Customer.id == Picklist.customer_id)
+        .outerjoin(PicklistItem, PicklistItem.picklist_id == Picklist.id)
+        .filter(
+            PicklistAssignment.picker_id == current_picker.id,
+            Picklist.status.in_(ACTIVE_PICK_STATUSES),
+        )
+        .group_by(Picklist.id, Customer.name)
+        .order_by(desc(Picklist.created_at))
+    )
+
+    return [
+        {
+            "id": row.id,
+            "picklist_number": row.picklist_number,
+            "order_number": row.order_number,
+            "customer_name": row.customer_name,
+            "status": row.status,
+            "picker_job_number": row.picker_job_number,
+            "delivery_date": row.delivery_date,
+            "created_at": row.created_at,
+            "total_items": row.total_items,
+            "picked_items": row.picked_items,
+            "start_bin": row.start_bin,
+            "end_bin": row.end_bin,
+            # Lets the app decide whether an earlier job still blocks this
+            # picker, without downloading that job's items and boxes to find out.
+            # A job with boxes is audited box-by-box; one without is audited
+            # item-by-item.
+            "pending_audit": (
+                row.unaudited_boxes > 0 if row.total_boxes else row.unaudited_items > 0
+            ),
+        }
+        for row in result.all()
+    ]
+
+
 @router.get("/my", response_model=List[PicklistOut])
 async def my_picklists(
     db: AsyncSession = Depends(get_db),
     current_picker: PickerUser = Depends(get_current_picker),
 ):
-    """Picker-facing: returns assigned pick lists for the logged-in picker."""
+    """
+    Picker-facing: full assigned pick lists for the logged-in picker.
+
+    Kept for clients that still want the whole payload. The mobile jobs screen
+    uses /picklists/my/summary instead, which is far cheaper.
+    """
     result = await db.execute(
         select(Picklist)
         .options(*_PICKLIST_LOAD_OPTIONS)
@@ -408,33 +509,45 @@ async def my_picklist_stats(
     db: AsyncSession = Depends(get_db),
     current_picker: PickerUser = Depends(get_current_picker),
 ):
-    """Returns picking statistics for the logged-in picker."""
+    """
+    Returns picking statistics for the logged-in picker.
+
+    Aggregated in the database. This used to pull every picklist the picker had
+    ever completed — with all their items — into memory and sum them in Python,
+    so the picker's home screen got measurably slower with every job they did.
+    """
     finished_statuses = ["waiting_verification", "verified", "completed", "dispatched"]
+    day_start = datetime.combine(
+        datetime.now(timezone.utc).date(), datetime.min.time(), tzinfo=timezone.utc
+    )
+
+    picked_qty = case((PicklistItem.is_picked.is_(True), PicklistItem.picked_quantity), else_=0)
 
     result = await db.execute(
-        select(Picklist)
-        .options(selectinload(Picklist.items))
+        select(
+            sqlfunc.coalesce(sqlfunc.sum(picked_qty), 0).label("lifetime_items"),
+            sqlfunc.coalesce(
+                sqlfunc.sum(case((Picklist.created_at >= day_start, picked_qty), else_=0)), 0
+            ).label("today_items"),
+            sqlfunc.count(sqlfunc.distinct(Picklist.id)).label("orders"),
+        )
+        .select_from(Picklist)
         .join(PicklistAssignment, PicklistAssignment.picklist_id == Picklist.id)
+        .outerjoin(PicklistItem, PicklistItem.picklist_id == Picklist.id)
         .filter(
             PicklistAssignment.picker_id == current_picker.id,
             Picklist.status.in_(finished_statuses),
         )
     )
-    picklists = result.scalars().unique().all()
-
-    today = datetime.now(timezone.utc).date()
-    lifetime_items = 0.0
-    today_items = 0.0
-    for picklist in picklists:
-        picked = sum((i.picked_quantity or 0) for i in picklist.items if i.is_picked)
-        lifetime_items += picked
-        if picklist.created_at and picklist.created_at.date() == today:
-            today_items += picked
+    row = result.one()
+    lifetime_items = row.lifetime_items or 0
+    today_items = row.today_items or 0
+    orders_picked = row.orders or 0
 
     return {
         "today_items_picked": int(today_items),
         "lifetime_items_picked": int(lifetime_items),
-        "lifetime_orders_picked": len(picklists),
+        "lifetime_orders_picked": orders_picked,
     }
 
 

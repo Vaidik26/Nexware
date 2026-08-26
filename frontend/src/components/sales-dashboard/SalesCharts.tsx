@@ -22,7 +22,7 @@ function bucketKey(dateStr: string, gran: string) {
   return `${MONTHS[m]} ${y.toString().slice(2)}`;
 }
 
-export default function SalesCharts({ data }: { data: any, filters: any, onFilterChange: any }) {
+export default function SalesCharts({ data, filters, onFilterChange }: { data: any, filters: any, onFilterChange: any }) {
   const [gran, setGran] = useState('M');
 
   const { trendData, returnsData } = useMemo(() => {
@@ -60,6 +60,42 @@ export default function SalesCharts({ data }: { data: any, filters: any, onFilte
     return tickItem.toString();
   };
 
+  const handleChartClick = (e: any) => {
+    if (e && e.activeLabel) {
+      const label = e.activeLabel;
+      let startD = new Date();
+      let endD = new Date();
+
+      if (gran === 'M') {
+        // "Jan 25"
+        const mStr = label.split(' ')[0];
+        const yStr = label.split(' ')[1];
+        const mIdx = MONTHS.indexOf(mStr);
+        startD = new Date(`20${yStr}-${String(mIdx + 1).padStart(2, '0')}-01`);
+        endD = new Date(startD.getFullYear(), startD.getMonth() + 1, 0); // last day
+      } else if (gran === 'Q') {
+        // "2025 Q1"
+        const y = parseInt(label.split(' ')[0]);
+        const q = parseInt(label.split('Q')[1]);
+        startD = new Date(y, (q - 1) * 3, 1);
+        endD = new Date(y, q * 3, 0);
+      } else if (gran === 'Y') {
+        // "2025"
+        const y = parseInt(label);
+        startD = new Date(y, 0, 1);
+        endD = new Date(y, 11, 31);
+      }
+
+      onFilterChange({
+        ...filters,
+        period: 'custom',
+        customStart: startD,
+        customEnd: endD
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
   const GranButton = ({ label, active, disabled = false }: { label: string, active: boolean, disabled?: boolean }) => (
     <button
       disabled={disabled}
@@ -92,7 +128,7 @@ export default function SalesCharts({ data }: { data: any, filters: any, onFilte
         </div>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={trendData} margin={{ top: 5, right: 0, left: 0, bottom: 5 }}>
+            <ComposedChart data={trendData} margin={{ top: 5, right: 0, left: 0, bottom: 5 }} onClick={handleChartClick} className="cursor-pointer" title="Click to filter by this period">
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
               <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} dy={10} />
               <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} tickFormatter={formatYAxis} />
@@ -118,7 +154,7 @@ export default function SalesCharts({ data }: { data: any, filters: any, onFilte
         </div>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={returnsData} margin={{ top: 5, right: 0, left: -20, bottom: 5 }}>
+            <ComposedChart data={returnsData} margin={{ top: 5, right: 0, left: -20, bottom: 5 }} onClick={handleChartClick} className="cursor-pointer" title="Click to filter by this period">
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
               <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} dy={10} />
               <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} tickFormatter={(val) => val + '%'} />

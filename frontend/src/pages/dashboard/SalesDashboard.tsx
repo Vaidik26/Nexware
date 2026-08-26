@@ -32,6 +32,29 @@ export default function SalesDashboard() {
     }).catch(console.error);
   }, []);
 
+  const scopeIds = (b: any, currentFilters: any) => {
+    const sets: number[][] = [];
+    
+    if (currentFilters.sarea !== 'all' && b?.salesmanAreas?.[currentFilters.sarea]?.customerIds) {
+      sets.push(b.salesmanAreas[currentFilters.sarea].customerIds);
+    }
+    if (currentFilters.area !== 'all' && b?.areas?.[currentFilters.area]?.customerIds) {
+      sets.push(b.areas[currentFilters.area].customerIds);
+    }
+    if (currentFilters.customers && currentFilters.customers.size > 0) {
+      sets.push([...currentFilters.customers].map(Number));
+    }
+  
+    if (sets.length === 0) return null;
+    
+    const keep = sets.reduce((a, bArr) => {
+      const s = new Set(bArr.map(Number));
+      return a.filter(id => s.has(Number(id)));
+    });
+  
+    return keep.length ? keep : [-1];
+  };
+
   const fetchData = async (b: any, currentFilters: any) => {
     setLoading(true);
     try {
@@ -45,7 +68,7 @@ export default function SalesDashboard() {
         p_active: currentFilters.active === "all" ? null : currentFilters.active,
         p_products: currentFilters.products.size ? [...currentFilters.products] : null,
         p_skus: currentFilters.skus.size ? [...currentFilters.skus] : null,
-        p_customers: currentFilters.customers.size ? [...currentFilters.customers].map(Number) : null
+        p_customers: scopeIds(b, currentFilters)
       };
 
       const result = await fetchDashboardView(args);
@@ -99,7 +122,7 @@ export default function SalesDashboard() {
         <>
           <SalesKPIs data={data} />
           <SalesCharts data={data} filters={filters} onFilterChange={handleFilterChange} />
-          <SalesDataTables data={data} bootData={bootData} />
+          <SalesDataTables data={data} bootData={bootData} filters={filters} onFilterChange={handleFilterChange} />
         </>
       )}
     </div>

@@ -109,11 +109,12 @@ async def import_catalogue(
 ):
     content = await file.read()
     items = parse_catalogue_excel(content)
+    if not items:
+        return {"message": "Successfully imported 0 items"}
 
-    created_count = 0
+    # The importer still speaks the spreadsheet's column names; translate to the
+    # model's field names here rather than teaching the parser the schema.
     for item_data in items:
-        # The importer still speaks the spreadsheet's column names; translate to
-        # the model's field names here rather than teaching the parser the schema.
         if "item_number" in item_data:
             item_data["product_code"] = item_data.pop("item_number")
         if "item_name" in item_data:
@@ -121,18 +122,39 @@ async def import_catalogue(
         if "barcode" in item_data:
             item_data["primary_barcode"] = item_data.pop("barcode")
 
-        existing = await db.execute(
-            select(Product).filter(
-                (Product.product_code == item_data.get("product_code"))
-                | (Product.primary_barcode == item_data.get("primary_barcode"))
-            )
-        )
-        if not existing.scalars().first():
-            db.add(Product(**item_data))
-            created_count += 1
+    # One query establishes everything already on file. This previously ran a
+    # SELECT per spreadsheet row, so a 228-row import meant 228 round trips to a
+    # remote database — minutes of waiting for work that fits in a single trip.
+    codes = [i.get("product_code") for i in items if i.get("product_code")]
+    barcodes = [i.get("primary_barcode") for i in items if i.get("primary_barcode")]
 
-    await db.commit()
-    return {"message": f"Successfully imported {created_count} items"}
+    existing_rows = await db.execute(
+        select(Product.product_code, Product.primary_barcode).filter(
+            (Product.product_code.in_(codes)) | (Product.primary_barcode.in_(barcodes))
+        )
+    )
+    known_codes, known_barcodes = set(), set()
+    for code, barcode in existing_rows.all():
+        known_codes.add(code)
+        known_barcodes.add(barcode)
+
+    new_products = []
+    for item_data in items:
+        code = item_data.get("product_code")
+        barcode = item_data.get("primary_barcode")
+        if code in known_codes or barcode in known_barcodes:
+            continue
+        new_products.append(Product(**item_data))
+        # Track within the batch too, so a spreadsheet that repeats a SKU does
+        # not try to insert it twice and trip the unique constraint.
+        known_codes.add(code)
+        known_barcodes.add(barcode)
+
+    if new_products:
+        db.add_all(new_products)
+        await db.commit()
+
+    return {"message": f"Successfully imported {len(new_products)} items"}
 
 
 @router.put("/{product_id}", response_model=ProductOut)

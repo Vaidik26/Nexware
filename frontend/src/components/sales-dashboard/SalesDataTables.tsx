@@ -9,7 +9,7 @@ const formatNum = (v: number, isKg = false) => {
   }).format(v);
 };
 
-export default function SalesDataTables({ data, bootData }: { data: any, bootData: any }) {
+export default function SalesDataTables({ data, bootData, filters, onFilterChange }: { data: any, bootData: any, filters: any, onFilterChange: any }) {
   const [maximizedTable, setMaximizedTable] = useState<string | null>(null);
 
   if (!data || !bootData) return null;
@@ -66,7 +66,7 @@ export default function SalesDataTables({ data, bootData }: { data: any, bootDat
     return Array.from(map.values()).sort((a: any, b: any) => b.gross - a.gross);
   }, [processedSkus]);
 
-  const SimpleTable = ({ title, columns, rowData }: { title: string, columns: any[], rowData: any[] }) => {
+  const SimpleTable = ({ title, columns, rowData, onRowClick, interactive = false }: { title: string, columns: any[], rowData: any[], onRowClick?: (row: any) => void, interactive?: boolean }) => {
     const isMax = maximizedTable === title;
     const [search, setSearch] = useState('');
 
@@ -124,7 +124,15 @@ export default function SalesDataTables({ data, bootData }: { data: any, bootDat
                   <td colSpan={columns.length} className="text-center p-8 text-slate-400">No data found</td>
                 </tr>
               ) : filteredRows.map((row, i) => (
-                <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                <tr 
+                  key={i} 
+                  onClick={() => onRowClick && onRowClick(row)}
+                  className={clsx(
+                    "border-b border-slate-100 transition-colors",
+                    interactive ? "cursor-pointer hover:bg-primary/5 active:bg-primary/10" : "hover:bg-slate-50"
+                  )}
+                  title={interactive ? "Click to filter" : ""}
+                >
                   {columns.map((c, j) => (
                     <td key={j} className={clsx("p-3 text-slate-700 whitespace-nowrap", c.align === 'right' && 'text-right', c.bold && 'font-semibold')}>
                       {c.render ? c.render(row) : row[c.key]}
@@ -155,6 +163,14 @@ export default function SalesDataTables({ data, bootData }: { data: any, bootDat
             { header: 'Volume (kg)', key: 'kg', align: 'right', render: (r: any) => formatNum(r.kg, true) },
           ]}
           rowData={categoryData}
+          interactive={true}
+          onRowClick={(row) => {
+            const catName = row.name;
+            const prodsInCat = bootData.catalogue.filter((c: any) => c.cat === catName).map((c: any) => c.product);
+            onFilterChange({ ...filters, products: new Set(prodsInCat) });
+            // scroll to top smoothly
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         />
         <SimpleTable 
           title="Product" 
@@ -166,6 +182,11 @@ export default function SalesDataTables({ data, bootData }: { data: any, bootDat
             { header: 'Volume (kg)', key: 'kg', align: 'right', render: (r: any) => formatNum(r.kg, true) },
           ]}
           rowData={productData}
+          interactive={true}
+          onRowClick={(row) => {
+            onFilterChange({ ...filters, products: new Set([row.name]) });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         />
         <SimpleTable 
           title="SKU Detail" 
@@ -179,6 +200,11 @@ export default function SalesDataTables({ data, bootData }: { data: any, bootDat
             { header: 'Qty', key: 'qty', align: 'right', render: (r: any) => formatNum(r.qty, true) },
           ]}
           rowData={[...processedSkus].sort((a, b) => b.gross - a.gross)}
+          interactive={true}
+          onRowClick={(row) => {
+            onFilterChange({ ...filters, skus: new Set([row.code]) });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         />
         <SimpleTable 
           title="Customers (Top N)" 
@@ -191,6 +217,11 @@ export default function SalesDataTables({ data, bootData }: { data: any, bootDat
             { header: 'Volume (kg)', key: '5', align: 'right', render: (r: any) => formatNum(r[5], true) },
           ]}
           rowData={data.customers || []}
+          interactive={true}
+          onRowClick={(row) => {
+            onFilterChange({ ...filters, customers: new Set([String(row[0])]) });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         />
       </div>
     </>

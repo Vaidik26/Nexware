@@ -10,14 +10,13 @@ Converting an LPO into a picklist is done in one place — ``_convert_to_picklis
 call. Previously each carried its own copy of the carton/loose split logic.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
-from sqlalchemy import func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from backend.config import settings
 from backend.constants import (
@@ -52,11 +51,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/lpos", tags=["lpos"])
 
 #: Relationship loads needed to serialise an LpoOut without an N+1.
+#:
+#: Collections use selectinload (one extra query, regardless of row count).
+#: The three single-object relations use joinedload so they ride along in the
+#: main query instead of costing a round trip each — on a remote database those
+#: three round trips were most of the wait on the order-history screen.
 _LPO_LOAD_OPTIONS = (
     selectinload(Lpo.items).joinedload(LpoItem.product),
-    selectinload(Lpo.customer),
-    selectinload(Lpo.sales_person),
-    selectinload(Lpo.created_by_admin),
+    joinedload(Lpo.customer),
+    joinedload(Lpo.sales_person),
+    joinedload(Lpo.created_by_admin),
 )
 
 
@@ -176,7 +180,14 @@ async def get_my_lpo_history(
     if date:
         try:
             target_date = datetime.strptime(date, "%Y-%m-%d").date()
-            query = query.filter(sqlfunc.date(Lpo.created_at) == target_date)
+            # A half-open range on the raw column, not date(created_at) == x.
+            # Wrapping the column in a function makes the predicate unindexable
+            # and forces a full scan of the table as it grows.
+            day_start = datetime.combine(target_date, datetime.min.time(), tzinfo=timezone.utc)
+            query = query.filter(
+                Lpo.created_at >= day_start,
+                Lpo.created_at < day_start + timedelta(days=1),
+            )
         except ValueError:
             pass  # Ignore invalid date format and return all
 

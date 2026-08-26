@@ -56,8 +56,26 @@ export default function SalesFilters({ filters, onChange, bootData, currentData 
   );
 
   return (
-    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4">
-      <div className="flex flex-wrap gap-4 items-end">
+    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4 relative">
+      <button 
+        onClick={() => onChange({
+          channel: 'all',
+          area: 'all',
+          sarea: 'all',
+          period: 'last12',
+          active: 'all',
+          products: new Set(),
+          skus: new Set(),
+          customers: new Set(),
+          customStart: new Date('2021-01-01'),
+          customEnd: new Date('2025-12-01')
+        })}
+        className="absolute top-4 right-4 text-xs font-bold text-slate-400 hover:text-red-500 transition-colors"
+      >
+        Reset Filters
+      </button>
+      
+      <div className="flex flex-wrap gap-4 items-end pr-24">
         <Segment 
           label="Channel" 
           keyName="channel"

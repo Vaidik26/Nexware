@@ -138,10 +138,19 @@ export default function JobDetailScreen() {
   // ─── Load data ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    // All four requests are fired together. They were sequential — detail, then
+    // the queue for the FIFO check, then carton types, then the active box — so
+    // the screen took the sum of four round trips before showing anything.
+    // Nothing here depends on anything else, so the wait is now just the slowest.
     const fetchPicklistDetails = async () => {
       try {
         setIsLoading(true);
-        const res = await api.get(`/picklists/${id}`);
+        const [detail, queue] = await Promise.all([
+          api.get(`/picklists/${id}`),
+          // Aggregated queue: one row per job, no items or boxes downloaded.
+          api.get('/picklists/my/summary').catch(() => null),
+        ]);
+        const res = detail;
         if (res && res.data) {
           setPicklistInfo(res.data);
           const mappedItems = (res.data.items || []).map((item: any): PickItem => ({
@@ -175,31 +184,20 @@ export default function JobDetailScreen() {
           });
           setSealedItemIds(boxedIds);
 
-          // Check for FIFO blocking
+          // Check for FIFO blocking, using the aggregated queue fetched above.
           try {
-            const myJobsRes = await api.get('/picklists/my');
-            if (myJobsRes && myJobsRes.data && Array.isArray(myJobsRes.data)) {
-              // Look at jobs that are 'assigned', 'picking', or 'waiting_verification' (if not fully audited)
-              const myJobs = myJobsRes.data
+            if (queue && Array.isArray(queue.data)) {
+              // Jobs that are 'assigned'/'picking', or 'waiting_verification'
+              // that the warehouse manager has not finished auditing.
+              const myJobs = queue.data
                 .filter((p: any) => {
                    if (p.status === 'assigned' || p.status === 'picking') return true;
-                   if (p.status === 'waiting_verification') {
-                      // Check if WM has scanned the boxes/items (audited them)
-                      const boxes = p.boxes || [];
-                      const items = p.items || [];
-                      // If it has boxes, it's blocking if ANY box is NOT audited
-                      if (boxes.length > 0) {
-                         return boxes.some((b: any) => !b.is_audited);
-                      }
-                      // Otherwise, it's blocking if ANY item is NOT audited
-                      if (items.length > 0) {
-                         return items.some((i: any) => !i.is_audited);
-                      }
-                      return false; // fully audited (empty)
-                   }
+                   // pending_audit is computed server-side; it replaces walking
+                   // every box and item of every job on the phone.
+                   if (p.status === 'waiting_verification') return !!p.pending_audit;
                    return false;
                 })
-                .sort((a: any, b: any) => a.id - b.id);
+                .sort((a: any, b: any) => Number(a.id) - Number(b.id));
 
               // Block if there is any older incomplete job
               const olderJob = myJobs.find((p: any) => p.id < Number(id));
@@ -228,10 +226,21 @@ export default function JobDetailScreen() {
     };
 
     const fetchCartonTypes = async () => {
+      // Carton types are master data that changes maybe once a quarter, but
+      // this refetched them on every job open. Serve the cached copy instantly
+      // and only hit the network when it is empty or stale.
+      if (_cartonCache.value && Date.now() - _cartonCache.at < CARTON_CACHE_TTL_MS) {
+        setCartonTypes(_cartonCache.value);
+        return;
+      }
       try {
         const res = await api.get('/catalogue/cartons');
-        setCartonTypes(res.data || []);
-      } catch (err) {}
+        const data = res.data || [];
+        _cartonCache = { value: data, at: Date.now() };
+        setCartonTypes(data);
+      } catch (err) {
+        if (_cartonCache.value) setCartonTypes(_cartonCache.value);
+      }
     };
     
     const fetchActiveBox = async () => {
@@ -446,16 +455,20 @@ export default function JobDetailScreen() {
     }
   };
 
-  const handleOpenSealModal = async () => {
+  const handleOpenSealModal = () => {
     if (!activeBox) return;
+    // Opening the modal flips showSealModal, which the effect below is already
+    // watching. Calling fetchEstimate() here as well fired the request twice
+    // for every seal — doubling the wait on the weight guideline.
     setShowSealModal(true);
-    await fetchEstimate();
   };
 
   useEffect(() => {
-    if (showSealModal && activeBox) {
-      fetchEstimate();
-    }
+    if (!showSealModal || !activeBox) return;
+    // Contents can change while the modal is open (the picker scans another
+    // item in), so re-estimate — but coalesce bursts into a single request.
+    const timer = setTimeout(fetchEstimate, 150);
+    return () => clearTimeout(timer);
   }, [activeBox, showSealModal]);
 
   const handleSealBox = async () => {

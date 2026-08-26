@@ -14,6 +14,7 @@ from typing import Optional, Tuple
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import literal, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -62,16 +63,35 @@ async def _find_user_by_identifier(
     identifier: str, db: AsyncSession
 ) -> Tuple[Optional[object], Optional[str]]:
     """
-    Walk the four user tables looking for a matching identifier.
+    Find which of the four user tables owns this identifier.
 
-    Returns ``(user, user_type)`` on the first hit, or ``(None, None)``.
+    The four lookups are issued as one UNION ALL rather than in sequence. The
+    database is remote and a round trip costs far more than the query itself, so
+    a sales rep — last but one in the search order — was paying three pointless
+    round trips before their own row was even looked at. This resolves the table
+    in a single trip, then fetches the row itself in a second.
+
+    Returns ``(user, user_type)`` on the first hit in _LOGIN_ORDER, or ``(None, None)``.
     """
-    for user_type, model, id_column in _LOGIN_ORDER:
-        result = await db.execute(select(model).filter(id_column.ilike(identifier)))
-        user = result.scalars().first()
-        if user:
-            return user, user_type
-    return None, None
+    # Ask every table "do you have this identifier?" at once. Only ids come back;
+    # `rank` preserves the original precedence so the winner is unambiguous.
+    probes = [
+        select(
+            model.id.label("id"),
+            literal(user_type).label("user_type"),
+            literal(rank).label("rank"),
+        ).filter(id_column.ilike(identifier))
+        for rank, (user_type, model, id_column) in enumerate(_LOGIN_ORDER)
+    ]
+    result = await db.execute(union_all(*probes).order_by("rank").limit(1))
+    hit = result.first()
+    if hit is None:
+        return None, None
+
+    user_id, user_type = hit.id, hit.user_type
+    model = next(m for t, m, _ in _LOGIN_ORDER if t == user_type)
+    row = await db.execute(select(model).filter(model.id == user_id))
+    return row.scalars().first(), user_type
 
 
 @router.post("/login", response_model=Token)
@@ -95,8 +115,10 @@ async def login(login_data: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     if user_type == USER_TYPE_SALES:
         user.last_login_at = datetime.now(timezone.utc)
+        # No refresh afterwards: the session is configured expire_on_commit=False,
+        # so `user` is still fully populated and re-reading it would just be
+        # another round trip to the remote database.
         await db.commit()
-        await db.refresh(user)
 
     token = _create_access_token(user.id, user_type)
     user.user_type = user_type

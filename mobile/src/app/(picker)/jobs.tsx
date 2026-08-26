@@ -19,38 +19,31 @@ export default function JobsScreen() {
 
  const fetchAssignedJobs = async () => {
   try {
-   let res;
-   try {
-    res = await api.get('/picklists/my');
-   } catch (e: any) {
-    if (e.response?.status === 403 || e.response?.status === 401) {
-     res = await api.get('/picklists');
-    } else {
-     throw e;
-    }
+   // Both calls go out together. They were sequential, so the screen waited for
+   // the full round trip of one before starting the other — on a remote API
+   // that is a doubled wait for no reason: neither depends on the other.
+   //
+   // /my/summary returns one aggregated row per job instead of every item, box
+   // and product of every job. The counts and bin range below used to be
+   // computed on the phone from that whole payload.
+   const [jobsResult, statsResult] = await Promise.allSettled([
+    api.get('/picklists/my/summary'),
+    api.get('/picklists/my/stats'),
+   ]);
+
+   if (statsResult.status === 'fulfilled' && statsResult.value?.data) {
+    setStats(statsResult.value.data);
    }
-   
-   try {
-    const statsRes = await api.get('/picklists/my/stats');
-    if (statsRes && statsRes.data) {
-     setStats(statsRes.data);
-    }
-   } catch (err) {
-    console.error("Failed to load stats", err);
-   }
+
+   if (jobsResult.status === 'rejected') throw jobsResult.reason;
+   const res = jobsResult.value;
 
    if (res && res.data && Array.isArray(res.data)) {
     const mapped = res.data
      .filter((p: any) => p.status === 'assigned' || p.status === 'picking')
      .map((p: any) => {
-      const items = p.items || [];
-      const total = items.length || 0;
-      const picked = items.filter((i: any) => i.is_picked).length || 0;
       const jobNum = p.picker_job_number;
       const label = jobNum ? `P-${String(jobNum).padStart(3, '0')}` : `P-${String(p.id).padStart(3, '0')}`;
-      const bins = items.map((i: any) => i.bin_location).filter(Boolean).sort();
-      const startBin = bins.length > 0 ? bins[0] : 'N/A';
-      const endBin = bins.length > 0 ? bins[bins.length - 1] : startBin;
 
       return {
        id: String(p.id),
@@ -59,10 +52,10 @@ export default function JobsScreen() {
        customerName: p.customer_name,
        priority: p.priority || 'ACTIVE',
        zone: p.zone || 'Warehouse Floor',
-       startBin,
-       endBin,
-       totalItems: total,
-       pickedItems: picked,
+       startBin: p.start_bin || 'N/A',
+       endBin: p.end_bin || p.start_bin || 'N/A',
+       totalItems: p.total_items || 0,
+       pickedItems: p.picked_items || 0,
        status: p.status === 'picking' ? 'in_progress' : 'pending'
       };
      });
