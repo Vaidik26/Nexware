@@ -130,10 +130,11 @@ export default function Sidebar() {
               {group.items.length === 0 && group.path ? (
                 <NavLink
                   to={group.path}
+                  end
                   className={({ isActive }) =>
                     cn(
                       "w-full flex items-center justify-between px-3 py-2 text-sm font-bold uppercase tracking-wider rounded-lg transition-colors",
-                      isActive ? "text-secondary" : "text-white-container hover:bg-primary-container/50 hover:text-white"
+                      isActive ? "text-secondary bg-secondary/10" : "text-white-container hover:bg-primary-container/50 hover:text-white"
                     )
                   }
                 >

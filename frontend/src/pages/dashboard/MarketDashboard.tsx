@@ -8,10 +8,10 @@ export default function MarketDashboard() {
     <div className="max-w-5xl mx-auto py-12 px-4 text-center space-y-8">
       <div className="space-y-3 max-w-2xl mx-auto">
         <h1 className="text-3xl font-bold text-on-surface">
-          Executive Operations & Market Intelligence Summary
+          Executive Summary
         </h1>
         <p className="text-on-surface-variant text-base leading-relaxed">
-          This centralized dashboard is currently being engineered to bring together integrated, real-time summaries combining both <strong>Warehouse Operations</strong> and <strong>Market Intelligence</strong> into a unified corporate view.
+          Welcome to the NexWare Operations Platform. This centralized hub provides professional access to all core modules across the enterprise.
         </p>
       </div>
 
@@ -133,7 +133,7 @@ export default function MarketDashboard() {
         >
           <div>
             <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-700 flex items-center justify-center mb-4 border border-rose-200 group-hover:scale-105 transition-transform">
-              <Package2 className="w-6 h-6" />
+              <Shield className="w-6 h-6" />
             </div>
             <h3 className="text-lg font-bold text-on-surface group-hover:text-primary transition-colors">
               Administration
