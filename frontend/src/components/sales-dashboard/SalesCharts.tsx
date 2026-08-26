@@ -75,17 +75,16 @@ export default function SalesCharts({ data }: { data: any, filters: any, onFilte
   );
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
       
       {/* Sales Trend Chart */}
-      <div className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+      <div className="xl:col-span-3 bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
         <div className="mb-4 flex justify-between items-start">
           <div>
             <h2 className="text-sm font-bold text-slate-900">Sales trend — gross, net & volume</h2>
             <p className="text-xs text-slate-500 mt-0.5">Monthly · bars = volume (kg) · solid = gross (OMR) · dashed = net of returns (OMR)</p>
           </div>
           <div className="flex bg-white border border-slate-200 rounded-lg p-0.5 gap-0.5">
-            <span className="px-2 py-1 text-xs text-slate-300 font-bold">W-n/a</span>
             <GranButton label="M" active={gran === 'M'} />
             <GranButton label="Q" active={gran === 'Q'} />
             <GranButton label="Y" active={gran === 'Y'} />
@@ -112,7 +111,7 @@ export default function SalesCharts({ data }: { data: any, filters: any, onFilte
       </div>
 
       {/* Returns Chart */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+      <div className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
         <div className="mb-4">
           <h2 className="text-sm font-bold text-slate-900">Sales returns over time</h2>
           <p className="text-xs text-slate-500 mt-0.5">Returns as % of gross per period</p>

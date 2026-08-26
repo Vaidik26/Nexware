@@ -68,6 +68,18 @@ export default function SalesDataTables({ data, bootData }: { data: any, bootDat
 
   const SimpleTable = ({ title, columns, rowData }: { title: string, columns: any[], rowData: any[] }) => {
     const isMax = maximizedTable === title;
+    const [search, setSearch] = useState('');
+
+    const filteredRows = useMemo(() => {
+      if (!search) return rowData;
+      const lowerSearch = search.toLowerCase();
+      return rowData.filter((row: any) => 
+        columns.some(col => {
+          const val = row[col.key];
+          return val && String(val).toLowerCase().includes(lowerSearch);
+        })
+      );
+    }, [search, rowData, columns]);
 
     return (
       <div className={clsx(
@@ -76,15 +88,24 @@ export default function SalesDataTables({ data, bootData }: { data: any, bootDat
           ? "fixed inset-4 z-50 rounded-2xl shadow-2xl border-2 border-primary overflow-hidden" 
           : "border border-slate-200 rounded-xl shadow-sm h-96 relative"
       )}>
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-          <h2 className="text-sm font-bold text-slate-900">{title}</h2>
-          <button 
-            onClick={() => setMaximizedTable(isMax ? null : title)}
-            className="p-1.5 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
-            title={isMax ? "Restore" : "View Full Screen"}
-          >
-            {isMax ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 gap-4">
+          <h2 className="text-sm font-bold text-slate-900 whitespace-nowrap">{title}</h2>
+          <div className="flex items-center gap-2 flex-1 justify-end">
+            <input
+              type="text"
+              placeholder="Search in table..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="text-xs border border-slate-300 rounded px-2 py-1 outline-none focus:border-primary w-full max-w-[200px]"
+            />
+            <button 
+              onClick={() => setMaximizedTable(isMax ? null : title)}
+              className="p-1.5 text-slate-400 hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
+              title={isMax ? "Restore" : "View Full Screen"}
+            >
+              {isMax ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
         <div className="overflow-auto flex-1 p-0">
           <table className="w-full text-xs text-left">
@@ -98,11 +119,11 @@ export default function SalesDataTables({ data, bootData }: { data: any, bootDat
               </tr>
             </thead>
             <tbody>
-              {rowData.length === 0 ? (
+              {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length} className="text-center p-8 text-slate-400">No data</td>
+                  <td colSpan={columns.length} className="text-center p-8 text-slate-400">No data found</td>
                 </tr>
-              ) : rowData.map((row, i) => (
+              ) : filteredRows.map((row, i) => (
                 <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                   {columns.map((c, j) => (
                     <td key={j} className={clsx("p-3 text-slate-700 whitespace-nowrap", c.align === 'right' && 'text-right', c.bold && 'font-semibold')}>

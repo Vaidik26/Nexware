@@ -1,26 +1,49 @@
-import logging
+"""
+Picking router.
+
+Four endpoints used to build a picklist from a list of ordered lines, each with
+its own near-identical copy of the barcode lookup, stock validation and
+carton/loose split. They now share ``_validate_and_build`` — the split rule lives
+in one place, so a change to it cannot reach three call sites and miss the fourth.
+"""
 import asyncio
 import io
+import logging
+import random
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, model_validator
 from sqlalchemy import delete, desc
+from sqlalchemy import func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
-from backend.config import settings
 from backend.constants import ACTIVE_PICK_STATUSES, DEFAULT_UNIT, WEIGHT_TOLERANCE_FRACTION
+from backend.core.utils import PREFIX_PICKLIST, flush_with_prefixed_id
 from backend.database import get_db
-from backend.dependencies import get_current_admin, get_current_user
-from backend.models.catalogue import CartonType, SalesItem
+from backend.dependencies import get_current_admin, get_current_picker, get_current_user
+from backend.models.customer import Customer
+from backend.models.notification import Notification
 from backend.models.order import SalesOrder
-from backend.models.picklist import PickAssignment, PickList, PickListBox, PickListBoxItem, PickListItem
-from backend.models.user import Notification, User
-from backend.schemas.picklist import PickListBoxCreate, PickListBoxOut, PickListOut, SealBoxCreate
+from backend.models.picklist import (
+    Picklist,
+    PicklistAssignment,
+    PicklistBox,
+    PicklistBoxItem,
+    PicklistItem,
+)
+from backend.models.products import CartonType, Product
+from backend.models.users import PickerUser
+from backend.schemas.picklist import (
+    PicklistBoxCreate,
+    PicklistBoxOut,
+    PicklistOut,
+    SealBoxCreate,
+)
 from backend.services.excel_service import generate_branded_picklist_excel, generate_picklist_excel
 from backend.services.notification_service import send_push_notification
 from backend.services.pdf_generator import generate_picklist_pdf
@@ -34,22 +57,31 @@ router = APIRouter(prefix="/picklists", tags=["picklists"])
 
 class DirectAssignItem(BaseModel):
     barcode: str
-    product_name: str
     quantity: float
     unit: str = DEFAULT_UNIT
+    product_name: Optional[str] = None
 
 
 class DirectAssignRequest(BaseModel):
     order_number: str
-    customer_name: str
     items: List[DirectAssignItem]
+    # Send customer_id; customer_name is accepted as a fallback and resolved
+    # against the customers table.
+    customer_id: Optional[int] = None
+    customer_name: Optional[str] = None
     auto_assign: bool = True
     sales_person_id: Optional[int] = None
     delivery_date: Optional[datetime] = None
 
+    @model_validator(mode="after")
+    def _require_a_customer(self):
+        if self.customer_id is None and not (self.customer_name or "").strip():
+            raise ValueError("Either customer_id or customer_name is required")
+        return self
+
 
 def trigger_push(
-    push_token: str,
+    push_token: Optional[str],
     title: str,
     body: str,
     background_tasks: Optional[BackgroundTasks] = None,
@@ -66,116 +98,344 @@ def trigger_push(
         except Exception as exc:
             logger.warning("Could not schedule push notification: %s", exc)
 
-@router.get("", response_model=List[PickListOut])
-@router.get("/", response_model=List[PickListOut])
+
+# ─── Shared building blocks ───────────────────────────────────────────────────
+
+_PICKLIST_LOAD_OPTIONS = (
+    selectinload(Picklist.items).joinedload(PicklistItem.product),
+    selectinload(Picklist.boxes),
+    selectinload(Picklist.assignments).joinedload(PicklistAssignment.picker),
+)
+
+
+async def resolve_customer_id(
+    db: AsyncSession,
+    customer_id: Optional[int],
+    customer_name: Optional[str],
+) -> int:
+    """
+    Turn whatever the client sent into a customers.id.
+
+    Clients pick from the /customers list but historically posted the name; both
+    are accepted here so the strict FK does not force a simultaneous client
+    release. An unknown name is a 400 rather than a silently created customer —
+    the customer master is admin-managed and must not grow by typo.
+    """
+    if customer_id is not None:
+        result = await db.execute(select(Customer.id).filter(Customer.id == customer_id))
+        if result.scalars().first() is None:
+            raise HTTPException(status_code=400, detail=f"Customer {customer_id} does not exist")
+        return customer_id
+
+    name = (customer_name or "").strip()
+    result = await db.execute(select(Customer).filter(Customer.name.ilike(name)))
+    customer = result.scalars().first()
+    if customer is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown customer '{name}'. Add them in Customer Master first.",
+        )
+    return customer.id
+
+
+async def _load_products_by_barcode(
+    db: AsyncSession, barcodes: Sequence[str]
+) -> Dict[str, Product]:
+    """
+    Map every barcode in ``barcodes`` to its product.
+
+    A product is reachable by either of its two barcodes, so both are indexed
+    into the returned map. One query, no N+1.
+    """
+    wanted = [b for b in barcodes if b]
+    if not wanted:
+        return {}
+    result = await db.execute(
+        select(Product).filter(
+            (Product.primary_barcode.in_(wanted)) | (Product.secondary_barcode.in_(wanted))
+        )
+    )
+    product_map: Dict[str, Product] = {}
+    for product in result.scalars().all():
+        product_map[product.primary_barcode] = product
+        if product.secondary_barcode:
+            product_map[product.secondary_barcode] = product
+    return product_map
+
+
+def _stock_errors(lines: Sequence[Any], product_map: Dict[str, Product]) -> List[Dict[str, str]]:
+    """
+    Check requested quantities against available stock.
+
+    A barcode with no catalogue match has no stock and fails here, which is what
+    keeps ``PicklistItem.product_id`` satisfiable: nothing reaches the insert
+    without a resolved product.
+    """
+    errors = []
+    for line in lines:
+        barcode = line["barcode"]
+        product = product_map.get(barcode)
+        available = product.available_quantity if product else 0
+        if product is None:
+            errors.append(
+                {"barcode": barcode, "error": "Item is not in the catalogue. Add it first."}
+            )
+        elif available == 0:
+            errors.append(
+                {
+                    "barcode": barcode,
+                    "error": (
+                        "Item is out of stock. Please restock in the Sales Catalogue "
+                        "or remove it from the order."
+                    ),
+                }
+            )
+        elif line["quantity"] > available:
+            errors.append(
+                {
+                    "barcode": barcode,
+                    "error": (
+                        f"Only {available} units available in stock. "
+                        "Please adjust the requested quantity."
+                    ),
+                }
+            )
+    return errors
+
+
+def _build_picklist_items(
+    picklist_id: int,
+    lines: Sequence[Dict[str, Any]],
+    product_map: Dict[str, Product],
+) -> List[PicklistItem]:
+    """
+    Split each ordered line into the rows a picker actually walks.
+
+    A quantity is divided by the product's standard carton quantity: the whole
+    cartons become one row scanned against the *primary* barcode, the remainder
+    becomes a loose row scanned against the *secondary* barcode. That is why
+    ``PicklistItem`` stores a barcode alongside ``product_id`` — the two rows
+    point at the same product but must be scanned differently.
+    """
+    items: List[PicklistItem] = []
+    for line in lines:
+        product = product_map[line["barcode"]]
+        quantity = line["quantity"]
+        per_carton = product.standard_carton_quantity or 1
+
+        full_cartons = int(quantity // per_carton) if per_carton > 0 else 0
+        loose_pieces = quantity % per_carton if per_carton > 0 else quantity
+
+        if full_cartons > 0:
+            items.append(
+                PicklistItem(
+                    picklist_id=picklist_id,
+                    product_id=product.id,
+                    barcode=product.primary_barcode,
+                    quantity=full_cartons,
+                    unit="Carton",
+                    is_full_carton=True,
+                    bin_location=product.bin_location,
+                )
+            )
+
+        if loose_pieces > 0 or full_cartons == 0:
+            items.append(
+                PicklistItem(
+                    picklist_id=picklist_id,
+                    product_id=product.id,
+                    barcode=product.secondary_barcode or product.primary_barcode,
+                    quantity=loose_pieces,
+                    unit=line.get("unit") or product.unit or DEFAULT_UNIT,
+                    is_full_carton=False,
+                    bin_location=product.bin_location,
+                )
+            )
+    return items
+
+
+async def _validate_and_build(
+    db: AsyncSession,
+    picklist_id: int,
+    lines: Sequence[Dict[str, Any]],
+) -> List[PicklistItem]:
+    """Resolve products, reject unpickable lines, and build the picklist rows."""
+    product_map = await _load_products_by_barcode(db, [line["barcode"] for line in lines])
+
+    errors = _stock_errors(lines, product_map)
+    if errors:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Inventory validation failed", "errors": errors},
+        )
+
+    items = _build_picklist_items(picklist_id, lines, product_map)
+    if not items:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Cannot create pick list: no items attached to order.", "errors": []},
+        )
+    return items
+
+
+async def _next_job_number(db: AsyncSession, picker_id: int) -> int:
+    """Per-picker job sequence — max active job number for this picker plus one."""
+    result = await db.execute(
+        select(sqlfunc.max(Picklist.picker_job_number))
+        .join(PicklistAssignment, PicklistAssignment.picklist_id == Picklist.id)
+        .filter(
+            PicklistAssignment.picker_id == picker_id,
+            Picklist.status.in_(ACTIVE_PICK_STATUSES),
+        )
+    )
+    return (result.scalar() or 0) + 1
+
+
+async def _pick_least_loaded_picker(
+    db: AsyncSession, require_available: bool = True
+) -> PickerUser:
+    """
+    Choose the active picker with the fewest in-flight jobs, breaking ties at random.
+
+    The candidate rows are locked FOR UPDATE so two concurrent assignments cannot
+    read the same load figures and dogpile the same person.
+    """
+    stmt = select(PickerUser).filter(PickerUser.is_active.is_(True))
+    if require_available:
+        stmt = stmt.filter(PickerUser.is_available.is_(True))
+    result = await db.execute(stmt.with_for_update())
+    candidates = result.scalars().all()
+    if not candidates:
+        raise HTTPException(status_code=400, detail="No available pickers right now")
+
+    loads = []
+    for candidate in candidates:
+        count_result = await db.execute(
+            select(sqlfunc.count(PicklistAssignment.id))
+            .join(Picklist, PicklistAssignment.picklist_id == Picklist.id)
+            .filter(
+                PicklistAssignment.picker_id == candidate.id,
+                Picklist.status.in_(ACTIVE_PICK_STATUSES),
+            )
+        )
+        loads.append((count_result.scalar() or 0, candidate))
+
+    min_load = min(load for load, _ in loads)
+    return random.choice([picker for load, picker in loads if load == min_load])
+
+
+def _notify_assignment(
+    db: AsyncSession,
+    picker: PickerUser,
+    picklist: Picklist,
+    job_label: Optional[str],
+    background_tasks: Optional[BackgroundTasks],
+) -> None:
+    """Write the in-app alert and schedule the push for a newly assigned job."""
+    title = f"New Job Assigned: {job_label}" if job_label else "New Pick List Assigned"
+    message = (
+        f"Job {job_label} (Order #{picklist.order_number}) has been routed to your terminal."
+        if job_label
+        else f"Order #{picklist.order_number} has been assigned to you."
+    )
+    db.add(
+        Notification(
+            picker_id=picker.id,
+            type="pick_assignment",
+            title=title,
+            message=message,
+        )
+    )
+    trigger_push(picker.push_token, title, message, background_tasks=background_tasks)
+
+
+# ─── Reads ────────────────────────────────────────────────────────────────────
+
+@router.get("", response_model=List[PicklistOut])
+@router.get("/", response_model=List[PicklistOut])
 async def list_picklists(
     status: Optional[str] = None,
     search: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_admin),
 ):
-    q = select(PickList).options(
-        selectinload(PickList.items),
-        selectinload(PickList.boxes),
-        selectinload(PickList.assignments).selectinload(PickAssignment.picker)
-    )
+    q = select(Picklist).options(*_PICKLIST_LOAD_OPTIONS)
     if status:
-        q = q.filter(PickList.status == status)
+        q = q.filter(Picklist.status == status)
     if search:
-        q = q.filter(
-            (PickList.order_number.ilike(f"%{search}%")) |
-            (PickList.customer_name.ilike(f"%{search}%"))
+        # customer_name is no longer a column, so the text search joins the
+        # customer master instead of matching a copied string.
+        q = q.join(Customer, Picklist.customer_id == Customer.id).filter(
+            (Picklist.order_number.ilike(f"%{search}%"))
+            | (Picklist.picklist_number.ilike(f"%{search}%"))
+            | (Customer.name.ilike(f"%{search}%"))
         )
-    result = await db.execute(q.order_by(desc(PickList.created_at)))
+    result = await db.execute(q.order_by(desc(Picklist.created_at)))
     return result.scalars().all()
 
 
-@router.get("/my", response_model=List[PickListOut])
+@router.get("/my", response_model=List[PicklistOut])
 async def my_picklists(
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_picker: PickerUser = Depends(get_current_picker),
 ):
-    """Picker-facing: returns assigned pick lists for logged-in picker."""
-    assignments = await db.execute(
-        select(PickAssignment).filter(PickAssignment.picker_id == current_user.id)
-    )
-    assignment_ids = [a.pick_list_id for a in assignments.scalars().all()]
-    if not assignment_ids:
-        return []
+    """Picker-facing: returns assigned pick lists for the logged-in picker."""
     result = await db.execute(
-        select(PickList)
-        .options(
-            selectinload(PickList.items),
-            selectinload(PickList.boxes),
-            selectinload(PickList.assignments).selectinload(PickAssignment.picker)
+        select(Picklist)
+        .options(*_PICKLIST_LOAD_OPTIONS)
+        .join(PicklistAssignment, PicklistAssignment.picklist_id == Picklist.id)
+        .filter(
+            PicklistAssignment.picker_id == current_picker.id,
+            Picklist.status.in_(ACTIVE_PICK_STATUSES),
         )
-        .filter(PickList.id.in_(assignment_ids))
-        .filter(PickList.status.in_(["assigned", "picking", "waiting_verification"]))
-        .order_by(desc(PickList.created_at))
+        .order_by(desc(Picklist.created_at))
     )
-    return result.scalars().all()
+    return result.scalars().unique().all()
 
 
 @router.get("/my/stats")
 async def my_picklist_stats(
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_picker: PickerUser = Depends(get_current_picker),
 ):
     """Returns picking statistics for the logged-in picker."""
-    import datetime
-    from sqlalchemy import select, func
-    
-    # Base query for picklists assigned to this user
-    # We only count picklists that are in waiting_verification, verified, completed, or dispatched
-    base_pl_query = select(PickList).join(PickAssignment).filter(
-        PickAssignment.picker_id == current_user.id,
-        PickList.status.in_(["waiting_verification", "verified", "completed", "dispatched"])
+    finished_statuses = ["waiting_verification", "verified", "completed", "dispatched"]
+
+    result = await db.execute(
+        select(Picklist)
+        .options(selectinload(Picklist.items))
+        .join(PicklistAssignment, PicklistAssignment.picklist_id == Picklist.id)
+        .filter(
+            PicklistAssignment.picker_id == current_picker.id,
+            Picklist.status.in_(finished_statuses),
+        )
     )
-    
-    # 1. Lifetime Orders Picked
-    completed_pls = await db.execute(base_pl_query)
-    completed_pls_list = completed_pls.scalars().all()
-    lifetime_orders = len(completed_pls_list)
-    
-    # 2. Lifetime Items Picked
-    # Sum of picked_quantity for all items in these completed picklists
-    lifetime_items = 0
-    today_items = 0
-    today_date = datetime.datetime.utcnow().date()
-    
-    for pl in completed_pls_list:
-        # Load items
-        items_res = await db.execute(select(PickListItem).filter(PickListItem.pick_list_id == pl.id))
-        items = items_res.scalars().all()
-        pl_picked_qty = sum((i.picked_quantity or 0) for i in items if i.is_picked)
-        
-        lifetime_items += pl_picked_qty
-        
-        # If updated today, count towards today
-        # Use created_at instead of updated_at since PickList doesn't have updated_at
-        if pl.created_at and pl.created_at.date() == today_date:
-            today_items += pl_picked_qty
-            
+    picklists = result.scalars().unique().all()
+
+    today = datetime.now(timezone.utc).date()
+    lifetime_items = 0.0
+    today_items = 0.0
+    for picklist in picklists:
+        picked = sum((i.picked_quantity or 0) for i in picklist.items if i.is_picked)
+        lifetime_items += picked
+        if picklist.created_at and picklist.created_at.date() == today:
+            today_items += picked
+
     return {
         "today_items_picked": int(today_items),
         "lifetime_items_picked": int(lifetime_items),
-        "lifetime_orders_picked": lifetime_orders
+        "lifetime_orders_picked": len(picklists),
     }
 
-@router.get("/{picklist_id}", response_model=PickListOut)
+
+@router.get("/{picklist_id}", response_model=PicklistOut)
 async def get_picklist(
     picklist_id: int,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     result = await db.execute(
-        select(PickList)
-        .options(
-            selectinload(PickList.items),
-            selectinload(PickList.boxes),
-            selectinload(PickList.assignments).selectinload(PickAssignment.picker)
-        )
-        .filter(PickList.id == picklist_id)
+        select(Picklist).options(*_PICKLIST_LOAD_OPTIONS).filter(Picklist.id == picklist_id)
     )
     pl = result.scalars().first()
     if not pl:
@@ -191,97 +451,40 @@ async def generate_picklist(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_admin),
 ):
+    """Build a picklist from a previously uploaded and parsed sales order PDF."""
     result = await db.execute(select(SalesOrder).filter(SalesOrder.id == order_id))
     order = result.scalars().first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    data = order.extracted_data
-    matched_items = []
-    unmatched_items = []
-
-    for item in data.get("items", []):
-        extracted_bc = item.get("barcode", "N/A") or "N/A"
-        cat_result = await db.execute(
-            select(SalesItem).filter(
-                (SalesItem.primary_barcode == extracted_bc) | 
-                (SalesItem.secondary_barcode == extracted_bc)
-            )
-        )
-        cat_item = cat_result.scalars().first()
-        matched_items.append({
-            "barcode": extracted_bc,
-            "primary_barcode": cat_item.primary_barcode if cat_item else extracted_bc,
-            "secondary_barcode": cat_item.secondary_barcode if cat_item else extracted_bc,
-            "standard_carton_quantity": cat_item.standard_carton_quantity if cat_item else 1,
-            "product_name": cat_item.item_name if cat_item else item.get("product_name", "Item"),
+    data = order.extracted_data or {}
+    lines = [
+        {
+            "barcode": item.get("barcode") or "N/A",
             "quantity": item.get("quantity", 1),
-            "unit": item.get("uom", "EA"),
-            "available_quantity": cat_item.available_quantity if cat_item else 0,
-            "bin_location": cat_item.bin_location if cat_item else None
-        })
-
-    if not matched_items:
+            "unit": item.get("uom", DEFAULT_UNIT),
+        }
+        for item in data.get("items", [])
+    ]
+    if not lines:
         raise HTTPException(
             status_code=400,
-            detail={"message": "Order contains no items to pick.", "errors": []}
-        )
-        
-    validation_errors = []
-    for mi in matched_items:
-        req_qty = mi["quantity"]
-        avail_qty = mi["available_quantity"]
-        if avail_qty == 0:
-            validation_errors.append({"barcode": mi["barcode"], "error": "Item is out of stock. Please restock in the Sales Catalogue or remove it from the order."})
-        elif req_qty > avail_qty:
-            validation_errors.append({"barcode": mi["barcode"], "error": f"Only {avail_qty} units available in stock. Please adjust the requested quantity."})
-            
-    if validation_errors:
-        raise HTTPException(
-            status_code=400,
-            detail={"message": "Inventory validation failed", "errors": validation_errors}
+            detail={"message": "Order contains no items to pick.", "errors": []},
         )
 
-    db_picklist = PickList(
+    customer_id = await resolve_customer_id(db, None, data.get("customer_name"))
+
+    db_picklist = Picklist(
         order_number=data.get("order_number", f"ORD-{order_id}"),
-        customer_name=data.get("customer_name", "Unknown"),
+        customer_id=customer_id,
         sales_order_id=order.id,
         status="draft",
     )
-    db.add(db_picklist)
-    await db.flush()
+    await flush_with_prefixed_id(db, db_picklist, "picklist_number", PREFIX_PICKLIST)
 
-    new_items = []
-    for mi in matched_items:
-        qty = mi["quantity"]
-        scq = mi["standard_carton_quantity"]
-        
-        full_cartons = int(qty // scq) if scq > 0 else 0
-        loose_pieces = qty % scq if scq > 0 else qty
+    items = await _validate_and_build(db, db_picklist.id, lines)
+    db.add_all(items)
 
-        if full_cartons > 0:
-            new_items.append(PickListItem(
-                pick_list_id=db_picklist.id,
-                barcode=mi["primary_barcode"],
-                product_name=mi["product_name"],
-                quantity=full_cartons,
-                unit="Carton",
-                is_full_carton=True,
-                bin_location=mi.get("bin_location"),
-            ))
-            
-        if loose_pieces > 0 or full_cartons == 0:
-            new_items.append(PickListItem(
-                pick_list_id=db_picklist.id,
-                barcode=mi["secondary_barcode"] or mi["barcode"],
-                product_name=mi["product_name"],
-                quantity=loose_pieces,
-                unit=mi["unit"],
-                is_full_carton=False,
-                bin_location=mi.get("bin_location"),
-            ))
-
-    db.add_all(new_items)
     order.status = "picklist_generated"
     await db.commit()
     await db.refresh(db_picklist)
@@ -289,9 +492,9 @@ async def generate_picklist(
     return {
         "message": "Pick list generated",
         "picklist_id": db_picklist.id,
+        "picklist_number": db_picklist.picklist_number,
         "order_number": db_picklist.order_number,
-        "matched_count": len(matched_items),
-        "unmatched_items": unmatched_items,
+        "matched_count": len(items),
     }
 
 
@@ -305,120 +508,55 @@ async def assign_picklist(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_admin),
 ):
-    result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    result = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
     picklist = result.scalars().first()
     if not picklist:
         raise HTTPException(status_code=404, detail="Pick list not found")
 
-    user_res = await db.execute(
-        select(User).filter(User.id == picker_id, User.role == "picker", User.is_active == True)
+    picker_res = await db.execute(
+        select(PickerUser).filter(PickerUser.id == picker_id, PickerUser.is_active.is_(True))
     )
-    picker = user_res.scalars().first()
+    picker = picker_res.scalars().first()
     if not picker:
         raise HTTPException(status_code=404, detail="Picker not found or inactive")
-
     if not picker.is_available:
         raise HTTPException(status_code=400, detail="Picker is not available")
 
-    assignment = PickAssignment(pick_list_id=picklist_id, picker_id=picker_id)
-    db.add(assignment)
+    db.add(PicklistAssignment(picklist_id=picklist_id, picker_id=picker_id))
     picklist.status = "assigned"
     picker.is_available = False
 
-    db.add(Notification(
-        user_id=picker_id,
-        type="pick_assignment",
-        title="New Pick List Assigned",
-        message=f"Order #{picklist.order_number} has been assigned to you.",
-    ))
-
+    _notify_assignment(db, picker, picklist, None, background_tasks)
     await db.commit()
 
-    trigger_push(
-        picker.push_token,
-        "New Pick List Assigned",
-        f"Order #{picklist.order_number} has been assigned to you.",
-        background_tasks=background_tasks,
-    )
-
     return {"message": "Pick list assigned", "picklist_id": picklist_id}
+
 
 @router.post("/{picklist_id}/auto-assign")
 async def auto_assign_existing(
     picklist_id: int,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin),
 ):
-    if current_user.role not in ("admin", "lpo"):
-        raise HTTPException(status_code=403, detail="Admin or LPO access required")
-    from sqlalchemy import func as sqlfunc
-    
-    # 1. Fetch Picklist
-    picklist_res = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    picklist_res = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
     db_picklist = picklist_res.scalars().first()
     if not db_picklist:
         raise HTTPException(status_code=404, detail="Pick list not found")
     if db_picklist.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft pick lists can be assigned")
 
-    import random
-    
-    # 2. Find available picker
-    users_res = await db.execute(
-        select(User).filter(User.role == "picker", User.is_active == True, User.is_available == True)
-    )
-    pickers = users_res.scalars().all()
-    if not pickers:
-        raise HTTPException(status_code=400, detail="No available pickers right now")
-        
-    picker_loads = []
-    active_statuses = ["assigned", "picking", "waiting_verification"]
-    for p in pickers:
-        count_res = await db.execute(
-            select(sqlfunc.count(PickAssignment.id))
-            .join(PickList)
-            .filter(PickAssignment.picker_id == p.id, PickList.status.in_(active_statuses))
-        )
-        picker_loads.append((count_res.scalar() or 0, p))
-        
-    min_load = min(load for load, p in picker_loads)
-    tied_pickers = [p for load, p in picker_loads if load == min_load]
-    picker = random.choice(tied_pickers)
+    picker = await _pick_least_loaded_picker(db)
 
-    # 3. Calculate sequence number
-    active_statuses = ["assigned", "picking", "waiting_verification"]
-    max_res = await db.execute(
-        select(sqlfunc.max(PickList.picker_job_number))
-        .join(PickAssignment, PickAssignment.pick_list_id == PickList.id)
-        .filter(
-            PickAssignment.picker_id == picker.id,
-            PickList.status.in_(active_statuses)
-        )
-    )
-    db_picklist.picker_job_number = (max_res.scalar() or 0) + 1
+    db_picklist.picker_job_number = await _next_job_number(db, picker.id)
     db_picklist.status = "assigned"
-
-    # 4. Assign
-    assignment = PickAssignment(
-        pick_list_id=db_picklist.id,
-        picker_id=picker.id
-    )
-    db.add(assignment)
+    db.add(PicklistAssignment(picklist_id=db_picklist.id, picker_id=picker.id))
     picker.is_available = False
-    
-    await db.commit()
 
-    # 5. Push Notification
     job_label = f"P-{str(db_picklist.picker_job_number).zfill(3)}"
-    if picker.push_token:
-        trigger_push(
-            picker.push_token,
-            f"New Job Assigned: {job_label}",
-            f"Job {job_label} — Order #{db_picklist.order_number} assigned to your terminal.",
-            background_tasks=background_tasks,
-        )
+    _notify_assignment(db, picker, db_picklist, job_label, background_tasks)
 
+    await db.commit()
     return {"message": "Auto-assigned successfully", "picker_name": picker.full_name}
 
 
@@ -430,361 +568,189 @@ async def direct_assign_picklist(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_admin),
 ):
-    """Creates picklist directly from memory-extracted items and assigns to picker without saving intermediate orders!"""
-    from sqlalchemy import func as sqlfunc
-    user_res = await db.execute(
-        select(User).filter(User.id == picker_id, User.role == "picker", User.is_active == True)
+    """Create a picklist from extracted items and assign it straight to a picker."""
+    picker_res = await db.execute(
+        select(PickerUser).filter(PickerUser.id == picker_id, PickerUser.is_active.is_(True))
     )
-    picker = user_res.scalars().first()
+    picker = picker_res.scalars().first()
     if not picker:
         raise HTTPException(status_code=404, detail="Selected picker staff not found or inactive")
 
-    # Compute picker-specific job sequence: MAX active job number for this picker + 1
-    active_statuses = ["assigned", "picking", "waiting_verification"]
-    max_res = await db.execute(
-        select(sqlfunc.max(PickList.picker_job_number))
-        .join(PickAssignment, PickAssignment.pick_list_id == PickList.id)
-        .filter(
-            PickAssignment.picker_id == picker_id,
-            PickList.status.in_(active_statuses)
-        )
-    )
-    current_max = max_res.scalar() or 0
-    next_job_number = current_max + 1
+    customer_id = await resolve_customer_id(db, payload.customer_id, payload.customer_name)
+    next_job_number = await _next_job_number(db, picker_id)
 
-    db_picklist = PickList(
+    db_picklist = Picklist(
         order_number=payload.order_number,
-        customer_name=payload.customer_name,
+        customer_id=customer_id,
         sales_order_id=None,
         sales_person_id=payload.sales_person_id,
         status="assigned",
         picker_job_number=next_job_number,
         delivery_date=payload.delivery_date,
     )
-    db.add(db_picklist)
-    await db.flush()
+    await flush_with_prefixed_id(db, db_picklist, "picklist_number", PREFIX_PICKLIST)
 
-    # Bulk fetch all matching catalogue items to avoid N+1 database queries
-    all_barcodes = [item.barcode or "N/A" for item in payload.items]
-    cat_res = await db.execute(select(SalesItem).filter(
-        (SalesItem.primary_barcode.in_(all_barcodes)) | 
-        (SalesItem.secondary_barcode.in_(all_barcodes))
-    ))
-    # Map both primary and secondary barcodes to the cat item
-    cat_map = {}
-    for ci in cat_res.scalars().all():
-        cat_map[ci.primary_barcode] = ci
-        if ci.secondary_barcode:
-            cat_map[ci.secondary_barcode] = ci
+    lines = [
+        {"barcode": i.barcode or "N/A", "quantity": i.quantity or 1, "unit": i.unit}
+        for i in payload.items
+    ]
+    items = await _validate_and_build(db, db_picklist.id, lines)
+    db.add_all(items)
 
-    validation_errors = []
-    for item in payload.items:
-        bc = item.barcode or "N/A"
-        req_qty = item.quantity or 1
-        cat_item = cat_map.get(bc)
-        avail_qty = cat_item.available_quantity if cat_item else 0
-        
-        if avail_qty == 0:
-            validation_errors.append({"barcode": bc, "error": "Item is out of stock. Please restock in the Sales Catalogue or remove it from the order."})
-        elif req_qty > avail_qty:
-            validation_errors.append({"barcode": bc, "error": f"Only {avail_qty} units available in stock. Please adjust the requested quantity."})
-
-    if validation_errors:
-        raise HTTPException(
-            status_code=400,
-            detail={"message": "Inventory validation failed", "errors": validation_errors}
-        )
-
-    verified_count = 0
-    new_items = []
-    for item in payload.items:
-        bc = item.barcode or "N/A"
-        cat_item = cat_map.get(bc)
-
-        qty = item.quantity or 1
-        scq = cat_item.standard_carton_quantity if cat_item else 1
-        
-        full_cartons = int(qty // scq) if scq > 0 else 0
-        loose_pieces = qty % scq if scq > 0 else qty
-
-        if full_cartons > 0:
-            new_items.append(PickListItem(
-                pick_list_id=db_picklist.id,
-                barcode=cat_item.primary_barcode if cat_item else bc,
-                product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
-                quantity=full_cartons,
-                unit="Carton",
-                is_full_carton=True,
-                bin_location=cat_item.bin_location if cat_item else None,
-            ))
-            verified_count += 1
-            
-        if loose_pieces > 0 or full_cartons == 0:
-            new_items.append(PickListItem(
-                pick_list_id=db_picklist.id,
-                barcode=cat_item.secondary_barcode if (cat_item and cat_item.secondary_barcode) else bc,
-                product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
-                quantity=loose_pieces,
-                unit=item.unit or "EA",
-                is_full_carton=False,
-                bin_location=cat_item.bin_location if cat_item else None,
-            ))
-            verified_count += 1
-
-    if verified_count == 0:
-        await db.rollback()
-        raise HTTPException(
-            status_code=400,
-            detail={"message": "Cannot assign pick list: No items attached to order.", "errors": []}
-        )
-    
-    db.add_all(new_items)
-
-    assignment = PickAssignment(pick_list_id=db_picklist.id, picker_id=picker_id)
-    db.add(assignment)
+    db.add(PicklistAssignment(picklist_id=db_picklist.id, picker_id=picker_id))
     picker.is_available = False
 
     job_label = f"P-{str(next_job_number).zfill(3)}"
-    db.add(Notification(
-        user_id=picker_id,
-        type="pick_assignment",
-        title=f"New Job Assigned: {job_label}",
-        message=f"Job {job_label} (Order #{db_picklist.order_number}) has been routed to your terminal.",
-    ))
+    _notify_assignment(db, picker, db_picklist, job_label, background_tasks)
 
     await db.commit()
     await db.refresh(db_picklist)
 
-    trigger_push(
-        picker.push_token,
-        f"New Job Assigned: {job_label}",
-        f"Job {job_label} — Order #{db_picklist.order_number} assigned to your terminal.",
-        background_tasks=background_tasks,
-    )
+    return {
+        "message": "Pick list generated and assigned to staff directly",
+        "picklist_id": db_picklist.id,
+        "picklist_number": db_picklist.picklist_number,
+        "job_label": job_label,
+    }
 
-    return {"message": "Pick list generated and assigned to staff directly", "picklist_id": db_picklist.id, "job_label": job_label}
-@router.patch("/{picklist_id}/start")
-async def start_picklist(
-    picklist_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
-    pl = result.scalars().first()
-    if not pl:
-        raise HTTPException(status_code=404, detail="Pick list not found")
-
-    if pl.status != "assigned":
-        raise HTTPException(status_code=400, detail=f"Cannot start picklist with status {pl.status}")
-        
-    # Check for any older incomplete job (assigned, picking, or waiting_verification that is NOT fully audited)
-    older_query = await db.execute(
-        select(PickList).join(PickAssignment)
-        .options(selectinload(PickList.boxes), selectinload(PickList.items))
-        .filter(
-            PickAssignment.picker_id == current_user.id,
-            PickList.status.in_(["assigned", "picking", "waiting_verification"]),
-            PickList.id < picklist_id
-        ).order_by(PickList.id.asc())
-    )
-    older_jobs = older_query.scalars().all()
-    
-    for older_job in older_jobs:
-        if older_job.status in ["assigned", "picking"]:
-            raise HTTPException(status_code=400, detail=f"Please complete your previous picking job ({older_job.order_number}) first.")
-        if older_job.status == "waiting_verification":
-            # Check if WM has scanned all boxes
-            is_fully_audited = True
-            if older_job.boxes:
-                if any(not b.is_audited for b in older_job.boxes):
-                    is_fully_audited = False
-            elif older_job.items:
-                if any(not i.is_audited for i in older_job.items):
-                    is_fully_audited = False
-                    
-            if not is_fully_audited:
-                raise HTTPException(status_code=400, detail=f"Please wait for WM to scan boxes for previous job ({older_job.order_number}) first.")
-
-    # Even if not older, block if picker is actively picking another job right now
-    active_query = await db.execute(select(PickList).join(PickAssignment).filter(
-        PickAssignment.picker_id == current_user.id,
-        PickList.status == "picking"
-    ))
-    if active_query.scalars().first():
-        raise HTTPException(status_code=400, detail="You already have a picking job in progress. Please complete it first.")
-
-    pl.status = "picking"
-    await db.commit()
-    return {"status": pl.status}
 
 @router.post("/direct-assign-auto")
 async def direct_assign_auto(
     payload: DirectAssignRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_admin),
 ):
-    """Creates picklist directly and auto-assigns to the first available picker (round-robin style)."""
-    from sqlalchemy import func as sqlfunc
-    
+    """Create a picklist and auto-assign it to the least-loaded available picker."""
+    customer_id = await resolve_customer_id(db, payload.customer_id, payload.customer_name)
+
     picker = None
     next_job_number = None
-
     if payload.auto_assign:
-        import random
-        # Find all available pickers
-        users_res = await db.execute(
-            select(User).filter(User.role == "picker", User.is_active == True, User.is_available == True)
-        )
-        pickers = users_res.scalars().all()
-        if not pickers:
-            raise HTTPException(status_code=400, detail="No available pickers right now. Please try again later.")
-            
-        active_statuses = ["assigned", "picking", "waiting_verification"]
-        picker_loads = []
-        for p in pickers:
-            count_res = await db.execute(
-                select(sqlfunc.count(PickAssignment.id))
-                .join(PickList)
-                .filter(PickAssignment.picker_id == p.id, PickList.status.in_(active_statuses))
-            )
-            picker_loads.append((count_res.scalar() or 0, p))
-            
-        min_load = min(load for load, p in picker_loads)
-        tied_pickers = [p for load, p in picker_loads if load == min_load]
-        picker = random.choice(tied_pickers)
+        picker = await _pick_least_loaded_picker(db)
+        next_job_number = await _next_job_number(db, picker.id)
 
-        active_statuses = ["assigned", "picking", "waiting_verification"]
-        max_res = await db.execute(
-            select(sqlfunc.max(PickList.picker_job_number))
-            .join(PickAssignment, PickAssignment.pick_list_id == PickList.id)
-            .filter(
-                PickAssignment.picker_id == picker.id,
-                PickList.status.in_(active_statuses)
-            )
-        )
-        current_max = max_res.scalar() or 0
-        next_job_number = current_max + 1
-
-    db_picklist = PickList(
+    db_picklist = Picklist(
         order_number=payload.order_number,
-        customer_name=payload.customer_name,
+        customer_id=customer_id,
         sales_order_id=None,
         sales_person_id=payload.sales_person_id,
         status="assigned" if payload.auto_assign else "draft",
         picker_job_number=next_job_number,
         delivery_date=payload.delivery_date,
     )
-    db.add(db_picklist)
-    await db.flush()
+    await flush_with_prefixed_id(db, db_picklist, "picklist_number", PREFIX_PICKLIST)
 
-    # Bulk fetch all matching catalogue items
-    all_barcodes = [item.barcode or "N/A" for item in payload.items]
-    cat_res = await db.execute(select(SalesItem).filter(
-        (SalesItem.primary_barcode.in_(all_barcodes)) | 
-        (SalesItem.secondary_barcode.in_(all_barcodes))
-    ))
-    cat_map = {}
-    for ci in cat_res.scalars().all():
-        cat_map[ci.primary_barcode] = ci
-        if ci.secondary_barcode:
-            cat_map[ci.secondary_barcode] = ci
-
-    validation_errors = []
-    for item in payload.items:
-        bc = item.barcode or "N/A"
-        req_qty = item.quantity or 1
-        cat_item = cat_map.get(bc)
-        avail_qty = cat_item.available_quantity if cat_item else 0
-        
-        if avail_qty == 0:
-            validation_errors.append({"barcode": bc, "error": "Item is out of stock."})
-        elif req_qty > avail_qty:
-            validation_errors.append({"barcode": bc, "error": f"Only {avail_qty} units available."})
-
-    if validation_errors:
-        raise HTTPException(
-            status_code=400,
-            detail={"message": "Inventory validation failed", "errors": validation_errors}
-        )
-
-    verified_count = 0
-    new_items = []
-    for item in payload.items:
-        bc = item.barcode or "N/A"
-        cat_item = cat_map.get(bc)
-
-        qty = item.quantity or 1
-        scq = cat_item.standard_carton_quantity if cat_item else 1
-        
-        full_cartons = int(qty // scq) if scq > 0 else 0
-        loose_pieces = qty % scq if scq > 0 else qty
-
-        if full_cartons > 0:
-            new_items.append(PickListItem(
-                pick_list_id=db_picklist.id,
-                barcode=cat_item.primary_barcode if cat_item else bc,
-                product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
-                quantity=full_cartons,
-                unit="Carton",
-                is_full_carton=True,
-                bin_location=cat_item.bin_location if cat_item else None,
-            ))
-            verified_count += 1
-            
-        if loose_pieces > 0 or full_cartons == 0:
-            new_items.append(PickListItem(
-                pick_list_id=db_picklist.id,
-                barcode=cat_item.secondary_barcode if (cat_item and cat_item.secondary_barcode) else bc,
-                product_name=cat_item.item_name if cat_item else (item.product_name or "Item"),
-                quantity=loose_pieces,
-                unit=item.unit or "EA",
-                is_full_carton=False,
-                bin_location=cat_item.bin_location if cat_item else None,
-            ))
-            verified_count += 1
-
-    if verified_count == 0:
-        await db.rollback()
-        raise HTTPException(
-            status_code=400,
-            detail={"message": "Cannot assign pick list: No items attached.", "errors": []}
-        )
-    
-    db.add_all(new_items)
+    lines = [
+        {"barcode": i.barcode or "N/A", "quantity": i.quantity or 1, "unit": i.unit}
+        for i in payload.items
+    ]
+    items = await _validate_and_build(db, db_picklist.id, lines)
+    db.add_all(items)
 
     if not payload.auto_assign:
         await db.commit()
-        return {"message": "Pick list created as draft", "picklist_id": db_picklist.id, "job_label": f"PL-{db_picklist.id}"}
+        await db.refresh(db_picklist)
+        return {
+            "message": "Pick list created as draft",
+            "picklist_id": db_picklist.id,
+            "picklist_number": db_picklist.picklist_number,
+            "job_label": db_picklist.picklist_number,
+        }
 
-    assignment = PickAssignment(pick_list_id=db_picklist.id, picker_id=picker.id)
-    db.add(assignment)
+    assert picker is not None  # auto_assign is True here
+    db.add(PicklistAssignment(picklist_id=db_picklist.id, picker_id=picker.id))
     picker.is_available = False
 
     job_label = f"P-{str(next_job_number).zfill(3)}"
-    db.add(Notification(
-        user_id=picker.id,
-        type="pick_assignment",
-        title=f"New Job Assigned: {job_label}",
-        message=f"Job {job_label} (Order #{db_picklist.order_number}) has been routed to your terminal.",
-    ))
+    _notify_assignment(db, picker, db_picklist, job_label, background_tasks)
 
     await db.commit()
     await db.refresh(db_picklist)
 
-    trigger_push(
-        picker.push_token,
-        f"New Job Assigned: {job_label}",
-        f"Job {job_label} — Order #{db_picklist.order_number} assigned to your terminal.",
-        background_tasks=background_tasks,
+    return {
+        "message": "Auto-assigned to picker successfully",
+        "picklist_id": db_picklist.id,
+        "picklist_number": db_picklist.picklist_number,
+        "job_label": job_label,
+        "picker_name": picker.full_name,
+    }
+
+
+@router.patch("/{picklist_id}/start")
+async def start_picklist(
+    picklist_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_picker: PickerUser = Depends(get_current_picker),
+):
+    result = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
+    pl = result.scalars().first()
+    if not pl:
+        raise HTTPException(status_code=404, detail="Pick list not found")
+
+    if pl.status != "assigned":
+        raise HTTPException(
+            status_code=400, detail=f"Cannot start picklist with status {pl.status}"
+        )
+
+    # Block if an older job of this picker is still unfinished — pickers work
+    # their queue in order so the floor stays predictable.
+    older_query = await db.execute(
+        select(Picklist)
+        .join(PicklistAssignment, PicklistAssignment.picklist_id == Picklist.id)
+        .options(selectinload(Picklist.boxes), selectinload(Picklist.items))
+        .filter(
+            PicklistAssignment.picker_id == current_picker.id,
+            Picklist.status.in_(ACTIVE_PICK_STATUSES),
+            Picklist.id < picklist_id,
+        )
+        .order_by(Picklist.id.asc())
     )
 
-    return {"message": "Auto-assigned to picker successfully", "picklist_id": db_picklist.id, "job_label": job_label, "picker_name": picker.full_name}
+    for older_job in older_query.scalars().unique().all():
+        if older_job.status in ("assigned", "picking"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Please complete your previous picking job ({older_job.order_number}) first.",
+            )
+        if older_job.status == "waiting_verification":
+            if older_job.boxes:
+                is_fully_audited = all(b.is_audited for b in older_job.boxes)
+            else:
+                is_fully_audited = all(i.is_audited for i in older_job.items)
+            if not is_fully_audited:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Please wait for WM to scan boxes for previous job "
+                        f"({older_job.order_number}) first."
+                    ),
+                )
+
+    active_query = await db.execute(
+        select(Picklist.id)
+        .join(PicklistAssignment, PicklistAssignment.picklist_id == Picklist.id)
+        .filter(
+            PicklistAssignment.picker_id == current_picker.id,
+            Picklist.status == "picking",
+        )
+    )
+    if active_query.scalars().first():
+        raise HTTPException(
+            status_code=400,
+            detail="You already have a picking job in progress. Please complete it first.",
+        )
+
+    pl.status = "picking"
+    await db.commit()
+    return {"status": pl.status}
+
 
 # ---------- Picking (Mobile) ----------
 
 class PickQuantityRequest(BaseModel):
     picked_quantity: Optional[float] = None
+
 
 @router.patch("/{picklist_id}/items/{item_id}/pick")
 async def mark_item_picked(
@@ -795,9 +761,9 @@ async def mark_item_picked(
     current_user=Depends(get_current_user),
 ):
     result = await db.execute(
-        select(PickListItem).filter(
-            PickListItem.id == item_id,
-            PickListItem.pick_list_id == picklist_id,
+        select(PicklistItem).filter(
+            PicklistItem.id == item_id,
+            PicklistItem.picklist_id == picklist_id,
         )
     )
     item = result.scalars().first()
@@ -814,7 +780,7 @@ async def mark_item_picked(
 
     item.picked_at = datetime.now(timezone.utc) if item.is_picked else None
 
-    pl_result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    pl_result = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
     pl = pl_result.scalars().first()
     if pl and pl.status == "assigned":
         pl.status = "picking"
@@ -831,9 +797,9 @@ async def audit_item(
     current_user=Depends(get_current_admin),
 ):
     result = await db.execute(
-        select(PickListItem).filter(
-            PickListItem.id == item_id,
-            PickListItem.pick_list_id == picklist_id,
+        select(PicklistItem).filter(
+            PicklistItem.id == item_id,
+            PicklistItem.picklist_id == picklist_id,
         )
     )
     item = result.scalars().first()
@@ -844,6 +810,7 @@ async def audit_item(
     await db.commit()
     return {"is_audited": item.is_audited, "item_id": item_id}
 
+
 @router.post("/{picklist_id}/boxes/{box_id}/verify")
 async def verify_box(
     picklist_id: int,
@@ -852,23 +819,22 @@ async def verify_box(
     current_user=Depends(get_current_user),
 ):
     result = await db.execute(
-        select(PickListBox)
-        .options(selectinload(PickListBox.box_items).selectinload(PickListBoxItem.item))
-        .filter(PickListBox.id == box_id, PickListBox.pick_list_id == picklist_id)
+        select(PicklistBox)
+        .options(selectinload(PicklistBox.box_items).joinedload(PicklistBoxItem.item))
+        .filter(PicklistBox.id == box_id, PicklistBox.picklist_id == picklist_id)
     )
     box = result.scalars().first()
     if not box:
         raise HTTPException(status_code=404, detail="Box not found")
-        
+
     box.is_audited = True
-    
-    # Also update all items inside this box
     for bi in box.box_items:
         if bi.item:
             bi.item.is_audited = True
 
     await db.commit()
     return {"message": "Box verified successfully"}
+
 
 @router.post("/{picklist_id}/items/{item_id}/verify")
 async def verify_item(
@@ -878,16 +844,18 @@ async def verify_item(
     current_user=Depends(get_current_user),
 ):
     result = await db.execute(
-        select(PickListItem)
-        .filter(PickListItem.id == item_id, PickListItem.pick_list_id == picklist_id)
+        select(PicklistItem).filter(
+            PicklistItem.id == item_id, PicklistItem.picklist_id == picklist_id
+        )
     )
     item = result.scalars().first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-        
+
     item.is_audited = True
     await db.commit()
     return {"message": "Item verified successfully"}
+
 
 @router.post("/{picklist_id}/complete-picking")
 async def complete_picking(
@@ -895,19 +863,21 @@ async def complete_picking(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    from backend.services.picklist_service import verify_picklist_service
+
+    result = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
     pl = result.scalars().first()
     if not pl:
         raise HTTPException(status_code=404, detail="Pick list not found")
 
     if pl.active_box_carton_id is not None or pl.active_box_contents:
         raise HTTPException(
-            status_code=400, 
-            detail="Cannot complete job: you have an active box that must be sealed first."
+            status_code=400,
+            detail="Cannot complete job: you have an active box that must be sealed first.",
         )
 
     items_res = await db.execute(
-        select(PickListItem).filter(PickListItem.pick_list_id == picklist_id)
+        select(PicklistItem).filter(PicklistItem.picklist_id == picklist_id)
     )
     items = items_res.scalars().all()
 
@@ -922,19 +892,16 @@ async def complete_picking(
             item.picked_at = now
 
     if not has_loose_items:
-        # No loose items, skip audit and go straight to verified
-        from backend.services.picklist_service import verify_picklist_service
-        # Commit the item pick statuses first
+        # No loose items to weigh, so there is nothing for the audit station to
+        # do — go straight to verified.
         await db.commit()
         await verify_picklist_service(picklist_id, db)
-        
-        # Refresh pl after verification
-        result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+        result = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
         pl = result.scalars().first()
     else:
         pl.status = "waiting_verification"
         assignment_res = await db.execute(
-            select(PickAssignment).filter(PickAssignment.pick_list_id == picklist_id)
+            select(PicklistAssignment).filter(PicklistAssignment.picklist_id == picklist_id)
         )
         assignment = assignment_res.scalars().first()
         if assignment:
@@ -942,12 +909,15 @@ async def complete_picking(
         await db.commit()
 
     from backend.ws_manager import manager
-    await manager.broadcast({
-        "event": "READY_FOR_AUDIT",
-        "picklist_id": pl.id,
-        "order_number": pl.order_number,
-        "message": f"Order {pl.order_number} is ready for Audit & Verify"
-    })
+
+    await manager.broadcast(
+        {
+            "event": "READY_FOR_AUDIT",
+            "picklist_id": pl.id,
+            "order_number": pl.order_number,
+            "message": f"Order {pl.order_number} is ready for Audit & Verify",
+        }
+    )
 
     return {"message": "Picking complete. Awaiting verification."}
 
@@ -958,6 +928,15 @@ class PreviewWeightRequest(BaseModel):
     item_ids: List[int]
     carton_type_id: int
 
+
+async def _load_carton(db: AsyncSession, carton_type_id: int) -> CartonType:
+    result = await db.execute(select(CartonType).filter(CartonType.id == carton_type_id))
+    carton = result.scalars().first()
+    if not carton:
+        raise HTTPException(status_code=400, detail="Carton type not found")
+    return carton
+
+
 @router.post("/{picklist_id}/boxes/preview-weight")
 async def preview_box_weight(
     picklist_id: int,
@@ -966,28 +945,24 @@ async def preview_box_weight(
     current_user=Depends(get_current_user),
 ):
     """Returns the expected weight for the selected items + carton type before the picker commits."""
-    carton_res = await db.execute(select(CartonType).filter(CartonType.id == payload.carton_type_id))
-    carton = carton_res.scalars().first()
-    if not carton:
-        raise HTTPException(status_code=400, detail="Carton type not found")
+    carton = await _load_carton(db, payload.carton_type_id)
 
     items_res = await db.execute(
-        select(PickListItem).filter(
-            PickListItem.id.in_(payload.item_ids),
-            PickListItem.pick_list_id == picklist_id
+        select(PicklistItem)
+        .options(selectinload(PicklistItem.product))
+        .filter(
+            PicklistItem.id.in_(payload.item_ids),
+            PicklistItem.picklist_id == picklist_id,
         )
     )
-    items = items_res.scalars().all()
+    items = items_res.scalars().unique().all()
 
-    barcodes = [item.barcode for item in items]
-    cat_items_res = await db.execute(select(SalesItem).filter(SalesItem.barcode.in_(barcodes)))
-    cat_map = {ci.barcode: ci for ci in cat_items_res.scalars().all()}
-
+    # Packaging weight now comes off the related product rather than a second
+    # lookup keyed on a barcode column the catalogue never had.
     expected_weight = carton.tare_weight
     for item in items:
-        ci = cat_map.get(item.barcode)
-        if ci:
-            expected_weight += (ci.packaging_weight * item.quantity)
+        if item.product:
+            expected_weight += (item.product.packaging_weight or 0.0) * item.quantity
 
     return {
         "expected_weight": round(expected_weight, 3),
@@ -995,67 +970,65 @@ async def preview_box_weight(
         "items_net_weight": round(expected_weight - carton.tare_weight, 3),
     }
 
-@router.post("/{picklist_id}/boxes", response_model=PickListBoxOut)
+
+@router.post("/{picklist_id}/boxes", response_model=PicklistBoxOut)
 async def create_box(
     picklist_id: int,
-    payload: PickListBoxCreate,
+    payload: PicklistBoxCreate,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
-    pl = result.scalars().first()
-    if not pl:
+    """Legacy full-carton boxing. Superseded by /boxes/seal for loose items."""
+    result = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
+    if not result.scalars().first():
         raise HTTPException(status_code=404, detail="Pick list not found")
-        
-    # Weight tolerance validation
-    carton_res = await db.execute(select(CartonType).filter(CartonType.id == payload.carton_type_id))
-    carton = carton_res.scalars().first()
-    if not carton:
-        raise HTTPException(status_code=400, detail="Carton type not found")
-        
+
+    carton = await _load_carton(db, payload.carton_type_id)
+
     items_res = await db.execute(
-        select(PickListItem).filter(
-            PickListItem.id.in_(payload.item_ids),
-            PickListItem.pick_list_id == picklist_id
+        select(PicklistItem)
+        .options(selectinload(PicklistItem.product))
+        .filter(
+            PicklistItem.id.in_(payload.item_ids),
+            PicklistItem.picklist_id == picklist_id,
         )
     )
-    items = items_res.scalars().all()
+    items = items_res.scalars().unique().all()
     if not items:
         raise HTTPException(status_code=400, detail="No valid items to box")
-        
-    barcodes = [item.barcode for item in items]
-    cat_items_res = await db.execute(select(SalesItem).filter(SalesItem.barcode.in_(barcodes)))
-    cat_items = cat_items_res.scalars().all()
-    cat_map = {ci.barcode: ci for ci in cat_items}
-    
+
     expected_weight = carton.tare_weight
     for item in items:
-        ci = cat_map.get(item.barcode)
-        if ci:
-            expected_weight += (ci.packaging_weight * item.quantity)
-            
-    # Allow configurable tolerance (default ±5%)
+        if item.product:
+            expected_weight += (item.product.packaging_weight or 0.0) * item.quantity
+
     lower_bound = expected_weight * (1 - WEIGHT_TOLERANCE_FRACTION)
     upper_bound = expected_weight * (1 + WEIGHT_TOLERANCE_FRACTION)
+    if not lower_bound <= payload.entered_weight <= upper_bound:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Weight validation failed. Expected ~{expected_weight:.2f}kg, "
+                f"but got {payload.entered_weight:.2f}kg. Please reweigh and check missing items."
+            ),
+        )
 
-    if payload.entered_weight < lower_bound or payload.entered_weight > upper_bound:
-        raise HTTPException(status_code=400, detail=f"Weight validation failed. Expected ~{expected_weight:.2f}kg, but got {payload.entered_weight:.2f}kg. Please reweigh and check missing items.")
-        
-    box = PickListBox(
-        pick_list_id=picklist_id,
+    box = PicklistBox(
+        picklist_id=picklist_id,
         carton_type_id=payload.carton_type_id,
-        entered_weight=payload.entered_weight
+        entered_weight=payload.entered_weight,
     )
     db.add(box)
     await db.flush()
-    
+
     for item in items:
         item.box_id = box.id
-        item.is_full_carton = False # boxed items are loose items
-        
+        item.is_full_carton = False  # boxed items are loose items
+
     await db.commit()
     await db.refresh(box)
     return box
+
 
 @router.post("/{picklist_id}/boxes/estimate-weight")
 async def estimate_box_weight(
@@ -1064,62 +1037,44 @@ async def estimate_box_weight(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    carton_res = await db.execute(select(CartonType).filter(CartonType.id == payload.carton_type_id))
-    carton = carton_res.scalars().first()
-    if not carton:
-        raise HTTPException(status_code=400, detail="Carton type not found")
+    carton = await _load_carton(db, payload.carton_type_id)
 
     item_ids = [c.item_id for c in payload.contents]
     items_res = await db.execute(
-        select(PickListItem).filter(
-            PickListItem.id.in_(item_ids),
-            PickListItem.pick_list_id == picklist_id
+        select(PicklistItem)
+        .options(selectinload(PicklistItem.product))
+        .filter(
+            PicklistItem.id.in_(item_ids),
+            PicklistItem.picklist_id == picklist_id,
         )
     )
-    db_items = {item.id: item for item in items_res.scalars().all()}
-    
-    barcodes = [db_items[c.item_id].barcode for c in payload.contents if c.item_id in db_items]
-    cat_res = await db.execute(
-        select(SalesItem).filter(
-            (SalesItem.primary_barcode.in_(barcodes)) | 
-            (SalesItem.secondary_barcode.in_(barcodes))
-        )
-    )
-    cat_map = {}
-    for ci in cat_res.scalars().all():
-        if ci.primary_barcode in barcodes:
-            cat_map[ci.primary_barcode] = ci
-        if ci.secondary_barcode in barcodes:
-            cat_map[ci.secondary_barcode] = ci
+    db_items = {item.id: item for item in items_res.scalars().unique().all()}
 
     breakdown = []
     total_items_weight = 0.0
-
     for content in payload.contents:
-        if content.item_id not in db_items:
+        item = db_items.get(content.item_id)
+        if item is None:
             continue
-        item = db_items[content.item_id]
-        cat_item = cat_map.get(item.barcode)
-        unit_weight = cat_item.packaging_weight if (cat_item and cat_item.packaging_weight) else 0.0
+        unit_weight = (item.product.packaging_weight or 0.0) if item.product else 0.0
         line_weight = unit_weight * content.quantity
         total_items_weight += line_weight
-        breakdown.append({
-            "product_name": item.product_name,
-            "quantity": content.quantity,
-            "unit_weight": unit_weight,
-            "line_weight": line_weight
-        })
-        
-    expected_weight = carton.tare_weight + total_items_weight
-    
+        breakdown.append(
+            {
+                "product_name": item.product_name,
+                "quantity": content.quantity,
+                "unit_weight": unit_weight,
+                "line_weight": line_weight,
+            }
+        )
+
     return {
         "tare_weight": carton.tare_weight,
         "total_items_weight": total_items_weight,
-        "expected_weight": expected_weight,
-        "breakdown": breakdown
+        "expected_weight": carton.tare_weight + total_items_weight,
+        "breakdown": breakdown,
     }
 
-# ---------- Purge/Cancel ----------
 
 # ---------- Active Draft Box ----------
 
@@ -1128,10 +1083,12 @@ class ActiveBoxContent(BaseModel):
     quantity: float
     item_name: str
 
+
 class ActiveBoxData(BaseModel):
     carton_type_id: int
     carton_name: str
     contents: List[ActiveBoxContent]
+
 
 @router.get("/{picklist_id}/active-box")
 async def get_active_box(
@@ -1139,15 +1096,17 @@ async def get_active_box(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    pl_res = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    pl_res = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
     pl = pl_res.scalars().first()
     if not pl:
         raise HTTPException(status_code=404, detail="Pick list not found")
-        
+
     if not pl.active_box_carton_id or not pl.active_box_contents:
         return None
-        
-    carton_res = await db.execute(select(CartonType).filter(CartonType.id == pl.active_box_carton_id))
+
+    carton_res = await db.execute(
+        select(CartonType).filter(CartonType.id == pl.active_box_carton_id)
+    )
     carton = carton_res.scalars().first()
     if not carton:
         return None
@@ -1155,8 +1114,9 @@ async def get_active_box(
     return {
         "carton_type_id": carton.id,
         "carton_name": carton.name,
-        "contents": pl.active_box_contents
+        "contents": pl.active_box_contents,
     }
+
 
 @router.put("/{picklist_id}/active-box")
 async def set_active_box(
@@ -1165,20 +1125,21 @@ async def set_active_box(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    pl_res = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    pl_res = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
     pl = pl_res.scalars().first()
     if not pl:
         raise HTTPException(status_code=404, detail="Pick list not found")
-        
+
     if not payload:
         pl.active_box_carton_id = None
         pl.active_box_contents = None
     else:
         pl.active_box_carton_id = payload.carton_type_id
         pl.active_box_contents = [c.model_dump() for c in payload.contents]
-        
+
     await db.commit()
     return {"status": "ok"}
+
 
 @router.delete("/{picklist_id}/active-box")
 async def clear_active_box(
@@ -1186,19 +1147,20 @@ async def clear_active_box(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    pl_res = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    pl_res = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
     pl = pl_res.scalars().first()
     if not pl:
         raise HTTPException(status_code=404, detail="Pick list not found")
-        
+
     pl.active_box_carton_id = None
     pl.active_box_contents = None
     await db.commit()
     return {"status": "ok"}
 
+
 # ---------- Seal Loose Item Box ----------
 
-@router.post("/{picklist_id}/boxes/seal", response_model=PickListBoxOut)
+@router.post("/{picklist_id}/boxes/seal", response_model=PicklistBoxOut)
 async def seal_loose_item_box(
     picklist_id: int,
     payload: SealBoxCreate,
@@ -1207,125 +1169,105 @@ async def seal_loose_item_box(
 ):
     """
     Seals a loose-item box at the weighing station.
-    
+
     The picker calls this after selecting a carton type and scanning items into it.
     Each entry in `contents` records exactly which item and how many units went
     into this specific physical box.
-    
+
     Weight validation uses the actual box quantities (not the full picked_quantity),
     so partial splits across multiple boxes work correctly.
     """
-    # Validate picklist exists
-    pl_res = await db.execute(select(PickList).filter(PickList.id == picklist_id))
-    pl = pl_res.scalars().first()
-    if not pl:
+    pl_res = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
+    if not pl_res.scalars().first():
         raise HTTPException(status_code=404, detail="Pick list not found")
 
-    # Validate carton type from master data
-    carton_res = await db.execute(select(CartonType).filter(CartonType.id == payload.carton_type_id))
-    carton = carton_res.scalars().first()
-    if not carton:
-        raise HTTPException(status_code=400, detail="Carton type not found")
+    carton = await _load_carton(db, payload.carton_type_id)
 
     if not payload.contents:
         raise HTTPException(status_code=400, detail="Box contents cannot be empty")
 
-    # Load all referenced items and validate they belong to this picklist
     item_ids = [c.item_id for c in payload.contents]
     items_res = await db.execute(
-        select(PickListItem).filter(
-            PickListItem.id.in_(item_ids),
-            PickListItem.pick_list_id == picklist_id,
-            PickListItem.is_full_carton == False,  # only loose items
+        select(PicklistItem)
+        .options(selectinload(PicklistItem.product))
+        .filter(
+            PicklistItem.id.in_(item_ids),
+            PicklistItem.picklist_id == picklist_id,
+            PicklistItem.is_full_carton.is_(False),  # only loose items
         )
     )
-    db_items = {item.id: item for item in items_res.scalars().all()}
+    db_items = {item.id: item for item in items_res.scalars().unique().all()}
 
-    # Validate all requested item_ids exist and are loose items
     missing_ids = [c.item_id for c in payload.contents if c.item_id not in db_items]
     if missing_ids:
         raise HTTPException(
             status_code=400,
-            detail=f"Item IDs not found or are not loose items: {missing_ids}"
+            detail=f"Item IDs not found or are not loose items: {missing_ids}",
         )
 
-    # Validate box quantities don't exceed what was actually picked
+    # Validate box quantities don't exceed what was actually picked. One query
+    # for every item at once rather than one per line.
+    boxed_res = await db.execute(
+        select(PicklistBoxItem.item_id, sqlfunc.sum(PicklistBoxItem.quantity))
+        .filter(PicklistBoxItem.item_id.in_(item_ids))
+        .group_by(PicklistBoxItem.item_id)
+    )
+    already_boxed = {item_id: total or 0.0 for item_id, total in boxed_res.all()}
+
     for content in payload.contents:
         item = db_items[content.item_id]
-        # Sum already-boxed quantity for this item across previous boxes
-        existing_res = await db.execute(
-            select(PickListBoxItem).filter(
-                PickListBoxItem.item_id == content.item_id
-            )
-        )
-        already_boxed = sum(bi.quantity for bi in existing_res.scalars().all())
-        available_to_box = (item.picked_quantity or 0.0) - already_boxed
+        boxed = already_boxed.get(content.item_id, 0.0)
+        available_to_box = (item.picked_quantity or 0.0) - boxed
         if content.quantity > available_to_box + 0.001:  # small float tolerance
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"Cannot box {content.quantity} of item '{item.product_name}'. "
                     f"Only {available_to_box:.2f} units remain unboxed "
-                    f"(picked: {item.picked_quantity}, already boxed: {already_boxed})."
-                )
+                    f"(picked: {item.picked_quantity}, already boxed: {boxed})."
+                ),
             )
 
     # Calculate expected weight from actual box contents (not full item qty)
-    barcodes = [db_items[c.item_id].barcode for c in payload.contents]
-    cat_res = await db.execute(
-        select(SalesItem).filter(
-            (SalesItem.primary_barcode.in_(barcodes)) | 
-            (SalesItem.secondary_barcode.in_(barcodes))
-        )
-    )
-    cat_map = {}
-    for ci in cat_res.scalars().all():
-        if ci.primary_barcode in barcodes:
-            cat_map[ci.primary_barcode] = ci
-        if ci.secondary_barcode in barcodes:
-            cat_map[ci.secondary_barcode] = ci
-
     expected_weight = carton.tare_weight
     for content in payload.contents:
         item = db_items[content.item_id]
-        cat_item = cat_map.get(item.barcode)
-        if cat_item and cat_item.packaging_weight:
-            expected_weight += cat_item.packaging_weight * content.quantity
+        if item.product and item.product.packaging_weight:
+            expected_weight += item.product.packaging_weight * content.quantity
 
-    # Weight tolerance check (±WEIGHT_TOLERANCE_FRACTION, default ±5%)
     lower_bound = expected_weight * (1 - WEIGHT_TOLERANCE_FRACTION)
     upper_bound = expected_weight * (1 + WEIGHT_TOLERANCE_FRACTION)
-
-    if payload.entered_weight < lower_bound or payload.entered_weight > upper_bound:
+    if not lower_bound <= payload.entered_weight <= upper_bound:
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Weight validation failed. Expected ~{expected_weight:.2f} kg "
-                f"(±{WEIGHT_TOLERANCE_FRACTION*100:.1f}%), got {payload.entered_weight:.2f} kg. "
+                f"(±{WEIGHT_TOLERANCE_FRACTION * 100:.1f}%), got {payload.entered_weight:.2f} kg. "
                 "Please reweigh or check for missing items."
-            )
+            ),
         )
 
-    # Create the box record
-    box = PickListBox(
-        pick_list_id=picklist_id,
+    box = PicklistBox(
+        picklist_id=picklist_id,
         carton_type_id=payload.carton_type_id,
         entered_weight=payload.entered_weight,
     )
     db.add(box)
     await db.flush()  # get box.id
 
-    # Create box-item mapping entries
     for content in payload.contents:
-        db.add(PickListBoxItem(
-            box_id=box.id,
-            item_id=content.item_id,
-            quantity=content.quantity,
-        ))
+        db.add(
+            PicklistBoxItem(
+                box_id=box.id,
+                item_id=content.item_id,
+                quantity=content.quantity,
+            )
+        )
 
     await db.commit()
     await db.refresh(box)
     return box
+
 
 @router.patch("/{picklist_id}/items/{item_id}/report-missing")
 async def report_missing_item(
@@ -1335,9 +1277,9 @@ async def report_missing_item(
     current_user=Depends(get_current_user),
 ):
     result = await db.execute(
-        select(PickListItem).filter(
-            PickListItem.id == item_id,
-            PickListItem.pick_list_id == picklist_id,
+        select(PicklistItem).filter(
+            PicklistItem.id == item_id,
+            PicklistItem.picklist_id == picklist_id,
         )
     )
     item = result.scalars().first()
@@ -1348,6 +1290,7 @@ async def report_missing_item(
     await db.commit()
     return {"message": "Missing reported", "item_id": item_id}
 
+
 @router.patch("/{picklist_id}/items/{item_id}/approve-missing")
 async def approve_missing_item(
     picklist_id: int,
@@ -1357,9 +1300,9 @@ async def approve_missing_item(
     current_user=Depends(get_current_admin),
 ):
     result = await db.execute(
-        select(PickListItem).filter(
-            PickListItem.id == item_id,
-            PickListItem.pick_list_id == picklist_id,
+        select(PicklistItem).filter(
+            PicklistItem.id == item_id,
+            PicklistItem.picklist_id == picklist_id,
         )
     )
     item = result.scalars().first()
@@ -1368,10 +1311,10 @@ async def approve_missing_item(
 
     if approved:
         item.missing_approved = True
-        item.is_picked = False # missing item is not picked
+        item.is_picked = False  # missing item is not picked
     else:
         item.missing_approved = False
-        item.missing_reported = False # rejected, need to find it
+        item.missing_reported = False  # rejected, need to find it
 
     await db.commit()
     return {"message": "Missing status updated", "item_id": item_id}
@@ -1387,46 +1330,48 @@ async def return_to_picker(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_admin),
 ):
-    result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    result = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
     pl = result.scalars().first()
     if not pl:
         raise HTTPException(status_code=404, detail="Pick list not found")
 
     pl.status = "picking"
-    
+
     # Mark incomplete items as un-picked so the picker knows what to pick
-    items_res = await db.execute(select(PickListItem).filter(PickListItem.pick_list_id == picklist_id))
+    items_res = await db.execute(
+        select(PicklistItem).filter(PicklistItem.picklist_id == picklist_id)
+    )
     for item in items_res.scalars().all():
         if (item.picked_quantity or 0) < item.quantity:
             item.is_picked = False
 
     assignment_res = await db.execute(
-        select(PickAssignment).filter(PickAssignment.pick_list_id == picklist_id)
+        select(PicklistAssignment)
+        .options(selectinload(PicklistAssignment.picker))
+        .filter(PicklistAssignment.picklist_id == picklist_id)
     )
     assignment = assignment_res.scalars().first()
 
-    if assignment:
-        picker_res = await db.execute(select(User).filter(User.id == assignment.picker_id))
-        picker = picker_res.scalars().first()
-        if picker:
-            db.add(Notification(
-                user_id=picker.id,
+    if assignment and assignment.picker:
+        picker = assignment.picker
+        db.add(
+            Notification(
+                picker_id=picker.id,
                 type="pick_returned",
                 title="Pick List Returned for Re-picking",
                 message=f"Order #{pl.order_number} returned: {reason}",
-            ))
-            trigger_push(
-                picker.push_token,
-                "Pick List Returned for Correction",
-                f"Order #{pl.order_number}: {reason}",
-                background_tasks=background_tasks,
             )
+        )
+        trigger_push(
+            picker.push_token,
+            "Pick List Returned for Correction",
+            f"Order #{pl.order_number}: {reason}",
+            background_tasks=background_tasks,
+        )
 
     await db.commit()
     return {"message": "Returned to picker"}
 
-
-from backend.services.picklist_service import verify_picklist_service
 
 @router.patch("/{picklist_id}/verify")
 async def verify_picklist(
@@ -1434,9 +1379,9 @@ async def verify_picklist(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_admin),
 ):
-    """
-    Verifies a picklist, deducting inventory automatically.
-    """
+    """Verifies a picklist, deducting inventory automatically."""
+    from backend.services.picklist_service import verify_picklist_service
+
     return await verify_picklist_service(picklist_id, db)
 
 
@@ -1449,9 +1394,12 @@ async def download_pdf(
     current_user=Depends(get_current_admin),
 ):
     result = await db.execute(
-        select(PickList)
-        .options(selectinload(PickList.items))
-        .filter(PickList.id == picklist_id)
+        select(Picklist)
+        .options(
+            selectinload(Picklist.items).joinedload(PicklistItem.product),
+            selectinload(Picklist.customer),
+        )
+        .filter(Picklist.id == picklist_id)
     )
     pl = result.scalars().first()
     if not pl:
@@ -1473,9 +1421,12 @@ async def download_excel(
     current_user=Depends(get_current_admin),
 ):
     result = await db.execute(
-        select(PickList)
-        .options(selectinload(PickList.items))
-        .filter(PickList.id == picklist_id)
+        select(Picklist)
+        .options(
+            selectinload(Picklist.items).joinedload(PicklistItem.product),
+            selectinload(Picklist.customer),
+        )
+        .filter(Picklist.id == picklist_id)
     )
     pl = result.scalars().first()
     if not pl:
@@ -1496,12 +1447,13 @@ class ExportPreviewItem(BaseModel):
     quantity: float
     unit: str = "PCS"
 
+
 @router.post("/export-preview-excel")
 async def export_preview_excel(
     items: List[ExportPreviewItem],
     current_user=Depends(get_current_admin),
 ):
-    excel_bytes = generate_branded_picklist_excel([item.dict() for item in items])
+    excel_bytes = generate_branded_picklist_excel([item.model_dump() for item in items])
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
     return StreamingResponse(
         io.BytesIO(excel_bytes),
@@ -1512,6 +1464,68 @@ async def export_preview_excel(
 
 # ---------- Complete & Purge / Cancel ----------
 
+async def _release_pickers_and_purge(
+    db: AsyncSession,
+    pl: Picklist,
+    background_tasks: Optional[BackgroundTasks],
+    notify_cancellation: bool,
+) -> None:
+    """
+    Free every picker assigned to ``pl``, clear their stale alerts, and delete the
+    job together with the sales order it came from.
+
+    Shared by the cancel and the purge-on-complete endpoints, which differ only
+    in whether the picker is told the job was cancelled.
+    """
+    assignment_res = await db.execute(
+        select(PicklistAssignment)
+        .options(selectinload(PicklistAssignment.picker))
+        .filter(PicklistAssignment.picklist_id == pl.id)
+    )
+
+    for assign in assignment_res.scalars().unique().all():
+        picker = assign.picker
+        if picker:
+            picker.is_available = True
+            await db.execute(
+                delete(Notification).where(
+                    (Notification.picker_id == picker.id)
+                    & (Notification.message.ilike(f"%{pl.order_number}%"))
+                    & (Notification.type == "pick_assignment")
+                )
+            )
+            if notify_cancellation:
+                db.add(
+                    Notification(
+                        picker_id=picker.id,
+                        type="job_cancelled",
+                        title="Assigned Job Cancelled",
+                        message=(
+                            f"Order #{pl.order_number} assigned to you has been cancelled "
+                            "by admin and removed from your queue."
+                        ),
+                    )
+                )
+                trigger_push(
+                    picker.push_token,
+                    "Assigned Job Cancelled",
+                    f"Order #{pl.order_number} has been cancelled by admin and removed from your tasks.",
+                    background_tasks=background_tasks,
+                )
+        await db.delete(assign)
+
+    order_id = pl.sales_order_id
+    if order_id:
+        order_res = await db.execute(select(SalesOrder).filter(SalesOrder.id == order_id))
+        order = order_res.scalars().first()
+        if order:
+            await db.delete(order)
+
+    # Items, boxes and box-items go with the parent via ON DELETE CASCADE.
+    await db.delete(pl)
+    await db.commit()
+
+
 @router.delete("/{picklist_id}")
 @router.delete("/{picklist_id}/cancel")
 async def cancel_and_purge_picklist(
@@ -1520,57 +1534,13 @@ async def cancel_and_purge_picklist(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_admin),
 ):
-    """Cancels an ongoing or draft job, resets assigned picker availability, and cleanly removes all data from the database."""
-    result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    """Cancels an ongoing or draft job, frees the picker, and removes all its data."""
+    result = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
     pl = result.scalars().first()
     if not pl:
         raise HTTPException(status_code=404, detail="Pick list job not found")
 
-    order_id = pl.sales_order_id
-
-    # 1. Reset picker availability, clear old task alerts, and issue cancellation notice
-    assignment_res = await db.execute(select(PickAssignment).filter(PickAssignment.pick_list_id == picklist_id))
-    assignments = assignment_res.scalars().all()
-    for assign in assignments:
-        picker_res = await db.execute(select(User).filter(User.id == assign.picker_id))
-        picker = picker_res.scalars().first()
-        if picker:
-            picker.is_available = True
-            await db.execute(
-                delete(Notification).where(
-                    (Notification.user_id == picker.id) & 
-                    (Notification.message.ilike(f"%{pl.order_number}%")) &
-                    (Notification.type == "pick_assignment")
-                )
-            )
-            # Create explicit cancellation notification in user's in-app feed
-            db.add(Notification(
-                user_id=picker.id,
-                type="job_cancelled",
-                title="Assigned Job Cancelled",
-                message=f"Order #{pl.order_number} assigned to you has been cancelled by admin and removed from your queue.",
-            ))
-            trigger_push(
-                picker.push_token,
-                "Assigned Job Cancelled",
-                f"Order #{pl.order_number} has been cancelled by admin and removed from your tasks.",
-                background_tasks=background_tasks,
-            )
-        await db.delete(assign)
-
-    # 2. Delete all items attached to this job
-    await db.execute(delete(PickListItem).where(PickListItem.pick_list_id == picklist_id))
-
-    # 3. Purge original sales order if linked
-    if order_id:
-        order_res = await db.execute(select(SalesOrder).filter(SalesOrder.id == order_id))
-        order = order_res.scalars().first()
-        if order:
-            await db.delete(order)
-
-    # 4. Remove the pick list task itself from database
-    await db.delete(pl)
-    await db.commit()
+    await _release_pickers_and_purge(db, pl, background_tasks, notify_cancellation=True)
     return {"message": "Ongoing job cancelled and removed from database successfully."}
 
 
@@ -1580,43 +1550,18 @@ async def purge_completed_picklist(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_admin),
 ):
-    result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    result = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
     pl = result.scalars().first()
     if not pl:
         raise HTTPException(status_code=404, detail="Pick list not found")
 
-    order_id = pl.sales_order_id
-
-    # Reset picker availability & clear notifications
-    assignment_res = await db.execute(select(PickAssignment).filter(PickAssignment.pick_list_id == picklist_id))
-    assignments = assignment_res.scalars().all()
-    for assign in assignments:
-        picker_res = await db.execute(select(User).filter(User.id == assign.picker_id))
-        picker = picker_res.scalars().first()
-        if picker:
-            picker.is_available = True
-            await db.execute(
-                delete(Notification).where(
-                    (Notification.user_id == picker.id) & 
-                    (Notification.message.ilike(f"%{pl.order_number}%"))
-                )
-            )
-        await db.delete(assign)
-
-    await db.execute(delete(PickListItem).where(PickListItem.pick_list_id == picklist_id))
-
-    if order_id:
-        order_res = await db.execute(select(SalesOrder).filter(SalesOrder.id == order_id))
-        order = order_res.scalars().first()
-        if order:
-            await db.delete(order)
-
-    await db.delete(pl)
-    await db.commit()
+    await _release_pickers_and_purge(db, pl, None, notify_cancellation=False)
     return {"message": "Order completed and all operational data cleanly purged from the database."}
+
 
 class ReassignRequest(BaseModel):
     new_picker_id: int
+
 
 @router.patch("/{picklist_id}/reassign")
 async def reassign_picklist(
@@ -1626,40 +1571,47 @@ async def reassign_picklist(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_admin),
 ):
-    result = await db.execute(select(PickList).filter(PickList.id == picklist_id))
+    result = await db.execute(select(Picklist).filter(Picklist.id == picklist_id))
     picklist = result.scalars().first()
     if not picklist:
         raise HTTPException(status_code=404, detail="Pick list not found")
 
-    new_user_res = await db.execute(
-        select(User).filter(User.id == payload.new_picker_id, User.role == "picker", User.is_active == True)
+    new_picker_res = await db.execute(
+        select(PickerUser).filter(
+            PickerUser.id == payload.new_picker_id, PickerUser.is_active.is_(True)
+        )
     )
-    new_picker = new_user_res.scalars().first()
+    new_picker = new_picker_res.scalars().first()
     if not new_picker:
         raise HTTPException(status_code=404, detail="New picker not found or inactive")
     if not new_picker.is_available:
         raise HTTPException(status_code=400, detail="New picker is not available")
 
     assignment_res = await db.execute(
-        select(PickAssignment).filter(PickAssignment.pick_list_id == picklist_id)
+        select(PicklistAssignment)
+        .options(selectinload(PicklistAssignment.picker))
+        .filter(PicklistAssignment.picklist_id == picklist_id)
     )
-    old_assignments = assignment_res.scalars().all()
-    
+    old_assignments = assignment_res.scalars().unique().all()
+
     if old_assignments:
         old_assignment = old_assignments[-1]
         if old_assignment.picker_id == payload.new_picker_id:
-            raise HTTPException(status_code=400, detail="Pick list is already assigned to this picker")
-            
-        old_user_res = await db.execute(select(User).filter(User.id == old_assignment.picker_id))
-        old_picker = old_user_res.scalars().first()
+            raise HTTPException(
+                status_code=400, detail="Pick list is already assigned to this picker"
+            )
+
+        old_picker = old_assignment.picker
         if old_picker:
             old_picker.is_available = True
-            db.add(Notification(
-                user_id=old_picker.id,
-                type="job_cancelled",
-                title="Job Reassigned",
-                message=f"Order #{picklist.order_number} has been reassigned to another picker.",
-            ))
+            db.add(
+                Notification(
+                    picker_id=old_picker.id,
+                    type="job_cancelled",
+                    title="Job Reassigned",
+                    message=f"Order #{picklist.order_number} has been reassigned to another picker.",
+                )
+            )
             trigger_push(
                 old_picker.push_token,
                 "Job Reassigned",
@@ -1667,16 +1619,17 @@ async def reassign_picklist(
                 background_tasks=background_tasks,
             )
 
-    new_assignment = PickAssignment(pick_list_id=picklist_id, picker_id=new_picker.id)
-    db.add(new_assignment)
+    db.add(PicklistAssignment(picklist_id=picklist_id, picker_id=new_picker.id))
     new_picker.is_available = False
-    
-    db.add(Notification(
-        user_id=new_picker.id,
-        type="pick_assignment",
-        title="New Job Assigned",
-        message=f"Order #{picklist.order_number} has been reassigned to you.",
-    ))
+
+    db.add(
+        Notification(
+            picker_id=new_picker.id,
+            type="pick_assignment",
+            title="New Job Assigned",
+            message=f"Order #{picklist.order_number} has been reassigned to you.",
+        )
+    )
     trigger_push(
         new_picker.push_token,
         "New Job Assigned",
@@ -1687,8 +1640,10 @@ async def reassign_picklist(
     await db.commit()
     return {"message": "Reassigned successfully"}
 
+
 class ToggleCartonRequest(BaseModel):
     is_full_carton: bool
+
 
 @router.patch("/{picklist_id}/items/{item_id}/toggle-carton")
 async def toggle_item_carton(
@@ -1699,9 +1654,11 @@ async def toggle_item_carton(
     current_user=Depends(get_current_user),
 ):
     result = await db.execute(
-        select(PickListItem).filter(
-            PickListItem.id == item_id,
-            PickListItem.pick_list_id == picklist_id,
+        select(PicklistItem)
+        .options(selectinload(PicklistItem.product))
+        .filter(
+            PicklistItem.id == item_id,
+            PicklistItem.picklist_id == picklist_id,
         )
     )
     item = result.scalars().first()
@@ -1709,5 +1666,14 @@ async def toggle_item_carton(
         raise HTTPException(status_code=404, detail="Item not found")
 
     item.is_full_carton = payload.is_full_carton
+    # The barcode a picker scans depends on which kind of line this is, so it
+    # has to follow the toggle.
+    if item.product:
+        item.barcode = (
+            item.product.primary_barcode
+            if payload.is_full_carton
+            else (item.product.secondary_barcode or item.product.primary_barcode)
+        )
+
     await db.commit()
     return {"is_full_carton": item.is_full_carton}

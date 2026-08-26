@@ -48,26 +48,18 @@ async def lifespan(app: FastAPI):
     """
     Application lifespan handler.
 
-    On startup:
-        1. Validate critical settings (JWT secret must be set & strong).
-        2. Run Base.metadata.create_all — idempotent, creates only missing tables.
-           No raw ALTER TABLE statements — use Alembic migrations for schema changes.
+    Startup validates critical settings and nothing else.
+
+    It deliberately no longer calls ``Base.metadata.create_all``. Doing so raced
+    Alembic: a boot between deploy and ``alembic upgrade`` would create the new
+    tables itself, and the migration would then fail on DuplicateTable — while
+    any table a migration meant to rename would silently reappear empty. The
+    schema is owned by Alembic alone; run ``alembic upgrade head`` to change it.
     """
-    # 1. Validate JWT secret before accepting any requests
     try:
         settings.validate_jwt_secret()
     except Exception as exc:
         logger.warning("JWT configuration issue: %s", exc)
-
-    # 2. Create / verify DB schema
-    try:
-        from backend.database import engine, Base
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database schema verified/created successfully.")
-    except Exception as exc:
-        logger.error("Database schema initialisation failed: %s", exc, exc_info=True)
-        # Allow startup to continue — DB may be available on next request after retry
 
     yield
     logger.info("Application shutdown.")

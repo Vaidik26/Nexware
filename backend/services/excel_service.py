@@ -40,23 +40,6 @@ def parse_catalogue_excel(file_content: bytes) -> list[dict]:
     return items
 
 
-def generate_catalogue_excel(items: list) -> bytes:
-    data = [
-        {
-            "Item Number": i.item_number,
-            "Item Name": i.item_name,
-            "Barcode": i.barcode,
-            "Unit": i.unit,
-        }
-        for i in items
-    ]
-    df = pd.DataFrame(data)
-    buf = BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Sales Items")
-    return buf.getvalue()
-
-
 def generate_branded_picklist_excel(items_list: Any) -> bytes:
     wb = openpyxl.Workbook()
     ws = wb.active

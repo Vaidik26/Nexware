@@ -17,7 +17,7 @@ class CapturedPrice(Base):
     __table_args__ = (UniqueConstraint('material_id', 'date', name='uq_captured_price_date'),)
 
     id = Column(Integer, primary_key=True, index=True)
-    material_id = Column(Integer, ForeignKey("raw_materials.id"), nullable=False)
+    material_id = Column(Integer, ForeignKey("raw_materials.id"), nullable=False, index=True)
     date = Column(Date, nullable=False)
     local_price_aed = Column(Float, nullable=True)
     local_price_omr = Column(Float, nullable=True)

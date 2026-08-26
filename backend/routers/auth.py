@@ -2,74 +2,111 @@
 Authentication router — login, logout, current user.
 
 Uses JWT (HS256) signed with the JWT_SECRET_KEY from settings.
-No plain-text session tokens — tokens are cryptographically signed and carry an expiry.
+
+Login resolves an identifier against four separate tables in a fixed order
+(admin → picker → sales → dashboard) and stamps the winning table's name into
+the token as the ``user_type`` claim. Everything downstream trusts that claim to
+pick a table, so it must be set here and nowhere else.
 """
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Optional, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, status
 import jwt
-from sqlalchemy import or_
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from backend.config import settings
 from backend.database import get_db
 from backend.dependencies import get_current_user
-from backend.models.user import User
-from backend.schemas.auth import Token, LoginRequest, UserOut
+from backend.models.users import (
+    USER_TYPE_ADMIN,
+    USER_TYPE_DASHBOARD,
+    USER_TYPE_PICKER,
+    USER_TYPE_SALES,
+    AdminUser,
+    DashboardUser,
+    PickerUser,
+    SalesUser,
+)
+from backend.schemas.auth import AnyUserOut, LoginRequest, Token
 from backend.services.auth_service import verify_password
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+#: (user_type, model, identifying column). Order matters: the first table with a
+#: matching identifier wins, so identifiers must not be reused across personas.
+_LOGIN_ORDER = (
+    (USER_TYPE_ADMIN, AdminUser, AdminUser.email),
+    (USER_TYPE_PICKER, PickerUser, PickerUser.username),
+    (USER_TYPE_SALES, SalesUser, SalesUser.username),
+    (USER_TYPE_DASHBOARD, DashboardUser, DashboardUser.email),
+)
 
-def _create_access_token(user_id: int, role: str) -> str:
-    """Create a signed JWT access token for the given user."""
+
+def _create_access_token(user_id: int, user_type: str) -> str:
+    """Create a signed JWT access token for the given user and persona."""
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
         "sub": str(user_id),
-        "role": role,
+        "user_type": user_type,
         "exp": expire,
     }
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
+async def _find_user_by_identifier(
+    identifier: str, db: AsyncSession
+) -> Tuple[Optional[object], Optional[str]]:
+    """
+    Walk the four user tables looking for a matching identifier.
+
+    Returns ``(user, user_type)`` on the first hit, or ``(None, None)``.
+    """
+    for user_type, model, id_column in _LOGIN_ORDER:
+        result = await db.execute(select(model).filter(id_column.ilike(identifier)))
+        user = result.scalars().first()
+        if user:
+            return user, user_type
+    return None, None
+
+
 @router.post("/login", response_model=Token)
 async def login(login_data: LoginRequest, db: AsyncSession = Depends(get_db)):
-    # Look up user by email OR full_name (used as username for pickers)
-    result = await db.execute(
-        select(User).filter(
-            or_(
-                User.email.ilike(login_data.email.strip()),
-                User.full_name.ilike(login_data.email.strip()),
-            )
-        )
-    )
-    user = result.scalars().first()
+    identifier = login_data.email.strip()
+    user, user_type = await _find_user_by_identifier(identifier, db)
 
     if not user or not verify_password(login_data.password, user.hashed_password):
-        logger.warning("Failed login attempt for identifier: %.50s", login_data.email)
+        logger.warning("Failed login attempt for identifier: %.50s", identifier)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
 
     if not user.is_active:
-        logger.warning("Inactive account login attempt: user_id=%s", user.id)
+        logger.warning("Inactive account login attempt: %s id=%s", user_type, user.id)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is inactive",
         )
 
-    token = _create_access_token(user.id, user.role)
-    logger.info("User logged in: user_id=%s role=%s", user.id, user.role)
+    if user_type == USER_TYPE_SALES:
+        user.last_login_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(user)
+
+    token = _create_access_token(user.id, user_type)
+    user.user_type = user_type
+    logger.info("User logged in: id=%s user_type=%s", user.id, user_type)
 
     return {
         "token": token,
         "access_token": token,  # alias for frontend compatibility
         "token_type": "bearer",
+        "user_type": user_type,
         "user": user,
     }
 
@@ -77,15 +114,16 @@ async def login(login_data: LoginRequest, db: AsyncSession = Depends(get_db)):
 @router.post("/logout")
 async def logout(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user=Depends(get_current_user),
 ):
-    # Clear the push token so the device stops receiving push notifications after logout
-    if current_user.push_token:
+    # Only pickers carry a push token — clearing it stops the device receiving
+    # push notifications after logout. Other personas have nothing to clear.
+    if isinstance(current_user, PickerUser) and current_user.push_token:
         current_user.push_token = None
         await db.commit()
     return {"message": "Logged out successfully"}
 
 
-@router.get("/me", response_model=UserOut)
-async def read_users_me(current_user: User = Depends(get_current_user)):
+@router.get("/me", response_model=AnyUserOut)
+async def read_users_me(current_user=Depends(get_current_user)):
     return current_user

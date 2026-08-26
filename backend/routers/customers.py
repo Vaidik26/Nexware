@@ -8,7 +8,7 @@ from sqlalchemy.future import select
 from backend.database import get_db
 from backend.dependencies import get_current_admin, get_current_user
 from backend.models.customer import Customer
-from backend.models.user import User
+from backend.models.users import AdminUser
 from backend.schemas.customer import CustomerCreate, CustomerOut, CustomerUpdate
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/customers", tags=["customers"])
 async def get_customers(
     q: str | None = Query(None, description="Search by name or code"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     stmt = select(Customer).order_by(Customer.name.asc())
     if q:
@@ -37,7 +37,7 @@ async def get_customers(
 async def create_customer(
     customer: CustomerCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin),
+    current_user: AdminUser = Depends(get_current_admin),
 ):
     exists = await db.execute(select(Customer).filter(Customer.customer_code == customer.customer_code))
     if exists.scalar_one_or_none():
@@ -55,7 +55,7 @@ async def update_customer(
     customer_id: int,
     customer: CustomerUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin),
+    current_user: AdminUser = Depends(get_current_admin),
 ):
     result = await db.execute(select(Customer).filter(Customer.id == customer_id))
     db_customer = result.scalar_one_or_none()
@@ -78,7 +78,7 @@ async def update_customer(
 async def delete_customer(
     customer_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin),
+    current_user: AdminUser = Depends(get_current_admin),
 ):
     result = await db.execute(select(Customer).filter(Customer.id == customer_id))
     db_customer = result.scalar_one_or_none()

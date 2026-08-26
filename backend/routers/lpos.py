@@ -4,10 +4,14 @@ LPO (Local Purchase Order) router.
 All write operations and sensitive reads require authentication.
 Schemas live in backend/schemas/lpo.py.
 Push notifications are centralised in backend/services/notification_service.py.
+
+Converting an LPO into a picklist is done in one place — ``_convert_to_picklist``
+— which the approve, auto-assign-on-PDF-upload and legacy convert endpoints all
+call. Previously each carried its own copy of the carton/loose split logic.
 """
 import logging
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import func as sqlfunc
@@ -22,12 +26,19 @@ from backend.constants import (
     FOLDER_MOBILE_LPOS,
     MAX_UPLOAD_SIZE_BYTES,
 )
+from backend.core.utils import PREFIX_LPO, PREFIX_PICKLIST, flush_with_prefixed_id
 from backend.database import get_db
 from backend.dependencies import get_current_admin, get_current_user, get_current_user_optional
-from backend.models.catalogue import SalesItem
-from backend.models.lpo import Lpo
-from backend.models.picklist import PickAssignment, PickList, PickListItem
-from backend.models.user import Notification, User
+from backend.models.lpo import Lpo, LpoItem
+from backend.models.picklist import Picklist, PicklistAssignment
+from backend.models.products import Product
+from backend.models.users import AdminUser, PickerUser
+from backend.routers.picklists import (
+    _pick_least_loaded_picker,
+    _validate_and_build,
+    _notify_assignment,
+    resolve_customer_id,
+)
 from backend.schemas.lpo import (
     ApproveRequest,
     LpoCreate,
@@ -35,11 +46,98 @@ from backend.schemas.lpo import (
     LpoUpdate,
     LpoUpdateStatus,
 )
-from backend.services.notification_service import send_push_notification
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/lpos", tags=["lpos"])
+
+#: Relationship loads needed to serialise an LpoOut without an N+1.
+_LPO_LOAD_OPTIONS = (
+    selectinload(Lpo.items).joinedload(LpoItem.product),
+    selectinload(Lpo.customer),
+    selectinload(Lpo.sales_person),
+    selectinload(Lpo.created_by_admin),
+)
+
+
+async def _reload_lpo(db: AsyncSession, lpo_id: int) -> Lpo:
+    result = await db.execute(
+        select(Lpo).options(*_LPO_LOAD_OPTIONS).filter(Lpo.id == lpo_id)
+    )
+    lpo = result.scalars().unique().one_or_none()
+    if not lpo:
+        raise HTTPException(status_code=404, detail="LPO not found")
+    return lpo
+
+
+async def _build_lpo_items(db: AsyncSession, lpo_id: int, lines) -> List[LpoItem]:
+    """
+    Turn submitted lines into LpoItem rows, resolving each barcode to a product.
+
+    An unresolved barcode is kept rather than rejected: an LPO records what the
+    customer asked for, and a SKU missing from the catalogue is a real situation
+    the warehouse has to see and fix. The line is stored with a null product_id
+    and the document's own description.
+    """
+    barcodes = [line.barcode for line in lines if line.barcode]
+    product_map = {}
+    if barcodes:
+        result = await db.execute(
+            select(Product).filter(
+                (Product.primary_barcode.in_(barcodes))
+                | (Product.secondary_barcode.in_(barcodes))
+            )
+        )
+        for product in result.scalars().all():
+            product_map[product.primary_barcode] = product
+            if product.secondary_barcode:
+                product_map[product.secondary_barcode] = product
+
+    items = []
+    for line in lines:
+        product = product_map.get(line.barcode)
+        items.append(
+            LpoItem(
+                lpo_id=lpo_id,
+                product_id=line.product_id or (product.id if product else None),
+                barcode=line.barcode,
+                description=line.product_name or (product.name if product else None),
+                quantity=line.quantity,
+                unit=line.unit,
+            )
+        )
+    return items
+
+
+async def _convert_to_picklist(db: AsyncSession, lpo: Lpo) -> Picklist:
+    """
+    Create the picklist an approved LPO becomes.
+
+    Reuses the picking module's validation so an LPO cannot produce a job whose
+    lines have no catalogue product or no stock — the same rule the admin
+    picklist screens already enforce.
+    """
+    db_picklist = Picklist(
+        order_number=lpo.lpo_number,
+        customer_id=lpo.customer_id,
+        sales_person_id=lpo.sales_person_id,
+        sales_order_id=None,
+        status="draft",
+        picker_job_number=None,
+        delivery_date=lpo.delivery_date,
+    )
+    await flush_with_prefixed_id(db, db_picklist, "picklist_number", PREFIX_PICKLIST)
+
+    lines = [
+        {"barcode": item.barcode, "quantity": item.quantity, "unit": item.unit}
+        for item in lpo.items
+    ]
+    if not lines:
+        raise HTTPException(status_code=400, detail="LPO has no items to convert")
+
+    items = await _validate_and_build(db, db_picklist.id, lines)
+    db.add_all(items)
+    return db_picklist
 
 
 # ─── Routes ────────────────────────────────────────────────────────────────────
@@ -48,218 +146,115 @@ router = APIRouter(prefix="/lpos", tags=["lpos"])
 @router.get("/", response_model=List[LpoOut])
 async def get_lpos(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # ← AUTH REQUIRED
+    current_user=Depends(get_current_user),  # ← AUTH REQUIRED
 ):
     """List all LPOs ordered by creation date descending."""
     result = await db.execute(
-        select(Lpo)
-        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
-        .order_by(Lpo.created_at.desc())
+        select(Lpo).options(*_LPO_LOAD_OPTIONS).order_by(Lpo.created_at.desc())
     )
-    lpos = result.scalars().all()
+    lpos = result.scalars().unique().all()
     logger.info("user=%s fetched %d LPOs", current_user.id, len(lpos))
     return lpos
 
 
 @router.get("/my-history", response_model=List[LpoOut])
 async def get_my_lpo_history(
-    date: str = None,
+    date: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
-    """List LPOs created by the current user, optionally filtered by date (YYYY-MM-DD)."""
-    query = select(Lpo).options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
-    query = query.filter(Lpo.created_by_id == current_user.id)
-    
+    """List LPOs raised by the current user, optionally filtered by date (YYYY-MM-DD)."""
+    query = select(Lpo).options(*_LPO_LOAD_OPTIONS)
+
+    # "Mine" means a different column per persona now that the creator is split
+    # across two strict FKs instead of one polymorphic user id.
+    if isinstance(current_user, AdminUser):
+        query = query.filter(Lpo.created_by_admin_id == current_user.id)
+    else:
+        query = query.filter(Lpo.sales_person_id == current_user.id)
+
     if date:
         try:
             target_date = datetime.strptime(date, "%Y-%m-%d").date()
-            # PostgreSQL cast to date
             query = query.filter(sqlfunc.date(Lpo.created_at) == target_date)
         except ValueError:
-            pass # Ignore invalid date format and return all
+            pass  # Ignore invalid date format and return all
 
-    query = query.order_by(Lpo.created_at.desc())
-    result = await db.execute(query)
-    lpos = result.scalars().all()
-    return lpos
+    result = await db.execute(query.order_by(Lpo.created_at.desc()))
+    return result.scalars().unique().all()
 
 
 @router.get("/{lpo_id}", response_model=LpoOut)
 async def get_lpo_by_id(
     lpo_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # ← AUTH REQUIRED
+    current_user=Depends(get_current_user),  # ← AUTH REQUIRED
 ):
-    result = await db.execute(
-        select(Lpo)
-        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
-        .filter(Lpo.id == lpo_id)
-    )
-    lpo = result.scalar_one_or_none()
-    if not lpo:
-        raise HTTPException(status_code=404, detail="LPO not found")
-    return lpo
+    return await _reload_lpo(db, lpo_id)
 
-
-import random
-from sqlalchemy import func as sa_func
-
-async def process_lpo_auto_assign(db: AsyncSession, lpo: Lpo, background_tasks: BackgroundTasks):
-    # Create picklist
-    db_picklist = PickList(
-        order_number=lpo.lpo_number,
-        customer_name=lpo.customer_name,
-        sales_person_id=lpo.sales_person_id,
-        sales_order_id=None,
-        status="draft",
-        picker_job_number=None,
-        delivery_date=lpo.delivery_date,
-    )
-    db.add(db_picklist)
-    await db.flush()
-
-    all_barcodes = [item.get("barcode", "N/A") for item in lpo.items]
-    cat_res = await db.execute(select(SalesItem).filter(SalesItem.primary_barcode.in_(all_barcodes)))
-    cat_map = {ci.primary_barcode: ci for ci in cat_res.scalars().all()}
-
-    for item in lpo.items:
-        bc = item.get("barcode", "N/A")
-        cat_item = cat_map.get(bc)
-        qty = item.get("quantity", 1)
-        scq = cat_item.standard_carton_quantity if cat_item and cat_item.standard_carton_quantity else 1
-        
-        full_cartons = int(qty // scq) if scq > 0 else 0
-        loose_pieces = qty % scq if scq > 0 else qty
-
-        if full_cartons > 0:
-            db.add(PickListItem(
-                pick_list_id=db_picklist.id,
-                barcode=bc,
-                product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
-                quantity=full_cartons,
-                unit="Carton",
-                is_full_carton=True,
-                bin_location=cat_item.bin_location if cat_item else None,
-            ))
-            
-        if loose_pieces > 0 or full_cartons == 0:
-            db.add(PickListItem(
-                pick_list_id=db_picklist.id,
-                barcode=bc,
-                product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
-                quantity=loose_pieces,
-                unit=item.get("unit", "PCS") if item.get("unit", "PCS") != "Carton" else "PCS",
-                is_full_carton=False,
-                bin_location=cat_item.bin_location if cat_item else None,
-            ))
-
-    # Auto: least-loaded active picker
-    pickers_res = await db.execute(
-        select(User).filter(User.role == "picker", User.is_active == True).with_for_update()
-    )
-    all_pickers = pickers_res.scalars().all()
-    if not all_pickers:
-        logger.warning("No active pickers available for auto-assignment of LPO %s", lpo.id)
-        lpo.status = "processed"
-        return
-
-    picker_counts = []
-    for p in all_pickers:
-        cnt_res = await db.execute(
-            select(sa_func.count(PickAssignment.id))
-            .join(PickList, PickAssignment.pick_list_id == PickList.id)
-            .filter(
-                PickAssignment.picker_id == p.id,
-                PickList.status.notin_(["completed", "cancelled"]),
-            )
-        )
-        cnt = cnt_res.scalar() or 0
-        picker_counts.append((p, cnt))
-        
-    min_count = min(cnt for _, cnt in picker_counts)
-    best_pickers = [p for p, cnt in picker_counts if cnt == min_count]
-    picker = random.choice(best_pickers)
-
-    assignment = PickAssignment(pick_list_id=db_picklist.id, picker_id=picker.id)
-    db.add(assignment)
-    db_picklist.status = "assigned"
-
-    db.add(Notification(
-        user_id=picker.id,
-        type="pick_assignment",
-        title="New Picklist Assigned",
-        message=f"LPO #{lpo.lpo_number} for {lpo.customer_name} has been assigned to you.",
-    ))
-    background_tasks.add_task(
-        send_push_notification,
-        picker.push_token or "",
-        "New Picklist Assigned",
-        f"LPO #{lpo.lpo_number} assigned to you.",
-    )
-
-    lpo.status = "processed"
-    await db.flush()
-    
-    from backend.ws_manager import manager
-    await manager.broadcast({
-        "event": "PICKLIST_ASSIGNED",
-        "picker_id": picker.id,
-        "picklist_id": db_picklist.id,
-        "message": f"New Picklist Assigned: {lpo.lpo_number}"
-    })
 
 @router.post("", response_model=LpoOut)
 @router.post("/", response_model=LpoOut)
 async def create_lpo(
     lpo: LpoCreate,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user_optional),  # optional — mobile creates without admin token
 ):
     """Create a new LPO. Mobile clients may call this without authentication."""
-    # Auto-deduplicate LPO number to prevent conflicts
+    # Auto-deduplicate the customer's LPO number to prevent conflicts. This is
+    # the customer's own document reference, so it is suffixed rather than
+    # regenerated — the internal_ref below is the id we generate ourselves.
     lpo_number = lpo.lpo_number
-    exists = await db.execute(select(Lpo).filter(Lpo.lpo_number == lpo_number))
-    if exists.scalar_one_or_none():
+    exists = await db.execute(select(Lpo.id).filter(Lpo.lpo_number == lpo_number))
+    if exists.scalars().first() is not None:
         suffix = datetime.now(timezone.utc).strftime("%H%M%S")
         lpo_number = f"{lpo_number}-{suffix}"
         logger.warning("Duplicate LPO number detected, auto-suffixed to: %s", lpo_number)
+
+    customer_id = await resolve_customer_id(db, lpo.customer_id, lpo.customer_name)
 
     source = lpo.source or "upload"
     # Mobile LPOs start as 'draft' until the PDF is uploaded to confirm them
     initial_status = "draft" if source == "mobile" else "pending"
 
+    is_admin = isinstance(current_user, AdminUser)
     db_lpo = Lpo(
         lpo_number=lpo_number,
-        customer_name=lpo.customer_name,
-        sales_person_id=lpo.sales_person_id or (current_user.id if current_user else None),
-        items=[item.model_dump() for item in lpo.items],
+        customer_id=customer_id,
+        sales_person_id=lpo.sales_person_id
+        or (current_user.id if current_user and not is_admin else None),
         delivery_date=lpo.delivery_date,
         status=initial_status,
         source=source,
-        created_by_id=current_user.id if current_user else None,
+        created_by_admin_id=current_user.id if is_admin else None,
     )
-    db.add(db_lpo)
+    await flush_with_prefixed_id(db, db_lpo, "internal_ref", PREFIX_LPO)
+
+    db.add_all(await _build_lpo_items(db, db_lpo.id, lpo.items))
     await db.commit()
 
-    result = await db.execute(
-        select(Lpo)
-        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
-        .filter(Lpo.id == db_lpo.id)
+    lpo_obj = await _reload_lpo(db, db_lpo.id)
+    logger.info(
+        "LPO created: lpo_number=%s internal_ref=%s status=%s source=%s",
+        lpo_number,
+        lpo_obj.internal_ref,
+        initial_status,
+        source,
     )
-    lpo_obj = result.scalar_one()
-    logger.info("LPO created: lpo_number=%s status=%s source=%s", lpo_number, initial_status, source)
-    
+
     from backend.ws_manager import manager
-    await manager.broadcast({
-        "event": "ORDER_CREATED",
-        "lpo_id": lpo_obj.id,
-        "lpo_number": lpo_obj.lpo_number,
-        "message": f"New Order Created: {lpo_obj.lpo_number}"
-    })
-    
+
+    await manager.broadcast(
+        {
+            "event": "ORDER_CREATED",
+            "lpo_id": lpo_obj.id,
+            "lpo_number": lpo_obj.lpo_number,
+            "message": f"New Order Created: {lpo_obj.lpo_number}",
+        }
+    )
+
     return lpo_obj
+
 
 @router.put("/{lpo_id}", response_model=LpoOut)
 async def update_lpo(
@@ -269,31 +264,32 @@ async def update_lpo(
     current_user=Depends(get_current_user_optional),
 ):
     """Update a pending LPO (only items and delivery date)."""
-    result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
-    db_lpo = result.scalar_one_or_none()
-    
+    result = await db.execute(
+        select(Lpo).options(selectinload(Lpo.items)).filter(Lpo.id == lpo_id)
+    )
+    db_lpo = result.scalars().unique().one_or_none()
+
     if not db_lpo:
         raise HTTPException(status_code=404, detail="LPO not found")
-        
+
     if db_lpo.signed_lpo_url:
         raise HTTPException(
-            status_code=400, 
-            detail="Cannot edit LPO because it already has a signed document attached (Order is locked)."
+            status_code=400,
+            detail="Cannot edit LPO because it already has a signed document attached (Order is locked).",
         )
 
-    db_lpo.items = [item.model_dump() for item in lpo_update.items]
+    # Replace the line set wholesale; delete-orphan on the relationship removes
+    # the previous rows.
+    db_lpo.items.clear()
+    await db.flush()
+    db.add_all(await _build_lpo_items(db, db_lpo.id, lpo_update.items))
+
     if lpo_update.delivery_date is not None:
         db_lpo.delivery_date = lpo_update.delivery_date
 
     await db.commit()
-
-    result = await db.execute(
-        select(Lpo)
-        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
-        .filter(Lpo.id == lpo_id)
-    )
     logger.info("LPO updated: id=%s", lpo_id)
-    return result.scalar_one()
+    return await _reload_lpo(db, lpo_id)
 
 
 @router.patch("/{lpo_id}/url", response_model=LpoOut)
@@ -301,21 +297,13 @@ async def update_lpo_url(
     lpo_id: int,
     url: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),  # ← AUTH REQUIRED
+    current_user=Depends(get_current_user),  # ← AUTH REQUIRED
 ):
-    result = await db.execute(
-        select(Lpo)
-        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
-        .filter(Lpo.id == lpo_id)
-    )
-    lpo = result.scalar_one_or_none()
-    if not lpo:
-        raise HTTPException(status_code=404, detail="LPO not found")
-
+    lpo = await _reload_lpo(db, lpo_id)
     lpo.signed_lpo_url = url
     await db.commit()
     logger.info("LPO %s URL updated by user=%s", lpo_id, current_user.id)
-    return lpo
+    return await _reload_lpo(db, lpo_id)
 
 
 @router.post("/{lpo_id}/upload-pdf")
@@ -332,10 +320,7 @@ async def upload_lpo_pdf(
     called by the mobile app immediately after LPO creation, before the user logs
     in as an admin. All other mutation endpoints are admin-protected.
     """
-    result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
-    lpo = result.scalar_one_or_none()
-    if not lpo:
-        raise HTTPException(status_code=404, detail="LPO not found")
+    lpo = await _reload_lpo(db, lpo_id)
 
     # ── File validation ────────────────────────────────────────────────────────
     content_type = (file.content_type or "").lower()
@@ -356,6 +341,7 @@ async def upload_lpo_pdf(
 
     try:
         from backend.services.storage_service import upload_to_supabase
+
         public_url = upload_to_supabase(
             file_bytes=file_bytes,
             original_filename=filename,
@@ -371,12 +357,33 @@ async def upload_lpo_pdf(
 
     lpo.signed_lpo_url = public_url
 
-    # Trigger auto assign immediately upon receiving PDF
-    if lpo.status in ["draft", "pending"]:
-        # Auto-approves the LPO and generates PickList
-        await process_lpo_auto_assign(db, lpo, background_tasks)
+    # Receiving the signed PDF auto-approves the LPO and generates the picklist.
+    if lpo.status in ("draft", "pending"):
+        db_picklist = await _convert_to_picklist(db, lpo)
 
-    await db.commit()
+        picker = await _pick_least_loaded_picker(db)
+        db.add(PicklistAssignment(picklist_id=db_picklist.id, picker_id=picker.id))
+        db_picklist.status = "assigned"
+        picker.is_available = False
+        _notify_assignment(db, picker, db_picklist, None, background_tasks)
+
+        lpo.status = "processed"
+
+        await db.commit()
+
+        from backend.ws_manager import manager
+
+        await manager.broadcast(
+            {
+                "event": "PICKLIST_ASSIGNED",
+                "picker_id": picker.id,
+                "picklist_id": db_picklist.id,
+                "message": f"New Picklist Assigned: {lpo.lpo_number}",
+            }
+        )
+    else:
+        await db.commit()
+
     await db.refresh(lpo)
     logger.info("LPO %s PDF uploaded successfully, status=%s", lpo_id, lpo.status)
     return {"url": public_url, "lpo_id": lpo_id, "status": lpo.status}
@@ -387,48 +394,33 @@ async def update_lpo_status(
     lpo_id: int,
     status_update: LpoUpdateStatus,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin),  # ← ADMIN REQUIRED
+    current_user: AdminUser = Depends(get_current_admin),  # ← ADMIN REQUIRED
 ):
-    result = await db.execute(
-        select(Lpo)
-        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
-        .filter(Lpo.id == lpo_id)
-    )
-    lpo = result.scalar_one_or_none()
-    if not lpo:
-        raise HTTPException(status_code=404, detail="LPO not found")
-
+    lpo = await _reload_lpo(db, lpo_id)
     old_status = lpo.status
     lpo.status = status_update.status
     await db.commit()
-    await db.refresh(lpo)
-    logger.info("LPO %s status changed %s → %s by admin=%s", lpo_id, old_status, lpo.status, current_user.id)
-    return lpo
+    logger.info(
+        "LPO %s status changed %s → %s by admin=%s", lpo_id, old_status, lpo.status, current_user.id
+    )
+    return await _reload_lpo(db, lpo_id)
 
 
 @router.post("/{lpo_id}/disapprove", response_model=LpoOut)
 async def disapprove_lpo(
     lpo_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin),  # ← ADMIN REQUIRED
+    current_user: AdminUser = Depends(get_current_admin),  # ← ADMIN REQUIRED
 ):
     """Mark an LPO as disapproved."""
-    result = await db.execute(
-        select(Lpo)
-        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
-        .filter(Lpo.id == lpo_id)
-    )
-    lpo = result.scalar_one_or_none()
-    if not lpo:
-        raise HTTPException(status_code=404, detail="LPO not found")
+    lpo = await _reload_lpo(db, lpo_id)
     if lpo.status == "processed":
         raise HTTPException(status_code=400, detail="Cannot disapprove a processed LPO")
 
     lpo.status = "disapproved"
     await db.commit()
-    await db.refresh(lpo)
     logger.info("LPO %s disapproved by admin=%s", lpo_id, current_user.id)
-    return lpo
+    return await _reload_lpo(db, lpo_id)
 
 
 @router.post("/{lpo_id}/approve")
@@ -437,7 +429,7 @@ async def approve_lpo(
     req: ApproveRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin),  # ← ADMIN REQUIRED
+    current_user: AdminUser = Depends(get_current_admin),  # ← ADMIN REQUIRED
 ):
     """
     Approve an LPO and immediately convert it into a picklist.
@@ -445,126 +437,33 @@ async def approve_lpo(
     assign_mode='auto'   → round-robin to the least-loaded available picker.
     assign_mode='manual' → assign to the specified picker_id.
     """
-    result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
-    lpo = result.scalar_one_or_none()
-    if not lpo:
-        raise HTTPException(status_code=404, detail="LPO not found")
+    lpo = await _reload_lpo(db, lpo_id)
     if lpo.status == "processed":
         raise HTTPException(status_code=400, detail="LPO is already converted")
 
-    # ── Create picklist ──────────────────────────────────────────────────────
-    db_picklist = PickList(
-        order_number=lpo.lpo_number,
-        customer_name=lpo.customer_name,
-        sales_person_id=lpo.sales_person_id,
-        sales_order_id=None,
-        status="draft",
-        picker_job_number=None,
-        delivery_date=lpo.delivery_date,
-    )
-    db.add(db_picklist)
-    await db.flush()
-
-    all_barcodes = [item.get("barcode", "N/A") for item in lpo.items]
-    cat_res = await db.execute(select(SalesItem).filter(SalesItem.primary_barcode.in_(all_barcodes)))
-    cat_map = {ci.primary_barcode: ci for ci in cat_res.scalars().all()}
-
-    for item in lpo.items:
-        bc = item.get("barcode", "N/A")
-        cat_item = cat_map.get(bc)
-        qty = item.get("quantity", 1)
-        scq = cat_item.standard_carton_quantity if cat_item and cat_item.standard_carton_quantity else 1
-        
-        full_cartons = int(qty // scq) if scq > 0 else 0
-        loose_pieces = qty % scq if scq > 0 else qty
-
-        if full_cartons > 0:
-            db.add(PickListItem(
-                pick_list_id=db_picklist.id,
-                barcode=bc,
-                product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
-                quantity=full_cartons,
-                unit="Carton",
-                is_full_carton=True,
-                bin_location=cat_item.bin_location if cat_item else None,
-            ))
-            
-        if loose_pieces > 0 or full_cartons == 0:
-            db.add(PickListItem(
-                pick_list_id=db_picklist.id,
-                barcode=bc,
-                product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
-                quantity=loose_pieces,
-                unit=item.get("unit", "PCS") if item.get("unit", "PCS") != "Carton" else "PCS",
-                is_full_carton=False,
-                bin_location=cat_item.bin_location if cat_item else None,
-            ))
+    db_picklist = await _convert_to_picklist(db, lpo)
 
     # ── Assign picker ────────────────────────────────────────────────────────
-    picker = None
     if req.assign_mode == "manual":
         if not req.picker_id:
             raise HTTPException(status_code=400, detail="picker_id required for manual assignment")
         p_res = await db.execute(
-            select(User).filter(User.id == req.picker_id, User.role == "picker")
+            select(PickerUser).filter(
+                PickerUser.id == req.picker_id, PickerUser.is_active.is_(True)
+            )
         )
-        picker = p_res.scalar_one_or_none()
+        picker = p_res.scalars().first()
         if not picker:
             raise HTTPException(status_code=404, detail="Picker not found")
         if not picker.is_available:
             raise HTTPException(status_code=400, detail="Picker is not available")
     else:
-        import random
-        # Auto: least-loaded active picker
-        from sqlalchemy import func as sa_func
-        # Lock active pickers to serialize concurrent assignments and prevent dogpiling
-        pickers_res = await db.execute(
-            select(User).filter(
-                User.role == "picker",
-                User.is_active == True,
-            ).with_for_update()
-        )
-        all_pickers = pickers_res.scalars().all()
-        if not all_pickers:
-            raise HTTPException(status_code=400, detail="No active pickers right now")
+        picker = await _pick_least_loaded_picker(db, require_available=False)
 
-        picker_counts = []
-        for p in all_pickers:
-            cnt_res = await db.execute(
-                select(sa_func.count(PickAssignment.id))
-                .join(PickList, PickAssignment.pick_list_id == PickList.id)
-                .filter(
-                    PickAssignment.picker_id == p.id,
-                    PickList.status.notin_(["completed", "cancelled"]),
-                )
-            )
-            cnt = cnt_res.scalar() or 0
-            picker_counts.append((p, cnt))
-            
-        min_count = min(cnt for _, cnt in picker_counts)
-        best_pickers = [p for p, cnt in picker_counts if cnt == min_count]
-        picker = random.choice(best_pickers)
-
-    if picker:
-        assignment = PickAssignment(
-            pick_list_id=db_picklist.id,
-            picker_id=picker.id,
-        )
-        db.add(assignment)
-        db_picklist.status = "assigned"
-
-        db.add(Notification(
-            user_id=picker.id,
-            type="pick_assignment",
-            title="New Picklist Assigned",
-            message=f"LPO #{lpo.lpo_number} for {lpo.customer_name} has been assigned to you.",
-        ))
-        background_tasks.add_task(
-            send_push_notification,
-            picker.push_token or "",
-            "New Picklist Assigned",
-            f"LPO #{lpo.lpo_number} assigned to you.",
-        )
+    db.add(PicklistAssignment(picklist_id=db_picklist.id, picker_id=picker.id))
+    db_picklist.status = "assigned"
+    picker.is_available = False
+    _notify_assignment(db, picker, db_picklist, None, background_tasks)
 
     lpo.status = "processed"
     await db.commit()
@@ -572,27 +471,28 @@ async def approve_lpo(
 
     logger.info(
         "LPO %s approved by admin=%s → picklist=%s assigned_to=%s",
-        lpo_id, current_user.id, db_picklist.id,
-        picker.full_name if picker else "unassigned",
+        lpo_id,
+        current_user.id,
+        db_picklist.id,
+        picker.full_name,
     )
-    
+
     from backend.ws_manager import manager
-    if picker:
-        await manager.broadcast({
+
+    await manager.broadcast(
+        {
             "event": "PICKLIST_ASSIGNED",
             "picker_id": picker.id,
             "picklist_id": db_picklist.id,
-            "message": f"New Picklist Assigned: {lpo.lpo_number}"
-        })
-    else:
-        await manager.broadcast({
-            "event": "ORDER_CREATED", # reusing the generic event to refresh lists
-            "message": f"LPO {lpo.lpo_number} converted to unassigned Picklist"
-        })
+            "message": f"New Picklist Assigned: {lpo.lpo_number}",
+        }
+    )
+
     return {
         "message": "LPO approved and converted to picklist",
         "picklist_id": db_picklist.id,
-        "assigned_to": picker.full_name if picker else None,
+        "picklist_number": db_picklist.picklist_number,
+        "assigned_to": picker.full_name,
         "items_count": len(lpo.items),
     }
 
@@ -601,14 +501,14 @@ async def approve_lpo(
 async def delete_lpo(
     lpo_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin),  # ← ADMIN REQUIRED
+    current_user: AdminUser = Depends(get_current_admin),  # ← ADMIN REQUIRED
 ):
     result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
-    lpo = result.scalar_one_or_none()
+    lpo = result.scalars().one_or_none()
     if not lpo:
         raise HTTPException(status_code=404, detail="LPO not found")
 
-    await db.delete(lpo)
+    await db.delete(lpo)  # lpo_items go with it via ON DELETE CASCADE
     await db.commit()
     logger.info("LPO %s deleted by admin=%s", lpo_id, current_user.id)
     return {"message": "LPO deleted successfully"}
@@ -618,66 +518,14 @@ async def delete_lpo(
 async def convert_lpo_to_picklist(
     lpo_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin),  # ← ADMIN REQUIRED
+    current_user: AdminUser = Depends(get_current_admin),  # ← ADMIN REQUIRED
 ):
     """Legacy endpoint — converts LPO to pick list without picker assignment."""
-    result = await db.execute(select(Lpo).filter(Lpo.id == lpo_id))
-    lpo = result.scalar_one_or_none()
-    if not lpo:
-        raise HTTPException(status_code=404, detail="LPO not found")
+    lpo = await _reload_lpo(db, lpo_id)
     if lpo.status == "processed":
         raise HTTPException(status_code=400, detail="LPO is already converted")
 
-    db_picklist = PickList(
-        order_number=lpo.lpo_number,
-        customer_name=lpo.customer_name,
-        sales_person_id=lpo.sales_person_id,
-        sales_order_id=None,
-        status="draft",
-        picker_job_number=None,
-        delivery_date=lpo.delivery_date,
-    )
-    db.add(db_picklist)
-    await db.flush()
-
-    all_barcodes = [item.get("barcode", "N/A") for item in lpo.items]
-    cat_res = await db.execute(select(SalesItem).filter(SalesItem.barcode.in_(all_barcodes)))
-    cat_map = {ci.barcode: ci for ci in cat_res.scalars().all()}
-
-    verified_count = 0
-    for item in lpo.items:
-        bc = item.get("barcode", "N/A")
-        cat_item = cat_map.get(bc)
-        qty = item.get("quantity", 1)
-        scq = cat_item.standard_carton_quantity if cat_item and cat_item.standard_carton_quantity else 1
-        
-        full_cartons = int(qty // scq) if scq > 0 else 0
-        loose_pieces = qty % scq if scq > 0 else qty
-
-        if full_cartons > 0:
-            db.add(PickListItem(
-                pick_list_id=db_picklist.id,
-                barcode=bc,
-                product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
-                quantity=full_cartons,
-                unit="Carton",
-                is_full_carton=True,
-                bin_location=cat_item.bin_location if cat_item else None,
-            ))
-            verified_count += 1
-            
-        if loose_pieces > 0 or full_cartons == 0:
-            db.add(PickListItem(
-                pick_list_id=db_picklist.id,
-                barcode=bc,
-                product_name=cat_item.item_name if cat_item else item.get("product_name", "Item"),
-                quantity=loose_pieces,
-                unit=item.get("unit", "EA") if item.get("unit", "EA") != "Carton" else "PCS",
-                is_full_carton=False,
-                bin_location=cat_item.bin_location if cat_item else None,
-            ))
-            verified_count += 1
-
+    db_picklist = await _convert_to_picklist(db, lpo)
     lpo.status = "processed"
     await db.commit()
     await db.refresh(db_picklist)
@@ -686,7 +534,8 @@ async def convert_lpo_to_picklist(
     return {
         "message": "LPO converted to pick list successfully",
         "picklist_id": db_picklist.id,
-        "items_count": verified_count,
+        "picklist_number": db_picklist.picklist_number,
+        "items_count": len(lpo.items),
     }
 
 
@@ -695,18 +544,10 @@ async def update_lpo_delivery_date(
     lpo_id: int,
     delivery_date: datetime,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_admin),  # ← ADMIN REQUIRED
+    current_user: AdminUser = Depends(get_current_admin),  # ← ADMIN REQUIRED
 ):
-    result = await db.execute(
-        select(Lpo)
-        .options(selectinload(Lpo.created_by), selectinload(Lpo.sales_person))
-        .filter(Lpo.id == lpo_id)
-    )
-    lpo = result.scalar_one_or_none()
-    if not lpo:
-        raise HTTPException(status_code=404, detail="LPO not found")
-
+    lpo = await _reload_lpo(db, lpo_id)
     lpo.delivery_date = delivery_date
     await db.commit()
     logger.info("LPO %s delivery date updated by admin=%s", lpo_id, current_user.id)
-    return lpo
+    return await _reload_lpo(db, lpo_id)

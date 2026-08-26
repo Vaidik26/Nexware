@@ -2,21 +2,34 @@
 FastAPI dependency functions for authentication and authorization.
 
 All token validation is done via cryptographic JWT verification (HS256).
-Plain-text session token parsing has been removed — tokens are now signed
-and verified using settings.JWT_SECRET_KEY.
+
+Since the monolithic ``users`` table was split into four persona tables, a user
+id alone is no longer enough to identify anyone — id 7 exists in all four. Every
+token therefore carries a ``user_type`` claim, and that claim alone decides which
+table is queried. A token is never looked up in more than one table: if the claim
+is missing or unrecognised the token is rejected outright rather than searched
+for, so a forged or stale token cannot fall through to the wrong persona.
 """
 import logging
-from typing import Optional
+from typing import Any, Optional, Tuple
 
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from backend.config import settings
 from backend.database import get_db
-from backend.models.user import User
+from backend.models.users import (
+    USER_TYPE_ADMIN,
+    USER_TYPE_MODELS,
+    USER_TYPE_PICKER,
+    USER_TYPE_SALES,
+    AdminUser,
+    PickerUser,
+    SalesUser,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +50,16 @@ _FORBIDDEN_EXCEPTION = HTTPException(
 async def _decode_and_fetch_user(
     token: Optional[str],
     db: AsyncSession,
-) -> Optional[User]:
+) -> Tuple[Optional[Any], Optional[str]]:
     """
-    Decode the JWT, extract user_id, and fetch the User from the DB.
-    Returns None when the token is absent or invalid (no exception raised).
+    Decode the JWT and fetch the row from the table named by its ``user_type``.
+
+    Returns ``(user, user_type)``, or ``(None, None)`` when the token is absent,
+    malformed, carries an unknown user_type, or names a row that no longer
+    exists. No exception is raised — callers decide whether that is fatal.
     """
     if not token:
-        return None
+        return None, None
     try:
         payload = jwt.decode(
             token,
@@ -51,25 +67,37 @@ async def _decode_and_fetch_user(
             algorithms=[settings.ALGORITHM],
         )
         user_id_str: Optional[str] = payload.get("sub")
-        if user_id_str is None:
-            return None
+        user_type: Optional[str] = payload.get("user_type")
+        if user_id_str is None or user_type is None:
+            return None, None
         user_id = int(user_id_str)
     except (jwt.InvalidTokenError, ValueError):
-        return None
+        return None, None
 
-    result = await db.execute(select(User).filter(User.id == user_id))
+    model = USER_TYPE_MODELS.get(user_type)
+    if model is None:
+        logger.warning("Token presented an unrecognised user_type: %.20s", user_type)
+        return None, None
+
+    result = await db.execute(select(model).filter(model.id == user_id))
     user = result.scalars().first()
-    return user
+    if user is None:
+        return None, None
+    return user, user_type
 
 
 async def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
-) -> User:
+):
     """
-    Requires a valid JWT. Returns the authenticated User or raises 401.
+    Requires a valid JWT. Returns the authenticated user row or raises 401.
+
+    The returned object is one of AdminUser / PickerUser / SalesUser /
+    DashboardUser. Its ``user_type`` is attached as a transient attribute so
+    callers can branch without decoding the token again.
     """
-    user = await _decode_and_fetch_user(token, db)
+    user, user_type = await _decode_and_fetch_user(token, db)
     if user is None:
         logger.warning("Rejected unauthenticated request — no valid JWT presented")
         raise _CREDENTIALS_EXCEPTION
@@ -78,35 +106,87 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is inactive",
         )
+    user.user_type = user_type
     return user
 
 
 async def get_current_user_optional(
     token: Optional[str] = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
-) -> Optional[User]:
+):
     """
-    Attempts to decode the JWT. Returns the User if valid, None if absent/invalid.
+    Attempts to decode the JWT. Returns the user if valid, None if absent/invalid.
     Use for endpoints accessible by both authenticated and anonymous clients.
     """
     if not token:
         return None
-    user = await _decode_and_fetch_user(token, db)
-    if user and not user.is_active:
+    user, user_type = await _decode_and_fetch_user(token, db)
+    if user is None or not user.is_active:
         return None
+    user.user_type = user_type
     return user
 
 
 async def get_current_admin(
-    current_user: User = Depends(get_current_user),
-) -> User:
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> AdminUser:
     """
-    Requires a valid JWT AND the user must have the 'admin' role.
-    Raises 403 for non-admin authenticated users.
+    Requires a valid JWT whose user_type is exactly 'admin'.
+
+    The check is on the token claim, not on a role column, so a picker or sales
+    token can never satisfy it regardless of what its row contains.
     """
-    if current_user.role != "admin":
+    user, user_type = await _decode_and_fetch_user(token, db)
+    if user is None:
+        raise _CREDENTIALS_EXCEPTION
+    if user_type != USER_TYPE_ADMIN:
         logger.warning(
-            "Non-admin user %s attempted admin-only action", current_user.id
+            "Non-admin (%s id=%s) attempted an admin-only action", user_type, user.id
         )
         raise _FORBIDDEN_EXCEPTION
-    return current_user
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is inactive",
+        )
+    user.user_type = user_type
+    return user
+
+
+async def get_current_picker(
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> PickerUser:
+    """Requires a valid JWT whose user_type is exactly 'picker'."""
+    user, user_type = await _decode_and_fetch_user(token, db)
+    if user is None:
+        raise _CREDENTIALS_EXCEPTION
+    if user_type != USER_TYPE_PICKER:
+        raise _FORBIDDEN_EXCEPTION
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is inactive",
+        )
+    user.user_type = user_type
+    return user
+
+
+async def get_current_sales_user(
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> SalesUser:
+    """Requires a valid JWT whose user_type is exactly 'sales'."""
+    user, user_type = await _decode_and_fetch_user(token, db)
+    if user is None:
+        raise _CREDENTIALS_EXCEPTION
+    if user_type != USER_TYPE_SALES:
+        raise _FORBIDDEN_EXCEPTION
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is inactive",
+        )
+    user.user_type = user_type
+    return user

@@ -1,93 +1,31 @@
+"""
+Sales order upload router.
+
+Handles the PDF ingestion pipeline: a customer's order document is uploaded,
+parsed by ``pdf_parser``, and the extracted lines are later turned into a
+picklist by ``/picklists/generate/{order_id}``.
+"""
 import logging
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+import os
+import tempfile
+import uuid
+from typing import List
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from typing import List
-import tempfile, uuid, os, re
+
 from backend.config import settings
-from backend.constants import (
-    ALLOWED_PDF_MIME_TYPES,
-    BARCODE_ITEM_NUMBER_PREFIX,
-    DEFAULT_SKU_SIZE_CATEGORY,
-    DEFAULT_UNIT,
-    MAX_UPLOAD_SIZE_BYTES,
-)
+from backend.constants import ALLOWED_PDF_MIME_TYPES, MAX_UPLOAD_SIZE_BYTES
 from backend.database import get_db
-from backend.models.order import SalesOrder
-from backend.models.catalogue import SalesItem
-from backend.schemas.order import SalesOrderOut
 from backend.dependencies import get_current_admin
+from backend.models.order import SalesOrder
+from backend.schemas.order import SalesOrderOut
 from backend.services.pdf_parser import parse_lpo_pdf
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/orders", tags=["orders"])
-
-
-def _clean_desc(desc: str) -> str:
-    desc = re.sub(r"\s+", " ", desc).strip()
-    desc = re.sub(r"^[\-:,./\\]+|[\-:,./\\]+$", "", desc).strip()
-    return desc or "Unknown Item"
-
-
-async def _sync_lpo_items_to_db(items: list, db: AsyncSession):
-    """
-    For each item parsed from an LPO, insert it into sales_items if the
-    barcode doesn't already exist. No hardcoded values — all data comes
-    directly from the LPO itself.
-    """
-    barcodes_with_data = [
-        i for i in items if i.get("barcode") and not i.get("has_missing_barcode")
-    ]
-    if not barcodes_with_data:
-        return
-
-    all_barcodes = [i["barcode"] for i in barcodes_with_data]
-    existing_res = await db.execute(
-        select(SalesItem.barcode).where(SalesItem.barcode.in_(all_barcodes))
-    )
-    existing_set = {row[0] for row in existing_res.fetchall()}
-
-    # Count existing items for sequential item numbers
-    count_res = await db.execute(select(SalesItem.item_number))
-    existing_numbers = {row[0] for row in count_res.fetchall()}
-    index = len(existing_numbers) + 1
-
-    new_rows = []
-    for item in barcodes_with_data:
-        bc = item["barcode"]
-        if bc in existing_set:
-            continue
-
-        item_number = f"BC-{bc}"
-        while item_number in existing_numbers:
-            item_number = f"BC-{bc}-{index}"
-            index += 1
-
-        new_rows.append({
-            "item_number": item_number,
-            "item_name": _clean_desc(item.get("description", "")),
-            "barcode": bc,
-            "unit": item.get("uom", DEFAULT_UNIT) or DEFAULT_UNIT,
-            "bin_location": None,
-            "standard_carton_quantity": 1,
-            "packaging_weight": 0.0,
-            "sku_size_category": DEFAULT_SKU_SIZE_CATEGORY,
-            "available_quantity": 0,
-        })
-        existing_set.add(bc)
-        existing_numbers.add(item_number)
-        index += 1
-
-    if new_rows:
-        stmt = pg_insert(SalesItem).values(new_rows).on_conflict_do_nothing(
-            index_elements=["barcode"]
-        )
-        await db.execute(stmt)
-        await db.commit()
-
-    return len(new_rows)
 
 
 @router.get("", response_model=List[SalesOrderOut])

@@ -1,17 +1,21 @@
+"""
+Development bootstrap.
+
+Creates the schema directly from the models, bypassing Alembic. Use this only on
+a throwaway database — the application no longer creates tables at startup, and
+any environment you care about should be built with ``alembic upgrade head`` so
+its migration history is real.
+"""
 import asyncio
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.future import select
+from sqlalchemy.ext.asyncio import create_async_engine
 
-from backend.models import Base
-from backend.models.user import User
 from backend.config import settings
-from backend.services.auth_service import hash_password
+from backend.models import Base  # noqa: F401 — importing registers every model
 
 
 async def init_db():
@@ -20,7 +24,7 @@ async def init_db():
     except ValueError as e:
         print(e)
         return
-        
+
     engine = create_async_engine(db_url, echo=True)
 
     try:
@@ -28,11 +32,17 @@ async def init_db():
             await conn.run_sync(Base.metadata.create_all)
         print("All database tables created.")
     except Exception as err:
-        print(f"\n[Database Connection Error]: Could not connect to Supabase PostgreSQL database.\nDetails: {err}")
+        print(
+            "\n[Database Connection Error]: Could not connect to the PostgreSQL database."
+            f"\nDetails: {err}"
+        )
         return
 
-    print("\n[OK] Database schema initialization complete!")
-    print("👉 To securely create or update your Admin and Picker credentials without hardcoded passwords, run:\n   python seed.py")
+    print("\n[OK] Database schema initialisation complete.")
+    print(
+        "Next: create your first admin with\n"
+        "   python -m backend.scripts.seed_admin"
+    )
     await engine.dispose()
 
 
