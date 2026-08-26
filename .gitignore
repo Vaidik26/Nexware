@@ -150,5 +150,6 @@ response.json
 misc
 sales_app
 run_local.bat
+.claude
 # Local Netlify folder
 .netlify

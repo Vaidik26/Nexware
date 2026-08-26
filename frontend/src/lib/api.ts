@@ -49,8 +49,12 @@ export function handleMutationInvalidation(url?: string) {
     return;
   }
   if (url.includes('/catalogue')) clearApiCache('/catalogue');
+  // The four user route groups. Checked before the generic branches and, in the
+  // case of /dashboard-users, before '/sales' — '/dashboard-users' contains no
+  // '/sales', but keeping the user groups together makes the set obvious.
   else if (url.includes('/pickers')) clearApiCache('/pickers');
   else if (url.includes('/admins')) clearApiCache('/admins');
+  else if (url.includes('/dashboard-users')) clearApiCache('/dashboard-users');
   else if (url.includes('/sales')) clearApiCache('/sales');
   else if (url.includes('/lpos')) clearApiCache('/lpos');
   else if (url.includes('/picklists') || url.includes('/orders')) {

@@ -156,7 +156,10 @@ export default function Sidebar() {
                       <GroupIcon className="w-4 h-4 opacity-70" />
                       <span>{group.label}</span>
                     </div>
-                    {group.items.length > 1 && (
+                    {/* Any group with children collapses — a single-item group
+                        (Administration, Dashboards) is still a group and needs
+                        the same affordance as the rest. */}
+                    {group.items.length > 0 && (
                       <ChevronDown className={cn("w-4 h-4 transition-transform", isExpanded ? "rotate-180" : "")} />
                     )}
                   </button>
