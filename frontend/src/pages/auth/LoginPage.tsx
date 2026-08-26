@@ -50,7 +50,7 @@ export default function LoginPage() {
           name: user.full_name || user.email,
           full_name: user.full_name,
           email: user.email,
-          role: user.role,
+          user_type: user.user_type,
         },
         token
       );

@@ -95,7 +95,7 @@ export default function OrderUpload() {
         const qty = isMissingQty ? 1 : rawQty;
         
         const catalogueMatch = !isMissingBarcode ? currentCatalogue.find(
-          (c) => cleanBc(c.barcode) === extractedBarcode || cleanBc(c.item_number) === extractedBarcode || (itm.description && cleanBc(c.item_name).toLowerCase() === cleanBc(itm.description).toLowerCase())
+          (c) => cleanBc(c.barcode) === extractedBarcode || cleanBc(c.product_code) === extractedBarcode || (itm.description && cleanBc(c.name).toLowerCase() === cleanBc(itm.description).toLowerCase())
         ) : null;
 
         if (isMissingBarcode) {
@@ -125,8 +125,8 @@ export default function OrderUpload() {
           combinedItems.push({
             si: index + 1,
             barcode: catalogueMatch.barcode || extractedBarcode,
-            itemNumber: catalogueMatch.item_number || `SKU-${index + 1}`,
-            itemName: catalogueMatch.item_name || catalogueMatch.name || itm.description || 'Verified Catalogue SKU',
+            itemNumber: catalogueMatch.product_code || `SKU-${index + 1}`,
+            itemName: catalogueMatch.name || itm.description || 'Verified Catalogue SKU',
             quantity: 1,
             inCatalogue: false,
             exceptionReason: 'Barcode Present with No Quantity (Client listed item code, but quantity field is blank or non-numeric — defaulted to 1.0 & flagged for review)',
@@ -136,8 +136,8 @@ export default function OrderUpload() {
           combinedItems.push({
             si: index + 1,
             barcode: catalogueMatch.barcode || extractedBarcode,
-            itemNumber: catalogueMatch.item_number || `SKU-${index + 1}`,
-            itemName: catalogueMatch.item_name || catalogueMatch.name || itm.description || 'Verified Catalogue SKU',
+            itemNumber: catalogueMatch.product_code || `SKU-${index + 1}`,
+            itemName: catalogueMatch.name || itm.description || 'Verified Catalogue SKU',
             quantity: qty,
             inCatalogue: true,
           });

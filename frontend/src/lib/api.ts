@@ -49,7 +49,9 @@ export function handleMutationInvalidation(url?: string) {
     return;
   }
   if (url.includes('/catalogue')) clearApiCache('/catalogue');
-  else if (url.includes('/users')) clearApiCache('/users');
+  else if (url.includes('/pickers')) clearApiCache('/pickers');
+  else if (url.includes('/admins')) clearApiCache('/admins');
+  else if (url.includes('/sales')) clearApiCache('/sales');
   else if (url.includes('/lpos')) clearApiCache('/lpos');
   else if (url.includes('/picklists') || url.includes('/orders')) {
     clearApiCache('/picklists');
@@ -63,8 +65,8 @@ export function handleMutationInvalidation(url?: string) {
 export async function preloadAllMasterData() {
   const endpoints = [
     '/catalogue',
-    '/users',
-    '/users?role=picker',
+    '/pickers',
+    '/admins',
     '/picklists',
     '/market/materials',
     '/market/prices/trend?range=7d',

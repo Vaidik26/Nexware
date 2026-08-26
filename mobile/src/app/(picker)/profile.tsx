@@ -16,7 +16,7 @@ export default function ProfileScreen() {
  const handleToggleOnline = async (val: boolean) => {
   try {
    setIsUpdatingStatus(true);
-   await api.patch(`/users/me/status?is_available=${val}`);
+   await api.patch(`/pickers/me/status?is_available=${val}`);
    const updatedPicker = { ...picker!, isAvailable: val, is_available: val } as any;
    setPicker(updatedPicker);
    await setPickerInfo(JSON.stringify(updatedPicker));

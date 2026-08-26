@@ -75,14 +75,15 @@ export default function PickLists() {
       }
       const [plRes, usersRes] = await Promise.all([
         api.get('/picklists').catch(() => ({ data: [] })),
-        api.get('/users').catch(() => ({ data: [] })),
+        api.get('/pickers').catch(() => ({ data: [] })),
       ]);
       const plData = plRes.data || [];
       setPickLists(plData);
       setCachedData('consolidated_picklists', plData);
 
       const allUsers = usersRes.data || [];
-      setPickers(allUsers.filter((u: any) => u.role === 'picker' || u.role === 'admin'));
+      // /pickers only ever returns pickers, so no client-side role filter is needed.
+      setPickers(allUsers);
     } catch (err: any) {
       if (!quiet) toast.error(getErrorMessage(err, 'Failed to connect to active picklist queue'));
     } finally {
@@ -581,7 +582,7 @@ export default function PickLists() {
                         {picker.is_available ? 'Online' : 'Offline'}
                       </span>
                     </div>
-                    <div className="text-xs text-on-surface-variant font-semibold capitalize mt-0.5">{picker.role} Account — Ready for assignment</div>
+                    <div className="text-xs text-on-surface-variant font-semibold capitalize mt-0.5">{picker.user_type} Account — Ready for assignment</div>
                   </div>
                 </div>
                 <span className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-colors ${
@@ -636,7 +637,7 @@ export default function PickLists() {
                         {picker.is_available ? 'Online' : 'Offline'}
                       </span>
                     </div>
-                    <div className="text-xs text-on-surface-variant font-semibold capitalize mt-0.5">{picker.role} Account — Ready for assignment</div>
+                    <div className="text-xs text-on-surface-variant font-semibold capitalize mt-0.5">{picker.user_type} Account — Ready for assignment</div>
                   </div>
                 </div>
                 <span className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-colors ${

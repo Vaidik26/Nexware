@@ -187,7 +187,7 @@ export default function LpoOrderDetailsScreen() {
   setCart([...cart, { 
    id: selectedItemForQuantity.id, 
    barcode: selectedItemForQuantity.primary_barcode || '', 
-   product_name: selectedItemForQuantity.item_name, 
+   product_name: selectedItemForQuantity.name, 
    quantity: qty, 
    max_order_quantity: selectedItemForQuantity.max_order_quantity, 
    unit: 'PCS' 
@@ -376,7 +376,7 @@ export default function LpoOrderDetailsScreen() {
 
  const filteredCatalogue = catalogue.filter(c => 
   !cart.some(cartItem => cartItem.barcode === c.primary_barcode) &&
-  (c.item_name.toLowerCase().includes(search.toLowerCase()) || 
+  (c.name.toLowerCase().includes(search.toLowerCase()) || 
   (c.primary_barcode || '').toLowerCase().includes(search.toLowerCase()))
  );
 
@@ -594,7 +594,7 @@ export default function LpoOrderDetailsScreen() {
         onPress={() => handleSelectFromCatalogue(item)}
        >
         <View className="flex-1 pr-4">
-         <Text className="font-bold text-gray-800 text-base mb-1">{item.item_name}</Text>
+         <Text className="font-bold text-gray-800 text-base mb-1">{item.name}</Text>
          <Text className="text-xs text-gray-500 font-semibold">{item.primary_barcode}</Text>
         </View>
        </TouchableOpacity>
@@ -627,7 +627,7 @@ export default function LpoOrderDetailsScreen() {
      <View className="bg-white rounded-3xl p-6 w-full max-w-sm">
       <Text className="text-xl font-black text-gray-800 text-center mb-2">Enter Quantity</Text>
       <Text className="text-sm text-gray-500 text-center mb-6" numberOfLines={2}>
-       {selectedItemForQuantity?.item_name}
+       {selectedItemForQuantity?.name}
       </Text>
       
       <TextInput

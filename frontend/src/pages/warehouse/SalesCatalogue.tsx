@@ -14,8 +14,8 @@ import { getErrorMessage, getCachedData, setCachedData } from '@/lib/utils';
 import api from '@/lib/api';
 
 const itemSchema = z.object({
-  item_number: z.string().min(1, 'Item number is required'),
-  item_name: z.string().min(1, 'Item name is required'),
+  product_code: z.string().min(1, 'Item number is required'),
+  name: z.string().min(1, 'Item name is required'),
   primary_barcode: z.string().min(1, 'Primary barcode is required'),
   secondary_barcode: z.string().optional(),
   bin_location: z.string().optional(),
@@ -79,16 +79,16 @@ export default function SalesCatalogue() {
   }, []);
 
   const filteredItems = items.filter(item => 
-    (item.item_name || item.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (item.item_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (item.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (item.product_code || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (item.primary_barcode || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (item.secondary_barcode || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const openEditModal = (item: any) => {
     setEditingItem(item);
-    setValue('item_number', item.item_number);
-    setValue('item_name', item.item_name || item.name || '');
+    setValue('product_code', item.product_code);
+    setValue('name', item.name || '');
     setValue('primary_barcode', item.primary_barcode || '');
     setValue('secondary_barcode', item.secondary_barcode || '');
     setValue('bin_location', item.bin_location || '');
@@ -103,7 +103,7 @@ export default function SalesCatalogue() {
     setIsAddModalOpen(false);
     setIsEditModalOpen(false);
     setEditingItem(null);
-    reset({ standard_carton_quantity: 1, packaging_weight: 0, sku_size_category: '>100g', max_order_quantity: 0, item_name: '', item_number: '', primary_barcode: '', secondary_barcode: '', bin_location: '' });
+    reset({ standard_carton_quantity: 1, packaging_weight: 0, sku_size_category: '>100g', max_order_quantity: 0, name: '', product_code: '', primary_barcode: '', secondary_barcode: '', bin_location: '' });
     resetCarton();
   };
 
@@ -111,8 +111,8 @@ export default function SalesCatalogue() {
     try {
       setIsSubmitting(true);
       const payload = {
-        item_number: data.item_number,
-        item_name: data.item_name,
+        product_code: data.product_code,
+        name: data.name,
         primary_barcode: data.primary_barcode,
         secondary_barcode: data.secondary_barcode,
         unit: editingItem?.unit || 'PCS',
@@ -165,7 +165,7 @@ export default function SalesCatalogue() {
     }
     const headers = ['Item Number,Item Name,Barcode\n'];
     const rows = items.map(
-      (item) => `"${item.item_number}","${(item.item_name || item.name || '').replace(/"/g, '""')}","${item.barcode}"`
+      (item) => `"${item.product_code}","${(item.name || '').replace(/"/g, '""')}","${item.barcode}"`
     );
     const csvContent = 'data:text/csv;charset=utf-8,' + headers.concat(rows.join('\n'));
     const encodedUri = encodeURI(csvContent);
@@ -204,8 +204,8 @@ export default function SalesCatalogue() {
   };
 
   const columns = [
-    { header: 'Item Number / SKU', accessor: 'item_number' as const, className: 'font-semibold text-primary' },
-    { header: 'Item Name / Product', accessor: (r: any) => r.item_name || r.name || '-' },
+    { header: 'Item Number / SKU', accessor: 'product_code' as const, className: 'font-semibold text-primary' },
+    { header: 'Item Name / Product', accessor: (r: any) => r.name || '-' },
     { header: 'Primary Barcode', accessor: 'primary_barcode' as const, className: 'font-mono text-xs font-semibold bg-slate-100 px-2 py-1 rounded w-fit' },
     { header: 'Secondary Barcode', accessor: (r: any) => r.secondary_barcode ? <span className="font-mono text-xs font-semibold bg-slate-100 px-2 py-1 rounded">{r.secondary_barcode}</span> : '-' },
     { header: 'Bin Location', accessor: (r: any) => r.bin_location || '-' },
@@ -316,8 +316,8 @@ export default function SalesCatalogue() {
       <Modal isOpen={isAddModalOpen || isEditModalOpen} onClose={closeModals} title={activeTab === 'items' ? (isEditModalOpen ? "Edit Item" : "Register Item") : "Register Carton Type"}>
         {activeTab === 'items' ? (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <Input label="Item Number / SKU Code" placeholder="e.g. ITM-1001" {...register('item_number')} error={errors.item_number?.message} />
-            <Input label="Item Name / Title" placeholder="e.g. Premium Steel Wire" {...register('item_name')} error={errors.item_name?.message} />
+            <Input label="Item Number / SKU Code" placeholder="e.g. ITM-1001" {...register('product_code')} error={errors.product_code?.message} />
+            <Input label="Item Name / Title" placeholder="e.g. Premium Steel Wire" {...register('name')} error={errors.name?.message} />
             
             <div className="grid grid-cols-2 gap-4">
               <Input label="Primary Barcode" placeholder="e.g. 629400..." {...register('primary_barcode')} error={errors.primary_barcode?.message} />

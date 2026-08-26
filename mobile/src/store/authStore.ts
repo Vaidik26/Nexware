@@ -6,7 +6,7 @@ export interface PickerInfo {
  name?: string;
  full_name?: string;
  email: string;
- role: string;
+ user_type: string;
  initials?: string;
  isAvailable?: boolean;
 }

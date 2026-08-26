@@ -43,7 +43,7 @@ export default function Header() {
         <div className="flex items-center gap-3 pl-4 border-l border-outline-variant">
           <div className="flex flex-col items-end">
             <span className="text-sm font-medium text-on-surface">{user?.email || 'Admin User'}</span>
-            <span className="text-xs text-on-surface-variant uppercase font-semibold">{user?.role || 'Manager'}</span>
+            <span className="text-xs text-on-surface-variant uppercase font-semibold">{user?.user_type || 'Manager'}</span>
           </div>
           <div className="w-9 h-9 bg-primary-container rounded-full flex items-center justify-center text-white font-semibold">
             <User className="w-5 h-5" />
