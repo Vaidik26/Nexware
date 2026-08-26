@@ -201,7 +201,7 @@ async def process_lpo_auto_assign(db: AsyncSession, lpo: Lpo, background_tasks: 
     lpo.status = "processed"
     await db.flush()
     
-    from backend.websockets import manager
+    from backend.ws_manager import manager
     await manager.broadcast({
         "event": "PICKLIST_ASSIGNED",
         "picker_id": picker.id,
@@ -251,7 +251,7 @@ async def create_lpo(
     lpo_obj = result.scalar_one()
     logger.info("LPO created: lpo_number=%s status=%s source=%s", lpo_number, initial_status, source)
     
-    from backend.websockets import manager
+    from backend.ws_manager import manager
     await manager.broadcast({
         "event": "ORDER_CREATED",
         "lpo_id": lpo_obj.id,
@@ -576,7 +576,7 @@ async def approve_lpo(
         picker.full_name if picker else "unassigned",
     )
     
-    from backend.websockets import manager
+    from backend.ws_manager import manager
     if picker:
         await manager.broadcast({
             "event": "PICKLIST_ASSIGNED",

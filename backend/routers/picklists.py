@@ -941,7 +941,7 @@ async def complete_picking(
             assignment.completed_at = now
         await db.commit()
 
-    from backend.websockets import manager
+    from backend.ws_manager import manager
     await manager.broadcast({
         "event": "READY_FOR_AUDIT",
         "picklist_id": pl.id,

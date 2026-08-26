@@ -149,3 +149,6 @@ data
 response.json
 misc
 sales_app
+run_local.bat
+# Local Netlify folder
+.netlify

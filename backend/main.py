@@ -144,7 +144,7 @@ def root():
 def health():
     return {"status": "ok"}
 
-from backend.websockets import manager
+from backend.ws_manager import manager
 from fastapi import WebSocket, WebSocketDisconnect
 
 @app.websocket("/ws/notifications")
