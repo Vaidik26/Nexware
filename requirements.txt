@@ -1,3 +1,1 @@
-# This file intentionally has no packages listed.
-# All Python dependencies are managed in backend/requirements.txt.
-# To install: pip install -r backend/requirements.txt
+-r backend/requirements.txt
