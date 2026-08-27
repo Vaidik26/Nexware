@@ -142,38 +142,38 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
       </div>
 
       {/* Table: Tighter and cleaner without swiping left/right */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 w-full">
-        <table className="w-full text-left text-[13px] leading-tight">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 w-full overflow-hidden">
+        <table className="w-full text-left text-[13px] leading-tight whitespace-nowrap">
           <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
             <tr>
-              <th className="p-2 align-bottom border-b border-slate-200 w-1/4">
+              <th className="p-3 align-bottom border-b border-slate-200">
                 Raw material
                 <div className="text-[10px] text-slate-400 font-normal mt-0.5">as procurement names it, per market</div>
               </th>
-              <th className="p-2 text-right align-bottom border-b border-slate-200">
+              <th className="p-3 text-right align-bottom border-b border-slate-200">
                 MPPI target
                 <div className="text-[10px] text-slate-400 font-normal mt-0.5">OMR / kg</div>
               </th>
-              <th className="p-2 text-right align-bottom border-b border-slate-200">
+              <th className="p-3 text-right align-bottom border-b border-slate-200">
                 Last purchase
                 <div className="text-[10px] text-slate-400 font-normal mt-0.5">that row's market only</div>
               </th>
-              <th className="p-2 text-right align-bottom border-b border-slate-200">
+              <th className="p-3 text-right align-bottom border-b border-slate-200">
                 Benchmark
                 <div className="text-[10px] text-slate-400 font-normal mt-0.5">6-month average</div>
               </th>
-              <th className="p-2 text-right align-bottom border-b border-slate-200">
+              <th className="p-3 text-right align-bottom border-b border-slate-200">
                 Latest market price
                 <div className="text-[10px] text-slate-400 font-normal mt-0.5">OMR / kg, and its date</div>
               </th>
-              <th className="p-2 text-right align-bottom border-b border-slate-200">vs Target</th>
-              <th className="p-2 text-right align-bottom border-b border-slate-200">vs Last b...</th>
-              <th className="p-2 text-right align-bottom border-b border-slate-200">vs Bench.</th>
-              <th className="p-2 text-right align-bottom border-b border-slate-200">
+              <th className="p-3 text-right align-bottom border-b border-slate-200">vs Target</th>
+              <th className="p-3 text-right align-bottom border-b border-slate-200">vs Last buy</th>
+              <th className="p-3 text-right align-bottom border-b border-slate-200">vs Bench.</th>
+              <th className="p-3 text-right align-bottom border-b border-slate-200">
                 Stock cover
                 <div className="text-[10px] text-slate-400 font-normal mt-0.5">days on hand</div>
               </th>
-              <th className="p-2 text-left align-bottom border-b border-slate-200">Verdict</th>
+              <th className="p-3 text-left align-bottom border-b border-slate-200">Verdict</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -196,14 +196,14 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
 
               return (
                 <tr key={`${row.name}-${row.m}-${i}`} className={clsx("transition-colors", i % 2 === 0 ? "bg-white" : "bg-slate-50/30", "hover:bg-slate-100/80")}>
-                  <td className="p-2 font-medium text-slate-900 break-words">
+                  <td className="px-3 py-2.5 font-medium text-slate-900 break-words">
                     {row.name}
                     {market === 'ALL' && <span className="ml-1.5 text-[10px] text-slate-500 border border-slate-200 bg-white px-1 py-0.5 rounded shadow-sm">{row.m === 'INT' ? (inco === 'CIF' ? 'Intl CIF' : 'Intl FOB') : (row.m === 'DUBAI' ? 'Dubai' : 'Oman')}</span>}
                   </td>
-                  <td className="p-2 text-right tabular-nums font-bold text-slate-900">
+                  <td className="px-3 py-2.5 text-right tabular-nums font-bold text-slate-900">
                     {row.target != null ? n3(row.target) : <span className="text-slate-300">-</span>}
                   </td>
-                  <td className="p-2 text-right tabular-nums text-slate-600">
+                  <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">
                     {row.pl != null ? (
                       <div className="flex items-center justify-end gap-1.5">
                         <span className="font-medium">{n3(row.pl.price)}</span>
@@ -211,10 +211,10 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
                       </div>
                     ) : <span className="text-slate-400 text-xs italic">- none in {row.m}</span>}
                   </td>
-                  <td className="p-2 text-right tabular-nums text-slate-600">
+                  <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">
                     {row.bench != null ? n3(row.bench) : <span className="text-slate-300">-</span>}
                   </td>
-                  <td className="p-2 text-right tabular-nums text-slate-900 font-medium bg-slate-50/50">
+                  <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 font-medium bg-slate-50/50">
                     {row.px != null ? (
                       <div className="flex items-center justify-end gap-1.5">
                         <span className="font-bold">{n3(row.px)}</span>
@@ -222,16 +222,16 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
                       </div>
                     ) : <span className="text-slate-300">-</span>}
                   </td>
-                  <td className={clsx("p-2 text-right tabular-nums", pctColor(row.vT))}>
+                  <td className={clsx("px-3 py-2.5 text-right tabular-nums", pctColor(row.vT))}>
                     {row.vT != null ? (row.vT > 0 ? '+' : '') + pc(row.vT) : '-'}
                   </td>
-                  <td className={clsx("p-2 text-right tabular-nums", pctColor(row.vP))}>
+                  <td className={clsx("px-3 py-2.5 text-right tabular-nums", pctColor(row.vP))}>
                     {row.vP != null ? (row.vP > 0 ? '+' : '') + pc(row.vP) : '-'}
                   </td>
-                  <td className={clsx("p-2 text-right tabular-nums", pctColor(row.vB))}>
+                  <td className={clsx("px-3 py-2.5 text-right tabular-nums", pctColor(row.vB))}>
                     {row.vB != null ? (row.vB > 0 ? '+' : '') + pc(row.vB) : '-'}
                   </td>
-                  <td className="p-2 text-right tabular-nums text-slate-600">
+                  <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">
                     {row.st.days != null ? (
                       <div className="flex items-center justify-end gap-1">
                         <span className="font-bold text-emerald-700">{row.st.days} d</span>
@@ -239,7 +239,7 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
                       </div>
                     ) : '-'}
                   </td>
-                  <td className="p-2 text-left">
+                  <td className="px-3 py-2.5 text-left">
                     <span className={clsx("px-1.5 py-0.5 rounded text-[11px] font-bold border inline-flex items-center gap-1", vColor)}>
                       <span className="text-[10px] opacity-70">{row.verdict.t === 'Buy' ? '◆' : (row.verdict.t === 'Hold' ? '▲' : (row.verdict.t === 'Bridge buy' ? '▲' : '-'))}</span>
                       {row.verdict.t}

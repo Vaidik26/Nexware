@@ -60,7 +60,7 @@ export default function ProcurementDashboard() {
   }
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500">
+    <div className="space-y-6 w-full animate-in fade-in duration-500">
       <div className="flex flex-col gap-4 md:flex-row md:items-end justify-between">
         <div>
           <div className="flex items-center gap-3">
