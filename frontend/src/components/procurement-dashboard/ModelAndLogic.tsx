@@ -20,7 +20,7 @@ export default function ModelAndLogic({ data, settings }: { data: any, settings:
         </h3>
         <p>The MPPI target is the <b>Maximum Procurement Price Index</b> - the highest price the business can pay for a raw material while still making a 15% margin on the finished pack.</p>
         <p>It is computed by walking the costing sheet backwards. For every in-scope SKU made from that material, the margin is removed from the selling price, and the known costs of all other inputs (packing material, labour, overhead) are subtracted. The remainder is divided by the kilos of raw material in the pack. That is the ceiling for that pack. The lowest ceiling across all packs in a raw material's group is the <b>binding</b> target - the tightest constraint, which guarantees the margin on every pack if met.</p>
-        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 text-blue-900 rounded-r">
+        <div className="bg-primary/5 border-l-4 border-primary p-4 text-primary-900 rounded-r">
           The target is a <b>single number per raw material</b>. It comes from selling prices, so it does not move when you switch market or price point - only the references it is compared against do.
         </div>
       </div>

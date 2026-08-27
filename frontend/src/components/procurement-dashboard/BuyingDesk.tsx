@@ -122,7 +122,7 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
               <button 
                 key={m}
                 onClick={() => setFilter('market', m)}
-                className={clsx("px-4 py-1.5 text-sm font-medium transition-colors border-r border-slate-200 last:border-0", market === m ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}
+                className={clsx("px-4 py-1.5 text-sm font-medium transition-colors border-r border-slate-200 last:border-0", market === m ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}
               >
                 {m === 'INT' ? 'International' : (m === 'OMAN' ? 'Oman - local' : (m === 'ALL' ? 'All markets' : 'Dubai'))}
               </button>
@@ -135,8 +135,8 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
           <span className="text-xs font-bold text-slate-400 bg-slate-100 rounded-full w-5 h-5 flex items-center justify-center">2</span>
           <span className="text-sm font-semibold text-slate-600 mr-2">Price point</span>
           <div className="flex border border-slate-300 rounded overflow-hidden">
-            <button onClick={() => setFilter('inco', 'CIF')} className={clsx("px-4 py-1.5 text-sm font-medium transition-colors border-r border-slate-200", inco === 'CIF' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}>CIF</button>
-            <button onClick={() => setFilter('inco', 'FOB')} className={clsx("px-4 py-1.5 text-sm font-medium transition-colors", inco === 'FOB' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}>FOB</button>
+            <button onClick={() => setFilter('inco', 'CIF')} className={clsx("px-4 py-1.5 text-sm font-medium transition-colors border-r border-slate-200", inco === 'CIF' ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}>CIF</button>
+            <button onClick={() => setFilter('inco', 'FOB')} className={clsx("px-4 py-1.5 text-sm font-medium transition-colors", inco === 'FOB' ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}>FOB</button>
           </div>
         </div>
       </div>
@@ -195,7 +195,7 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
               };
 
               return (
-                <tr key={`${row.name}-${row.m}-${i}`} className={clsx("transition-colors", i % 2 === 0 ? "bg-white" : "bg-slate-50/30", "hover:bg-blue-50/50")}>
+                <tr key={`${row.name}-${row.m}-${i}`} className={clsx("transition-colors", i % 2 === 0 ? "bg-white" : "bg-slate-50/30", "hover:bg-slate-100/80")}>
                   <td className="p-2 font-medium text-slate-900 break-words">
                     {row.name}
                     {market === 'ALL' && <span className="ml-1.5 text-[10px] text-slate-500 border border-slate-200 bg-white px-1 py-0.5 rounded shadow-sm">{row.m === 'INT' ? (inco === 'CIF' ? 'Intl CIF' : 'Intl FOB') : (row.m === 'DUBAI' ? 'Dubai' : 'Oman')}</span>}

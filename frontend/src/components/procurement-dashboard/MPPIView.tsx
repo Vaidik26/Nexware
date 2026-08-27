@@ -321,10 +321,10 @@ export default function MPPIView({ data, settings, setSettings, onJumpToDesk }: 
                         const bind = p != null && g.bind === sk.name;
 
                         return (
-                          <tr key={sk.name} className={clsx("hover:bg-white transition-colors", bind && "bg-blue-50/30")}>
+                          <tr key={sk.name} className={clsx("hover:bg-white transition-colors", bind && "bg-slate-100/50")}>
                             <td className="py-2.5 flex items-center gap-2">
                               <span className="font-medium text-slate-700">{sk.name}</span>
-                              {bind && <span className="text-[9px] uppercase tracking-wider font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">binding</span>}
+                              {bind && <span className="text-[9px] uppercase tracking-wider font-bold bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">binding</span>}
                               {!inScope(sk) && <span className="text-[9px] uppercase tracking-wider font-bold bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">out of scope</span>}
                             </td>
                             <td className="py-2.5 text-right tabular-nums text-slate-600">{n3(sk.q)}</td>
@@ -338,11 +338,11 @@ export default function MPPIView({ data, settings, setSettings, onJumpToDesk }: 
                                     min="0" max="40" step="0.5"
                                     value={Math.min(40, m * 100).toFixed(1)}
                                     onChange={(e) => setSkuM(r.name, sk.name, e.target.value)}
-                                    className="w-24 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                    className="w-24 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary"
                                     disabled={settings.globalOn}
                                   />
                                   <div className="flex items-center gap-1 w-16 justify-end">
-                                    <span className={clsx("font-bold text-xs", ov != null ? 'text-blue-600' : 'text-slate-600')}>
+                                    <span className={clsx("font-bold text-xs", ov != null ? 'text-primary' : 'text-slate-600')}>
                                       {(m * 100).toFixed(1)}%
                                     </span>
                                     {ov != null && (
