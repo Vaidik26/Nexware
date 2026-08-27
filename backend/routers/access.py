@@ -20,12 +20,11 @@ from backend.constants import (
     ALL_AREAS,
     CHANNEL_LABELS,
     ROLE_DEFAULT_AREAS,
-    ROLE_DEFAULT_MODULES,
+    ROLE_MODULES,
     ROLE_LABELS,
     DashboardRole,
     PortalModule,
 )
-from backend.constants import PortalModule
 from backend.dependencies import get_current_user, require_module
 from backend.schemas.access import (
     AccessCatalogOut,
@@ -61,13 +60,6 @@ async def read_access_catalog(_=Depends(get_current_user)):
     """
     The roles, modules and channels this build enforces, with each role's
     defaults so the admin screen can show what a role grants before it is saved.
-
-    The nine supervisor areas are NOT here. They come from the customer master
-    (``/sales-app/area_customers.json``), along with the per-channel customer
-    counts the area picker needs to avoid offering a pair that reaches nobody —
-    and that file is regenerated whenever the master changes. Serving a second,
-    staler copy of the list from here is how a picker and the data it filters on
-    drift apart.
     """
     return AccessCatalogOut(
         modules=list(PortalModule),
@@ -78,7 +70,7 @@ async def read_access_catalog(_=Depends(get_current_user)):
             RoleDefaultsOut(
                 role=role,
                 label=ROLE_LABELS[role],
-                modules=list(ROLE_DEFAULT_MODULES[role]),
+                modules=list(ROLE_MODULES[role]),
                 areas=list(ROLE_DEFAULT_AREAS[role]),
             )
             for role in DashboardRole
