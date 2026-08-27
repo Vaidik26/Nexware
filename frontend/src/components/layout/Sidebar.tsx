@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/authStore';
+import { PortalModule, hasModule, ownsPortal } from '@/lib/access';
 import { toast } from '@/components/ui/Toast';
 import {
   BarChart3,
@@ -20,7 +21,25 @@ import {
   FileText,
 } from 'lucide-react';
 
-const groups = [
+/**
+ * `module` is the portal module an entry belongs to. An entry WITHOUT one is
+ * admin-only: it opens a screen that no module covers (warehouse, delivery,
+ * market intelligence, master data), and only the admin persona reaches those.
+ *
+ * These have to agree with the route guards in App.tsx — an entry offered here
+ * whose route refuses it is a link that leads to a denial, which is worse than
+ * no link at all.
+ */
+type NavItem = { name: string; path: string; icon: typeof Users; module?: PortalModule };
+type NavGroup = {
+  label: string;
+  icon: typeof BarChart3;
+  path?: string;
+  module?: PortalModule;
+  items: NavItem[];
+};
+
+const groups: NavGroup[] = [
   {
     label: 'Executive Summary',
     icon: BarChart3,
@@ -31,8 +50,8 @@ const groups = [
     label: 'Dashboards',
     icon: BarChart3,
     items: [
-      { name: 'Sales Dashboard', path: '/dashboard/sales', icon: TrendingUp },
-      { name: 'Procurement Dashboard', path: '/dashboard/procurement', icon: DollarSign },
+      { name: 'Sales Dashboard', path: '/dashboard/sales', icon: TrendingUp, module: 'SALES_DASH' },
+      { name: 'Procurement Dashboard', path: '/dashboard/procurement', icon: DollarSign, module: 'PROCUREMENT' },
     ],
   },
   {
@@ -73,19 +92,34 @@ const groups = [
     label: 'Administration',
     icon: Shield,
     items: [
-      { name: 'User Management', path: '/admin/users', icon: Users },
+      { name: 'User Management', path: '/admin/users', icon: Users, module: 'USER_ADMIN' },
     ],
   },
 ];
 
 export default function Sidebar() {
   const logout = useAuthStore((state) => state.logout);
+  const access = useAuthStore((state) => state.access);
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Keep only what this account can open, then drop any group left with nothing
+  // in it. An empty collapsible group is an invitation to click on a heading
+  // that expands to nothing.
+  const visibleGroups = useMemo(() => {
+    const canOpen = (module?: PortalModule) =>
+      module ? ownsPortal(access) || hasModule(access, module) : ownsPortal(access);
+
+    return groups
+      .map((group) =>
+        group.items.length === 0 ? group : { ...group, items: group.items.filter((i) => canOpen(i.module)) }
+      )
+      .filter((group) => (group.items.length === 0 ? canOpen(group.module) : group.items.length > 0));
+  }, [access]);
+
   // Find which group contains the current active route to expand it by default
-  const activeGroup = groups.find(g => g.items.some(i => location.pathname.startsWith(i.path)))?.label;
-  
+  const activeGroup = visibleGroups.find(g => g.items.some(i => location.pathname.startsWith(i.path)))?.label;
+
   // By default, open Dashboard, Master Data, Warehouse Ops, etc. 
   // Let's just open the active one and maybe Warehouse Ops by default.
   const [expandedGroups, setExpandedGroups] = useState<string[]>([
@@ -119,7 +153,13 @@ export default function Sidebar() {
       </div>
 
       <div className="flex-1 overflow-y-auto py-4 px-3 space-y-4">
-        {groups.map((group) => {
+        {visibleGroups.length === 0 && (
+          <p className="px-3 py-6 text-xs leading-relaxed text-white/60">
+            No modules are granted to this account, so there is nothing to open here. A user
+            administrator can change that from User Management.
+          </p>
+        )}
+        {visibleGroups.map((group) => {
           const GroupIcon = group.icon;
           const isExpanded = expandedGroups.includes(group.label);
           const hasActiveChild = group.items.length > 0 

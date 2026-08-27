@@ -9,6 +9,12 @@ import { ActionRestrictedModal } from '@/components/ui/ActionRestrictedModal';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { getErrorMessage } from '@/lib/utils';
 import { useAuthStore } from '@/store/authStore';
+import {
+  AccessGrantEditor,
+  AccessCatalog,
+  GrantDraft,
+} from '@/components/admin/AccessGrantEditor';
+import { ALL_AREAS, DashboardRole, channelFor, grantLabel } from '@/lib/access';
 import api from '@/lib/api';
 
 /**
@@ -43,6 +49,12 @@ type Persona = {
   nameKey: 'full_name' | 'display_name';
   /** Pickers alone carry a floor-availability flag. */
   hasAvailability?: boolean;
+  /**
+   * Dashboard viewers alone carry a role and per-user grants; the other three
+   * personas' access is implied by the table they live in. Only this persona
+   * gets the role/module/territory editor.
+   */
+  hasAccessGrants?: boolean;
   fields: FieldDef[];
   extraColumns?: { header: string; accessor: (row: any) => any }[];
 };
@@ -102,15 +114,20 @@ const PERSONAS: Persona[] = [
     label: 'Dashboard Viewers',
     endpoint: '/dashboard-users',
     icon: LineChart,
-    blurb: 'Read-only analytics access. No warehouse or admin permissions.',
+    blurb:
+      'Portal access is set per account: a role supplies the defaults, and an explicit grant of modules or territories replaces them for that user.',
     identifierKey: 'email',
     nameKey: 'full_name',
+    hasAccessGrants: true,
     fields: [
       { key: 'full_name', label: 'Full Name', placeholder: 'John Doe', required: true },
       { key: 'email', label: 'Email', type: 'email', placeholder: 'viewer@nexware.com', required: true },
     ],
   },
 ];
+
+/** A new account starts on SALES, whose default opens nothing. Fail closed. */
+const BLANK_GRANT: GrantDraft = { role: 'SALES', modules: [], areas: [], channel: null };
 
 const PASSWORD_FIELD: FieldDef = {
   key: 'password',
@@ -143,6 +160,18 @@ export default function UserManagement() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState<Record<string, string>>(blankForm(PERSONAS[0]));
+  const [grant, setGrant] = useState<GrantDraft>(BLANK_GRANT);
+  const [catalog, setCatalog] = useState<AccessCatalog | null>(null);
+
+  // The roles, modules and channels this build enforces. Read from the server
+  // rather than declared here so the pickers cannot offer a value the database
+  // would refuse.
+  useEffect(() => {
+    api
+      .get('/access/catalog')
+      .then((res) => setCatalog(res.data))
+      .catch(() => setCatalog(null));
+  }, []);
 
   const fetchRows = async (target: Persona) => {
     try {
@@ -181,6 +210,7 @@ export default function UserManagement() {
     setIsEditMode(false);
     setEditingId(null);
     setFormData(blankForm(persona));
+    setGrant(BLANK_GRANT);
     setIsModalOpen(true);
   };
 
@@ -190,6 +220,24 @@ export default function UserManagement() {
     const form: Record<string, string> = { password: '' };
     persona.fields.forEach((f) => (form[f.key] = row[f.key] ?? ''));
     setFormData(form);
+
+    // Re-open on what was EXPLICITLY granted, not on what the account resolves
+    // to. Seeding the ticks from the resolved answer would turn an inherited
+    // account into an explicitly-granted one the moment anybody saved a phone
+    // number — and it would then stop following its role.
+    if (persona.hasAccessGrants) {
+      const areas: string[] = row.explicit_areas ? row.areas ?? [] : [];
+      // The rows could disagree with each other if written by hand; the first
+      // one wins the selector, and saving unifies them. The API applies one
+      // channel to the whole save, which is what the picker offers.
+      const channel = areas.length ? channelFor(row, areas[0]) : null;
+      setGrant({
+        role: (row.role as DashboardRole) ?? 'SALES',
+        modules: row.explicit_modules ? row.modules ?? [] : [],
+        areas,
+        channel,
+      });
+    }
     setIsModalOpen(true);
   };
 
@@ -198,6 +246,7 @@ export default function UserManagement() {
     setIsEditMode(false);
     setEditingId(null);
     setFormData(blankForm(persona));
+    setGrant(BLANK_GRANT);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -224,6 +273,18 @@ export default function UserManagement() {
       if (value || f.required) payload[f.key] = value;
     });
     if (formData.password) payload.password = formData.password;
+
+    if (persona.hasAccessGrants) {
+      payload.role = grant.role;
+      // Always sent, including empty. An omitted list means "leave that half of
+      // the grant alone" to the API, which would make it impossible to take a
+      // module away or to put an account back on its role defaults — and this
+      // form shows the WHOLE grant, so what is on screen is what should be
+      // stored.
+      payload.modules = grant.modules;
+      payload.areas = grant.areas;
+      payload.channel = grant.channel;
+    }
 
     try {
       setIsSubmitting(true);
@@ -316,6 +377,51 @@ export default function UserManagement() {
       .forEach((f) =>
         base.push({ header: f.label, accessor: (r: any) => r[f.key] || '—' })
       );
+
+    // What each account EFFECTIVELY holds, and whether that came from its role
+    // or from a grant. Both matter: "SALES_DASH (role default)" and
+    // "SALES_DASH (granted)" are the same access and different rows to edit.
+    if (persona.hasAccessGrants) {
+      base.push({
+        header: 'Role',
+        accessor: (r: any) => (
+          <span className="rounded-full bg-surface-container px-2.5 py-1 text-xs font-bold text-on-surface">
+            {r.role ?? '—'}
+          </span>
+        ),
+      });
+      base.push({
+        header: 'Modules',
+        accessor: (r: any) => (
+          <div className="max-w-[220px] text-xs">
+            <span className="text-on-surface">
+              {r.modules?.length ? r.modules.join(', ') : 'opens nothing'}
+            </span>
+            {!r.explicit_modules && (
+              <em className="ml-1 text-on-surface-variant">(role default)</em>
+            )}
+          </div>
+        ),
+      });
+      base.push({
+        header: 'Supervisor area · channel',
+        accessor: (r: any) => {
+          const areas: string[] = r.areas ?? [];
+          return (
+            <div className="max-w-[280px] text-xs">
+              <span className="text-on-surface">
+                {areas.length
+                  ? areas
+                      .map((a) => (a === ALL_AREAS ? a : grantLabel(a, channelFor(r, a))))
+                      .join(', ')
+                  : 'reaches no customers'}
+              </span>
+              {!r.explicit_areas && <em className="ml-1 text-on-surface-variant">(role default)</em>}
+            </div>
+          );
+        },
+      });
+    }
 
     (persona.extraColumns || []).forEach((c) => base.push(c));
 
@@ -482,6 +588,22 @@ export default function UserManagement() {
               required={f.required}
             />
           ))}
+
+          {persona.hasAccessGrants && (
+            <AccessGrantEditor
+              catalog={catalog}
+              value={grant}
+              onChange={setGrant}
+              // Cosmetic; the backend refuses the write anyway. This just avoids
+              // inviting a refusal.
+              lockSelf={
+                isEditMode &&
+                currentUser?.user_type === 'dashboard' &&
+                String(editingId) === String(currentUser?.id ?? '')
+              }
+            />
+          )}
+
           <div className="flex justify-end space-x-3 pt-4">
             <Button type="button" variant="secondary" onClick={closeModal}>
               Cancel

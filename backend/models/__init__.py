@@ -9,6 +9,8 @@ from backend.database import Base
 from backend.models.users import (
     AdminUser,
     DashboardUser,
+    DashboardUserArea,
+    DashboardUserModule,
     PickerUser,
     SalesUser,
     USER_TYPE_MODELS,
@@ -32,6 +34,8 @@ __all__ = [
     "PickerUser",
     "SalesUser",
     "DashboardUser",
+    "DashboardUserModule",
+    "DashboardUserArea",
     "USER_TYPE_MODELS",
     "Product",
     "CartonType",

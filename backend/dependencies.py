@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from backend.config import settings
+from backend.constants import PortalModule
+from backend.core.access import EffectiveAccess
 from backend.database import get_db
 from backend.models.users import (
     USER_TYPE_ADMIN,
@@ -30,6 +32,7 @@ from backend.models.users import (
     PickerUser,
     SalesUser,
 )
+from backend.services.access_service import access_for
 
 logger = logging.getLogger(__name__)
 
@@ -190,3 +193,60 @@ async def get_current_sales_user(
         )
     user.user_type = user_type
     return user
+
+
+async def get_current_access(
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> EffectiveAccess:
+    """
+    Resolve the authenticated caller's portal access. Raises 401 without a token.
+
+    Returns the access only. An endpoint that also needs the row should depend
+    on :func:`require_module`, which returns the user with the resolved access
+    attached rather than making it resolve twice.
+    """
+    user = await get_current_user(token, db)
+    return access_for(user, user.user_type)
+
+
+def require_module(module: PortalModule):
+    """
+    Build a dependency that admits only callers holding ``module``.
+
+    The check is on the caller's RESOLVED access — role default or explicit
+    grant, whichever applies — never on a role name directly. A role is an input
+    to the rule, not the rule; comparing against one here would mean an explicit
+    grant that widens or narrows an account had no effect on this endpoint.
+
+    Admins pass unconditionally: they own the portal outright, which
+    :data:`~backend.core.access.PORTAL_OWNER` expresses. Pickers and sales reps
+    hold no portal module at all and are refused, whatever their mobile app lets
+    them do.
+
+    The returned user carries the resolved access on a transient ``access``
+    attribute, so an endpoint can scope its query without resolving it again.
+    """
+
+    async def _require(
+        token: Optional[str] = Depends(oauth2_scheme),
+        db: AsyncSession = Depends(get_db),
+    ):
+        user = await get_current_user(token, db)
+        access = access_for(user, user.user_type)
+        if not access.has_module(module):
+            logger.warning(
+                "Refused a %s action: user_type=%s id=%s role=%s",
+                module.value,
+                user.user_type,
+                user.id,
+                getattr(user, "role", None),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Your account does not have access to {module.value}.",
+            )
+        user.access = access
+        return user
+
+    return _require

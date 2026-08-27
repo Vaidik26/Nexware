@@ -11,9 +11,27 @@ The persona a token belongs to is carried in the JWT ``user_type`` claim — see
 ``USER_TYPE_*`` constants below; they are part of the token contract and must not
 be changed without invalidating every issued token.
 """
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.orm import relationship
 
+from backend.constants import ALL_AREAS, DashboardRole, PortalModule, SalesChannel
 from backend.database import Base
+
+#: SQL fragments for the CHECK constraints below, built from the enums so the
+#: database and the application cannot drift apart on what a legal value is.
+_ROLE_VALUES = ", ".join(f"'{r.value}'" for r in DashboardRole)
+_MODULE_VALUES = ", ".join(f"'{m.value}'" for m in PortalModule)
+_CHANNEL_VALUES = ", ".join(f"'{c.value}'" for c in SalesChannel)
 
 USER_TYPE_ADMIN = "admin"
 USER_TYPE_PICKER = "picker"
@@ -67,16 +85,126 @@ class SalesUser(Base):
 
 
 class DashboardUser(Base):
-    """Read-only analytics/dashboard viewer. Logs in with an email address."""
+    """
+    Portal analytics viewer. Logs in with an email address.
+
+    Unlike the other three personas, what this account can do is not implied by
+    the table it lives in: ``role`` names its base permissions and the two grant
+    tables below may override them per user. ``backend.core.access`` turns the
+    three into one answer — nothing else should combine them.
+    """
 
     __tablename__ = "dashboard_users"
+    __table_args__ = (
+        CheckConstraint(f"role IN ({_ROLE_VALUES})", name="ck_dashboard_users_role"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     full_name = Column(String, nullable=False)
     hashed_password = Column(String, nullable=False)
+    # The fail-closed role is the default at both layers: a row inserted outside
+    # the API gets the role that opens nothing, never one that opens everything.
+    role = Column(
+        String,
+        nullable=False,
+        default=DashboardRole.SALES.value,
+        server_default=DashboardRole.SALES.value,
+    )
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # selectin, not lazy loading: every request that authenticates a dashboard
+    # user needs the grants to resolve its access, and a lazy attribute access
+    # inside an async session raises MissingGreenlet rather than emitting SQL.
+    module_grants = relationship(
+        "DashboardUserModule",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    area_grants = relationship(
+        "DashboardUserArea",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class DashboardUserModule(Base):
+    """
+    One EXPLICIT module grant, overriding the account's role default.
+
+    Zero rows for a user is not "no modules" — it is "inherit the role". That is
+    why clearing a grant deletes the rows instead of writing an empty marker,
+    and why there is no ``is_explicit`` flag: the row count is the flag.
+    """
+
+    __tablename__ = "dashboard_user_modules"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "module", name="uq_dashboard_user_modules_user_module"
+        ),
+        CheckConstraint(
+            f"module IN ({_MODULE_VALUES})", name="ck_dashboard_user_modules_module"
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("dashboard_users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    module = Column(String, nullable=False)
+
+    user = relationship("DashboardUser", back_populates="module_grants")
+
+
+class DashboardUserArea(Base):
+    """
+    One EXPLICIT territory grant: a supervisor area, optionally narrowed to a
+    single sales channel.
+
+    ``channel`` NULL means both books, which is what a grant meant before the
+    column existed — so an area granted without one keeps the widest reading it
+    has always had, rather than silently becoming half of itself.
+
+    ``area`` is stored verbatim. It is matched character-for-character against
+    the customer master's supervisor area, so nothing normalises it here: the
+    two spellings ``CAPITAL`` and ``CAPITAL 1`` are two different territories.
+    """
+
+    __tablename__ = "dashboard_user_areas"
+    __table_args__ = (
+        UniqueConstraint("user_id", "area", name="uq_dashboard_user_areas_user_area"),
+        CheckConstraint(
+            f"channel IS NULL OR channel IN ({_CHANNEL_VALUES})",
+            name="ck_dashboard_user_areas_channel",
+        ),
+        # ALL already means every area of both books; pairing it with a channel
+        # would be a third, undefined thing. Refused rather than reinterpreted.
+        CheckConstraint(
+            f"area <> '{ALL_AREAS}' OR channel IS NULL",
+            name="ck_dashboard_user_areas_all_has_no_channel",
+        ),
+        CheckConstraint(
+            "length(btrim(area)) > 0", name="ck_dashboard_user_areas_area_not_blank"
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("dashboard_users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    area = Column(String, nullable=False)
+    channel = Column(String, nullable=True)
+
+    user = relationship("DashboardUser", back_populates="area_grants")
 
 
 #: Maps a JWT ``user_type`` claim to its model. Used by the auth dependencies to

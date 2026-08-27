@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/store/authStore';
+import { landingPath } from '@/lib/access';
 import { toast } from '@/components/ui/Toast';
 import api from '@/lib/api';
 import { ShieldCheck, Box, TrendingUp, ArrowRight, Lock, User, Eye, EyeOff } from 'lucide-react';
@@ -43,7 +44,7 @@ export default function LoginPage() {
         password: data.password,
       });
       
-      const { token, user } = res.data;
+      const { token, user, access } = res.data;
       login(
         {
           id: user.id,
@@ -52,11 +53,15 @@ export default function LoginPage() {
           email: user.email,
           user_type: user.user_type,
         },
-        token
+        token,
+        access
       );
-      
+
       toast.success('Welcome back to NexWare Enterprise');
-      navigate('/dashboard');
+      // Land on the first screen this account can actually open. Sending
+      // everybody to /dashboard would drop a sales viewer straight onto the one
+      // screen they are not entitled to and make a working login look broken.
+      navigate(landingPath(access) ?? '/no-access', { replace: true });
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Invalid email or password');
     } finally {

@@ -31,7 +31,9 @@ from backend.models.users import (
     PickerUser,
     SalesUser,
 )
+from backend.schemas.access import EffectiveAccessOut
 from backend.schemas.auth import AnyUserOut, LoginRequest, Token
+from backend.services.access_service import access_for
 from backend.services.auth_service import verify_password
 
 logger = logging.getLogger(__name__)
@@ -122,7 +124,13 @@ async def login(login_data: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     token = _create_access_token(user.id, user_type)
     user.user_type = user_type
-    logger.info("User logged in: id=%s user_type=%s", user.id, user_type)
+    access = access_for(user, user_type)
+    logger.info(
+        "User logged in: id=%s user_type=%s modules=%s",
+        user.id,
+        user_type,
+        [m.value for m in access.modules],
+    )
 
     return {
         "token": token,
@@ -130,6 +138,9 @@ async def login(login_data: LoginRequest, db: AsyncSession = Depends(get_db)):
         "token_type": "bearer",
         "user_type": user_type,
         "user": user,
+        # Saves the first screen a round trip. The client still re-reads
+        # /access/me on every boot — see EffectiveAccessOut on the Token schema.
+        "access": EffectiveAccessOut.of(user_type, access),
     }
 
 

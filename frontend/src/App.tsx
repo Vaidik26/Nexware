@@ -1,9 +1,14 @@
-import React, { Component, ErrorInfo, ReactNode, Suspense } from 'react';
+import React, { Component, ErrorInfo, ReactNode, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { Toaster } from 'react-hot-toast';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AppLayout from '@/components/layout/AppLayout';
+import { RequireAccess } from '@/components/layout/RequireAccess';
+// Not lazy: RequireAccess renders it on refusal, so it is in the main bundle
+// either way, and a Suspense boundary around a denial is a flash of nothing.
+import NoAccess from '@/pages/auth/NoAccess';
+import { landingPath } from '@/lib/access';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -105,7 +110,31 @@ class ErrorBoundary extends Component<Props, State> {
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((state) => state.token);
+  const accessLoaded = useAuthStore((state) => state.accessLoaded);
+  const loadAccess = useAuthStore((state) => state.loadAccess);
+
+  // Access is re-read from the server on every boot rather than restored from
+  // localStorage alongside the token. The token survives a reload; what it may
+  // open is the server's answer, and asking again is the only way to notice
+  // that an administrator changed it in the meantime.
+  useEffect(() => {
+    if (token && !accessLoaded) loadAccess();
+  }, [token, accessLoaded, loadAccess]);
+
   return token ? <>{children}</> : <Navigate to="/login" replace />;
+}
+
+/**
+ * Where `/` goes. Not a fixed path: the executive summary belongs to the admin
+ * persona, so sending a Sales-role viewer there would land them on the one
+ * screen they are not entitled to and make a working login look broken.
+ */
+function LandingRedirect() {
+  const access = useAuthStore((state) => state.access);
+  const accessLoaded = useAuthStore((state) => state.accessLoaded);
+
+  if (!accessLoaded) return <PageLoader />;
+  return <Navigate to={landingPath(access) ?? '/no-access'} replace />;
 }
 
 // Global suspense fallback loader
@@ -135,28 +164,41 @@ export default function App() {
                   </ProtectedRoute>
                 }
               >
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="dashboard" element={<MarketDashboard />} />
-                <Route path="dashboard/sales" element={<SalesDashboard />} />
-                <Route path="dashboard/procurement" element={<ProcurementDashboard />} />
-                <Route path="warehouse/catalogue" element={<SalesCatalogue />} />
-                <Route path="warehouse/lpos" element={<LpoManagement />} />
-                <Route path="warehouse/lpos/:id" element={<LpoDetails />} />
-                <Route path="warehouse/upload" element={<OrderUpload />} />
+                {/*
+                  Every screen states the access it needs. The three portal
+                  modules name theirs; everything else is admin-only, which
+                  `RequireAccess` with no module means. These mirror the gates
+                  the backend already applies — a screen reachable here whose
+                  data is refused there is just a slower 403.
+                */}
+                <Route index element={<LandingRedirect />} />
+                <Route path="no-access" element={<NoAccess />} />
+
+                <Route path="dashboard" element={<RequireAccess><MarketDashboard /></RequireAccess>} />
+                <Route path="dashboard/sales" element={<RequireAccess module="SALES_DASH"><SalesDashboard /></RequireAccess>} />
+                <Route path="dashboard/procurement" element={<RequireAccess module="PROCUREMENT"><ProcurementDashboard /></RequireAccess>} />
+
+                <Route path="warehouse/catalogue" element={<RequireAccess><SalesCatalogue /></RequireAccess>} />
+                <Route path="warehouse/lpos" element={<RequireAccess><LpoManagement /></RequireAccess>} />
+                <Route path="warehouse/lpos/:id" element={<RequireAccess><LpoDetails /></RequireAccess>} />
+                <Route path="warehouse/upload" element={<RequireAccess><OrderUpload /></RequireAccess>} />
                 <Route path="warehouse/picking" element={<Navigate to="/warehouse/picklists" replace />} />
-                <Route path="warehouse/picklists" element={<PickLists />} />
-                <Route path="warehouse/picklists/:id" element={<PickListDetails />} />
+                <Route path="warehouse/picklists" element={<RequireAccess><PickLists /></RequireAccess>} />
+                <Route path="warehouse/picklists/:id" element={<RequireAccess><PickListDetails /></RequireAccess>} />
                 <Route path="warehouse/verification" element={<Navigate to="/warehouse/picklists" replace />} />
-                <Route path="delivery/manifest" element={<DeliveryManifest />} />
-                <Route path="delivery/loading/:id" element={<VehicleLoading />} />
-                <Route path="market/materials" element={<RawMaterials />} />
-                <Route path="market/prices" element={<PriceManagement />} />
-                <Route path="market/overview" element={<MarketOverview />} />
+
+                <Route path="delivery/manifest" element={<RequireAccess><DeliveryManifest /></RequireAccess>} />
+                <Route path="delivery/loading/:id" element={<RequireAccess><VehicleLoading /></RequireAccess>} />
+
+                <Route path="market/materials" element={<RequireAccess><RawMaterials /></RequireAccess>} />
+                <Route path="market/prices" element={<RequireAccess><PriceManagement /></RequireAccess>} />
+                <Route path="market/overview" element={<RequireAccess><MarketOverview /></RequireAccess>} />
                 <Route path="market/dubai" element={<Navigate to="/market/prices" replace />} />
                 <Route path="market/international" element={<Navigate to="/market/prices" replace />} />
                 <Route path="market/history" element={<Navigate to="/market/overview" replace />} />
-                <Route path="admin/users" element={<UserManagement />} />
-                <Route path="admin/customers" element={<CustomerMaster />} />
+
+                <Route path="admin/users" element={<RequireAccess module="USER_ADMIN"><UserManagement /></RequireAccess>} />
+                <Route path="admin/customers" element={<RequireAccess><CustomerMaster /></RequireAccess>} />
               </Route>
             </Routes>
           </Suspense>

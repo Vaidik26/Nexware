@@ -3,6 +3,8 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { preloadAllMasterData } from '@/lib/api';
+import { useAuthStore } from '@/store/authStore';
+import { ownsPortal } from '@/lib/access';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { toast } from '@/components/ui/Toast';
@@ -31,10 +33,16 @@ const playBeep = () => {
 
 export default function AppLayout() {
   const queryClient = useQueryClient();
+  const access = useAuthStore((state) => state.access);
+  const canPreload = ownsPortal(access);
 
   useEffect(() => {
-    // Silently pre-fetch all master datasets on initial application load for 0ms transitions
-    preloadAllMasterData();
+    // Silently pre-fetch all master datasets on initial application load for
+    // 0ms transitions — but only for accounts that can open the screens those
+    // datasets feed. Every one of them is an admin-gated endpoint, so a
+    // dashboard viewer would spend the first seconds of every session
+    // collecting 403s for screens their sidebar does not even offer.
+    if (canPreload) preloadAllMasterData();
 
     // Setup WebSocket for Real-time Notifications
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -64,7 +72,7 @@ export default function AppLayout() {
     return () => {
       ws.close();
     };
-  }, [queryClient]);
+  }, [queryClient, canPreload]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">

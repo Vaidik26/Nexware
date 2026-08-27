@@ -38,7 +38,18 @@ from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import settings
-from backend.routers import auth, users, catalogue, orders, picklists, market, lpos, customers
+from backend.routers import (
+    access,
+    auth,
+    users,
+    catalogue,
+    orders,
+    picklists,
+    market,
+    lpos,
+    customers,
+    sales_dashboard,
+)
 
 
 # ─── Startup / Shutdown ────────────────────────────────────────────────────────
@@ -74,6 +85,15 @@ async def lifespan(app: FastAPI):
             logger.info("Supabase storage configured with a service-role key.")
     except Exception as exc:
         logger.warning("Could not verify Supabase storage configuration: %s", exc)
+
+    # Same reasoning for the sales data source: an unset key surfaces as an
+    # opaque failure halfway through loading somebody's dashboard, which is a
+    # bad place to discover a missing environment variable.
+    problem = settings.sales_app_config_error()
+    if problem:
+        logger.warning("Sales Dashboard will not load:\n%s", problem)
+    else:
+        logger.info("Sales Dashboard data source configured.")
 
     yield
     logger.info("Application shutdown.")
@@ -115,6 +135,7 @@ logger.info("CORS configured for origins: %s", _origins)
 
 _all_routers = [
     auth.router,
+    access.router,
     users.router,
     catalogue.router,
     orders.router,
@@ -122,6 +143,7 @@ _all_routers = [
     market.router,
     lpos.router,
     customers.router,
+    sales_dashboard.router,
 ]
 
 for _r in _all_routers:

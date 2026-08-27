@@ -3,10 +3,12 @@ import { useAuthStore } from '@/store/authStore';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '@/components/ui/Toast';
 import { clearApiCache, preloadAllMasterData } from '@/lib/api';
+import { ownsPortal } from '@/lib/access';
 
 export default function Header() {
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user);
+  const access = useAuthStore((state) => state.access);
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -29,14 +31,19 @@ export default function Header() {
           <span className="text-xs uppercase tracking-wider bg-primary/10 text-primary px-3 py-1 rounded-full font-semibold border border-primary/20">
             NexWare Enterprise OS
           </span>
-          <button
-            onClick={handleManualSync}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 font-extrabold text-xs border border-emerald-500/20 hover:bg-emerald-500/20 transition-all cursor-pointer shadow-2xs"
-            title="Click to force re-sync live master data from backend database"
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>⚡ Smart Cache Active • Sync Live</span>
-          </button>
+          {/* Re-syncs the admin-gated master datasets. Offered only to accounts
+              that can read them — for anyone else every request behind it is a
+              403, so the button would report a successful sync that did nothing. */}
+          {ownsPortal(access) && (
+            <button
+              onClick={handleManualSync}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-700 font-extrabold text-xs border border-emerald-500/20 hover:bg-emerald-500/20 transition-all cursor-pointer shadow-2xs"
+              title="Click to force re-sync live master data from backend database"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>⚡ Smart Cache Active • Sync Live</span>
+            </button>
+          )}
         </div>
       </div>
       <div className="flex items-center gap-4">

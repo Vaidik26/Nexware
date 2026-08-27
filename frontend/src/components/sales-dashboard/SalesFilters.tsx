@@ -1,5 +1,7 @@
 import { clsx } from 'clsx';
 import { useMemo } from 'react';
+import { useAuthStore } from '@/store/authStore';
+import { areaAllowed } from '@/lib/access';
 
 interface SalesFiltersProps {
   filters: any;
@@ -9,12 +11,23 @@ interface SalesFiltersProps {
 }
 
 export default function SalesFilters({ filters, onChange, bootData, currentData }: SalesFiltersProps) {
+  const access = useAuthStore((s) => s.access);
+
   const update = (key: string, value: any) => {
     onChange({ ...filters, [key]: value });
   };
 
   const areas = Object.keys(bootData?.areas || {}).sort();
-  const sAreas = Object.keys(bootData?.salesmanAreas || {}).sort();
+
+  // Only the supervisor areas this account is granted. Cosmetic — the grant is
+  // intersected into every query regardless, so picking one outside it would
+  // return nothing anyway. Offering it would just make an enforced empty result
+  // look like a real one.
+  const sAreas = useMemo(() => {
+    const all = Object.keys(bootData?.salesmanAreas || {}).sort();
+    if (!access || access.all_areas) return all;
+    return all.filter((a) => areaAllowed(access, a));
+  }, [bootData, access]);
 
   // Extract products and SKUs from catalogue
   const allProducts = useMemo(() => {

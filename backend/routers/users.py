@@ -3,8 +3,18 @@ User management.
 
 The monolithic ``/users`` collection is gone: each persona now has its own
 table, so each gets its own route group — ``/admins``, ``/pickers``, ``/sales``
-and ``/dashboard-users``. All of them are admin-only except the picker's own
-availability toggle.
+and ``/dashboard-users``.
+
+WHO MAY MANAGE USERS. Every write here is gated on the ``USER_ADMIN`` module
+rather than on the admin persona, because holding USER_ADMIN is exactly what
+that module means and a DEV or FINANCE dashboard account holds it by role
+default. The gate still admits every admin — :data:`PORTAL_OWNER` gives them
+every module — so nothing an admin could do before is refused now.
+
+The consequence to keep in mind: ``current_user`` on these endpoints is no
+longer necessarily an :class:`AdminUser`. Anywhere that compares it against a
+row being edited must check the type first; an id alone identifies nobody now
+that four tables each have one.
 
 They are exposed as one ``router`` object so main.py's mounting loop is
 unchanged; the sub-routers each declare their own prefix.
@@ -17,11 +27,13 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from backend.constants import ACTIVE_PICK_STATUSES
+from backend.constants import ACTIVE_PICK_STATUSES, PortalModule
+from backend.core.access import refuse_grant
 from backend.database import get_db
-from backend.dependencies import get_current_admin, get_current_picker, get_current_user
+from backend.dependencies import get_current_picker, get_current_user, require_module
 from backend.models.picklist import Picklist, PicklistAssignment
 from backend.models.users import AdminUser, DashboardUser, PickerUser, SalesUser
+from backend.schemas.access import GrantIn
 from backend.schemas.auth import (
     AdminCreate,
     AdminOut,
@@ -36,6 +48,7 @@ from backend.schemas.auth import (
     SalesOut,
     SalesUpdate,
 )
+from backend.services.access_service import replace_grants
 from backend.services.auth_service import hash_password
 
 logger = logging.getLogger(__name__)
@@ -47,6 +60,12 @@ pickers_router = APIRouter(prefix="/pickers", tags=["users:pickers"])
 sales_router = APIRouter(prefix="/sales", tags=["users:sales"])
 dashboard_router = APIRouter(prefix="/dashboard-users", tags=["users:dashboard"])
 
+#: The gate on every user-management route. Built once — ``require_module``
+#: returns a new function each call, and FastAPI caches a dependency per
+#: callable identity, so building it inline would resolve the caller's access
+#: once per endpoint instead of once per request.
+user_admin = require_module(PortalModule.USER_ADMIN)
+
 
 async def _reject_duplicate(db: AsyncSession, column, value: str, label: str, exclude_id=None):
     """Raise 400 if ``value`` already occupies ``column`` on another row."""
@@ -57,11 +76,24 @@ async def _reject_duplicate(db: AsyncSession, column, value: str, label: str, ex
     _ = exclude_id  # the ilike lookup is on a unique column; caller checks for change first
 
 
+def _reject_bad_grant(data: GrantIn) -> None:
+    """
+    Refuse an unstorable area grant with a sentence, before anything is written.
+
+    The database's CHECK constraints enforce the same rule, but letting the
+    request reach them turns an explainable refusal into a constraint-violation
+    traceback.
+    """
+    problem = refuse_grant(data.areas or [], data.channel)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+
+
 # ─── Admins ────────────────────────────────────────────────────────────────────
 
 @admins_router.get("", response_model=List[AdminOut])
 @admins_router.get("/", response_model=List[AdminOut])
-async def list_admins(db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)):
+async def list_admins(db: AsyncSession = Depends(get_db), _=Depends(user_admin)):
     result = await db.execute(select(AdminUser).order_by(AdminUser.id))
     return result.scalars().all()
 
@@ -69,7 +101,7 @@ async def list_admins(db: AsyncSession = Depends(get_db), _=Depends(get_current_
 @admins_router.post("", response_model=AdminOut, status_code=status.HTTP_201_CREATED)
 @admins_router.post("/", response_model=AdminOut, status_code=status.HTTP_201_CREATED)
 async def create_admin(
-    data: AdminCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)
+    data: AdminCreate, db: AsyncSession = Depends(get_db), _=Depends(user_admin)
 ):
     email = data.email.strip()
     await _reject_duplicate(db, AdminUser.email, email, "Email")
@@ -92,7 +124,7 @@ async def update_admin(
     admin_id: int,
     data: AdminUpdate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_admin),
+    _=Depends(user_admin),
 ):
     result = await db.execute(select(AdminUser).filter(AdminUser.id == admin_id))
     admin = result.scalars().first()
@@ -118,9 +150,13 @@ async def update_admin(
 async def delete_admin(
     admin_id: int,
     db: AsyncSession = Depends(get_db),
-    current_admin: AdminUser = Depends(get_current_admin),
+    caller=Depends(user_admin),
 ):
-    if admin_id == current_admin.id:
+    # The caller is whoever holds USER_ADMIN, which is no longer necessarily an
+    # admin. Comparing a bare id would be wrong for anyone else: dashboard user
+    # 3 is not admin 3, and matching them would refuse a delete that is not a
+    # self-delete at all.
+    if isinstance(caller, AdminUser) and admin_id == caller.id:
         raise HTTPException(status_code=400, detail="You cannot delete your own account")
 
     result = await db.execute(select(AdminUser).filter(AdminUser.id == admin_id))
@@ -151,7 +187,7 @@ async def list_pickers(
 @pickers_router.post("", response_model=PickerOut, status_code=status.HTTP_201_CREATED)
 @pickers_router.post("/", response_model=PickerOut, status_code=status.HTTP_201_CREATED)
 async def create_picker(
-    data: PickerCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)
+    data: PickerCreate, db: AsyncSession = Depends(get_db), _=Depends(user_admin)
 ):
     username = data.username.strip()
     await _reject_duplicate(db, PickerUser.username, username, "Username")
@@ -212,7 +248,7 @@ async def update_picker(
     picker_id: int,
     data: PickerUpdate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_admin),
+    _=Depends(user_admin),
 ):
     result = await db.execute(select(PickerUser).filter(PickerUser.id == picker_id))
     picker = result.scalars().first()
@@ -241,7 +277,7 @@ async def update_picker_status(
     picker_id: int,
     is_available: bool = Query(...),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_admin),
+    _=Depends(user_admin),
 ):
     result = await db.execute(select(PickerUser).filter(PickerUser.id == picker_id))
     picker = result.scalars().first()
@@ -255,7 +291,7 @@ async def update_picker_status(
 
 @pickers_router.delete("/{picker_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_picker(
-    picker_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)
+    picker_id: int, db: AsyncSession = Depends(get_db), _=Depends(user_admin)
 ):
     result = await db.execute(select(PickerUser).filter(PickerUser.id == picker_id))
     picker = result.scalars().first()
@@ -296,7 +332,7 @@ async def list_sales_users(db: AsyncSession = Depends(get_db), _=Depends(get_cur
 @sales_router.post("", response_model=SalesOut, status_code=status.HTTP_201_CREATED)
 @sales_router.post("/", response_model=SalesOut, status_code=status.HTTP_201_CREATED)
 async def create_sales_user(
-    data: SalesCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)
+    data: SalesCreate, db: AsyncSession = Depends(get_db), _=Depends(user_admin)
 ):
     username = data.username.strip()
     await _reject_duplicate(db, SalesUser.username, username, "Username")
@@ -321,7 +357,7 @@ async def update_sales_user(
     sales_id: int,
     data: SalesUpdate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_admin),
+    _=Depends(user_admin),
 ):
     result = await db.execute(select(SalesUser).filter(SalesUser.id == sales_id))
     sales_user = result.scalars().first()
@@ -349,7 +385,7 @@ async def update_sales_user(
 
 @sales_router.delete("/{sales_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_sales_user(
-    sales_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)
+    sales_id: int, db: AsyncSession = Depends(get_db), _=Depends(user_admin)
 ):
     result = await db.execute(select(SalesUser).filter(SalesUser.id == sales_id))
     sales_user = result.scalars().first()
@@ -364,7 +400,7 @@ async def delete_sales_user(
 
 @dashboard_router.get("", response_model=List[DashboardOut])
 @dashboard_router.get("/", response_model=List[DashboardOut])
-async def list_dashboard_users(db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)):
+async def list_dashboard_users(db: AsyncSession = Depends(get_db), _=Depends(user_admin)):
     result = await db.execute(select(DashboardUser).order_by(DashboardUser.id))
     return result.scalars().all()
 
@@ -372,21 +408,37 @@ async def list_dashboard_users(db: AsyncSession = Depends(get_db), _=Depends(get
 @dashboard_router.post("", response_model=DashboardOut, status_code=status.HTTP_201_CREATED)
 @dashboard_router.post("/", response_model=DashboardOut, status_code=status.HTTP_201_CREATED)
 async def create_dashboard_user(
-    data: DashboardCreate, db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)
+    data: DashboardCreate, db: AsyncSession = Depends(get_db), _=Depends(user_admin)
 ):
     email = data.email.strip()
     await _reject_duplicate(db, DashboardUser.email, email, "Email")
+    _reject_bad_grant(data)
 
     user = DashboardUser(
         email=email,
         full_name=data.full_name.strip(),
         hashed_password=hash_password(data.password),
+        role=data.role.value,
         is_active=data.is_active,
+        # Initialised explicitly, empty, so the collections count as LOADED.
+        # ``selectin`` only applies to a relationship fetched by a query; on an
+        # object built here it is untouched, and the flush below turns it
+        # persistent — at which point the first read of an untouched collection
+        # emits a lazy SELECT and raises MissingGreenlet in an async session.
+        module_grants=[],
+        area_grants=[],
     )
     db.add(user)
+    # Flush, not commit: an unstorable grant must take the new account down with
+    # it rather than leave a half-made login behind. That is the failure the
+    # legacy screen could not avoid — it wrote the account, then the grants, over
+    # two requests with no transaction spanning them.
+    await db.flush()
+    await replace_grants(db, user, data.modules, data.areas, data.channel)
+
     await db.commit()
     await db.refresh(user)
-    logger.info("Dashboard user created: id=%s", user.id)
+    logger.info("Dashboard user created: id=%s role=%s", user.id, user.role)
     return user
 
 
@@ -395,12 +447,32 @@ async def update_dashboard_user(
     user_id: int,
     data: DashboardUpdate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_admin),
+    caller=Depends(user_admin),
 ):
     result = await db.execute(select(DashboardUser).filter(DashboardUser.id == user_id))
     user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="Dashboard user not found")
+
+    # Self-edit lock. Widening or narrowing your OWN access is the one change a
+    # user administrator must not make alone: it turns a single compromised or
+    # mistaken session into a permanent escalation, and it lets the last
+    # USER_ADMIN holder lock the screen away from everybody. Everything else on
+    # the form stays editable — a name and a password are not access.
+    editing_self = isinstance(caller, DashboardUser) and caller.id == user.id
+    changes_access = (
+        data.role is not None or data.modules is not None or data.areas is not None
+    )
+    if editing_self and changes_access:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "You cannot change your own role or grants. Ask another user "
+                "administrator to make this change."
+            ),
+        )
+
+    _reject_bad_grant(data)
 
     if data.email and data.email.strip() != user.email:
         await _reject_duplicate(db, DashboardUser.email, data.email.strip(), "Email")
@@ -409,8 +481,15 @@ async def update_dashboard_user(
         user.full_name = data.full_name.strip()
     if data.password:
         user.hashed_password = hash_password(data.password)
+    if data.role is not None:
+        user.role = data.role.value
     if data.is_active is not None:
         user.is_active = data.is_active
+
+    # None means "leave this half of the grant alone"; an empty list means
+    # "clear it", which puts the account back onto its role defaults. See
+    # replace_grants.
+    await replace_grants(db, user, data.modules, data.areas, data.channel)
 
     await db.commit()
     await db.refresh(user)
@@ -419,7 +498,7 @@ async def update_dashboard_user(
 
 @dashboard_router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_dashboard_user(
-    user_id: int, db: AsyncSession = Depends(get_db), _=Depends(get_current_admin)
+    user_id: int, db: AsyncSession = Depends(get_db), _=Depends(user_admin)
 ):
     result = await db.execute(select(DashboardUser).filter(DashboardUser.id == user_id))
     user = result.scalars().first()
