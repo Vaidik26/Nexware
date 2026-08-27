@@ -74,21 +74,14 @@ class TerritoryCatalogOut(BaseModel):
 
 
 class EffectiveAccessOut(BaseModel):
-    """One account's resolved access."""
+    """One account's resolved access. Modules come strictly from the role."""
 
     user_type: str
-    #: ``None`` for personas that carry no dashboard role — admins (who own the
-    #: portal outright) and the two mobile personas (who have no standing here).
     role: Optional[DashboardRole] = None
     modules: List[PortalModule]
     areas: List[str]
-    #: area -> channel, for the areas narrowed to one book. An area ABSENT from
-    #: this map carries the null channel and reaches both.
     area_channels: Dict[str, SalesChannel] = Field(default_factory=dict)
-    #: True when the account reaches every territory and needs no area filter.
-    #: Distinct from an empty ``areas`` list, which reaches nobody.
     all_areas: bool
-    explicit_modules: bool
     explicit_areas: bool
 
     @classmethod
@@ -101,7 +94,6 @@ class EffectiveAccessOut(BaseModel):
             areas=list(access.areas),
             area_channels=dict(access.area_channels),
             all_areas=access.all_areas,
-            explicit_modules=access.explicit_modules,
             explicit_areas=access.explicit_areas,
         )
 
@@ -109,14 +101,9 @@ class EffectiveAccessOut(BaseModel):
 class GrantIn(BaseModel):
     """
     The grant half of a dashboard-user create or update.
-
-    Omitting a list leaves that half of the grant alone; sending an empty list
-    clears it, putting the account back onto its role default. The two are
-    different requests on purpose — a PATCH that only renames somebody must not
-    strip their territory, and there has to be a way to say "back to the role".
+    Only area grants are accepted — modules are strictly determined by role.
     """
 
-    modules: Optional[List[PortalModule]] = None
     areas: Optional[List[str]] = None
     #: Applied to every area in the same save. ``None`` stores a NULL channel,
     #: which reaches both books.

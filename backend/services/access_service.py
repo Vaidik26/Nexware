@@ -32,7 +32,6 @@ from backend.models.users import (
     USER_TYPE_DASHBOARD,
     DashboardUser,
     DashboardUserArea,
-    DashboardUserModule,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,7 +61,6 @@ def access_for(user, user_type: Optional[str]) -> EffectiveAccess:
 
     return resolve(
         role=user.role,
-        explicit_modules=[g.module for g in user.module_grants],
         explicit_areas=[(g.area, g.channel) for g in user.area_grants],
     )
 
@@ -70,51 +68,18 @@ def access_for(user, user_type: Optional[str]) -> EffectiveAccess:
 async def replace_grants(
     db: AsyncSession,
     user: DashboardUser,
-    modules: Optional[Sequence[str]],
     areas: Optional[Sequence[str]],
     channel: Optional[SalesChannel],
 ) -> None:
     """
     Rewrite one dashboard account's explicit grants.
-
-    ``None`` for either list leaves that half of the grant untouched — a PATCH
-    that only changes a name must not strip a territory. An EMPTY list is the
-    deliberate opposite: it clears that half, which is the only way to put the
-    account back onto its role defaults.
-
-    ``channel`` applies to every area in the same save, matching the screen it
-    is picked on: one selector above the area list, not one per area. A
-    both-books grant stores NULL.
-
-    Goes through the relationship collections rather than issuing a bulk DELETE
-    against the tables. Two reasons, both of which bit the obvious version:
-
-    * ``user.area_grants`` is already loaded, and a Core DELETE does not empty
-      it. The response would then be serialised from rows that no longer exist.
-    * the old rows must be gone from the database BEFORE the new ones are
-      written, or re-saving an unchanged area violates the UNIQUE(user_id,
-      area) constraint. SQLAlchemy's unit of work orders inserts before deletes
-      for a mapper, so the flush between the two halves below is load-bearing.
-
-    Does not commit. The caller owns the transaction, so the grant rewrite lands
-    or rolls back together with whatever else that request changed.
     """
-    if modules is None and areas is None:
+    if areas is None:
         return
 
-    if modules is not None:
-        user.module_grants.clear()
-    if areas is not None:
-        user.area_grants.clear()
-
-    # delete-orphan turns the clears above into DELETEs. They have to reach the
-    # database before the inserts below are prepared — see the docstring.
+    user.area_grants.clear()
     await db.flush()
 
-    if modules is not None:
-        user.module_grants.extend(
-            DashboardUserModule(module=m) for m in _unique(modules)
-        )
     if areas is not None:
         stored_channel = channel.value if channel is not None else None
         user.area_grants.extend(
@@ -122,10 +87,9 @@ async def replace_grants(
         )
 
     logger.info(
-        "Dashboard grants rewritten: user_id=%s modules=%s areas=%s channel=%s",
+        "Dashboard grants rewritten: user_id=%s areas=%s channel=%s",
         user.id,
-        "unchanged" if modules is None else len(modules),
-        "unchanged" if areas is None else len(areas),
+        len(areas) if areas is not None else "unchanged",
         channel.value if channel else "both",
     )
 

@@ -45,16 +45,13 @@ class DashboardRole(str, Enum):
     """
     The base role on a ``dashboard_users`` row.
 
-    The role supplies a *default* module and area set. An explicit grant on the
-    account replaces that default outright; clearing the grant drops the account
-    back onto it. See ``backend.core.access``.
+    The role supplies a strict module and area set. There are no explicit 
+    module overrides anymore.
     """
 
-    DEV = "DEV"
     FINANCE = "FINANCE"
     MANAGER = "MANAGER"
     SALES = "SALES"
-    WAREHOUSE = "WAREHOUSE"
 
 
 class SalesChannel(str, Enum):
@@ -127,52 +124,29 @@ CLOSED_PICK_STATUSES: list[str] = [
 #: It is not one of the territories; it is the absence of a territory filter.
 ALL_AREAS = "ALL"
 
-#: What each role grants when the account carries no explicit module grant.
-#:
-#: SALES and WAREHOUSE default to no portal modules at all, and that is not an
-#: oversight: their work happens in the standalone LPO/picking apps, which this
-#: portal does not serve. Such an account has a login that opens nothing until
-#: an admin grants it a module explicitly — the honest state, not a bug to
-#: paper over with a default nobody asked for.
-ROLE_DEFAULT_MODULES: dict[DashboardRole, tuple[PortalModule, ...]] = {
-    DashboardRole.DEV: (
+#: The exact portal modules each role is granted.
+#: There is no explicit module grant override; this map is absolute.
+ROLE_MODULES: dict[DashboardRole, tuple[PortalModule, ...]] = {
+    DashboardRole.FINANCE: (PortalModule.PROCUREMENT,),
+    DashboardRole.MANAGER: (
         PortalModule.SALES_DASH,
-        PortalModule.PROCUREMENT,
         PortalModule.USER_ADMIN,
     ),
-    DashboardRole.FINANCE: (
-        PortalModule.SALES_DASH,
-        PortalModule.PROCUREMENT,
-        PortalModule.USER_ADMIN,
-    ),
-    DashboardRole.MANAGER: (PortalModule.SALES_DASH,),
-    DashboardRole.SALES: (),
-    DashboardRole.WAREHOUSE: (),
+    DashboardRole.SALES: (PortalModule.SALES_DASH,),
 }
 
-#: What each role's data scope is when the account carries no explicit area
-#: grant.
-#:
-#: SALES gets NOTHING — a sales account with no explicit territory reaches no
-#: customer at all, rather than falling open to every one of them. WAREHOUSE
-#: gets ALL because warehouse work is centralised: a picker packs boxes for
-#: every region, so restricting them by territory would describe a workflow
-#: that does not exist.
+#: What each role's data scope is when the account carries no explicit area grant.
 ROLE_DEFAULT_AREAS: dict[DashboardRole, tuple[str, ...]] = {
-    DashboardRole.DEV: (ALL_AREAS,),
     DashboardRole.FINANCE: (ALL_AREAS,),
     DashboardRole.MANAGER: (ALL_AREAS,),
     DashboardRole.SALES: (),
-    DashboardRole.WAREHOUSE: (ALL_AREAS,),
 }
 
 #: Human labels for the roles, shown wherever a role is displayed.
 ROLE_LABELS: dict[DashboardRole, str] = {
-    DashboardRole.DEV: "Developer · superuser",
-    DashboardRole.FINANCE: "Finance",
+    DashboardRole.FINANCE: "Procurement Mgr",
     DashboardRole.MANAGER: "Manager",
     DashboardRole.SALES: "Area Sales",
-    DashboardRole.WAREHOUSE: "Warehouse",
 }
 
 #: Human labels for the two sales channels. A null channel is "both channels"

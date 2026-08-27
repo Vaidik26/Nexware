@@ -420,21 +420,12 @@ async def create_dashboard_user(
         hashed_password=hash_password(data.password),
         role=data.role.value,
         is_active=data.is_active,
-        # Initialised explicitly, empty, so the collections count as LOADED.
-        # ``selectin`` only applies to a relationship fetched by a query; on an
-        # object built here it is untouched, and the flush below turns it
-        # persistent — at which point the first read of an untouched collection
-        # emits a lazy SELECT and raises MissingGreenlet in an async session.
-        module_grants=[],
+        # Initialised explicitly, empty, so the relationship counts as LOADED.
         area_grants=[],
     )
     db.add(user)
-    # Flush, not commit: an unstorable grant must take the new account down with
-    # it rather than leave a half-made login behind. That is the failure the
-    # legacy screen could not avoid — it wrote the account, then the grants, over
-    # two requests with no transaction spanning them.
     await db.flush()
-    await replace_grants(db, user, data.modules, data.areas, data.channel)
+    await replace_grants(db, user, data.areas, data.channel)
 
     await db.commit()
     await db.refresh(user)
@@ -461,7 +452,7 @@ async def update_dashboard_user(
     # the form stays editable — a name and a password are not access.
     editing_self = isinstance(caller, DashboardUser) and caller.id == user.id
     changes_access = (
-        data.role is not None or data.modules is not None or data.areas is not None
+        data.role is not None or data.areas is not None
     )
     if editing_self and changes_access:
         raise HTTPException(
@@ -486,10 +477,7 @@ async def update_dashboard_user(
     if data.is_active is not None:
         user.is_active = data.is_active
 
-    # None means "leave this half of the grant alone"; an empty list means
-    # "clear it", which puts the account back onto its role defaults. See
-    # replace_grants.
-    await replace_grants(db, user, data.modules, data.areas, data.channel)
+    await replace_grants(db, user, data.areas, data.channel)
 
     await db.commit()
     await db.refresh(user)

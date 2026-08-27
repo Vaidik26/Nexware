@@ -114,52 +114,12 @@ class DashboardUser(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # selectin, not lazy loading: every request that authenticates a dashboard
-    # user needs the grants to resolve its access, and a lazy attribute access
-    # inside an async session raises MissingGreenlet rather than emitting SQL.
-    module_grants = relationship(
-        "DashboardUserModule",
-        back_populates="user",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
     area_grants = relationship(
         "DashboardUserArea",
         back_populates="user",
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-
-
-class DashboardUserModule(Base):
-    """
-    One EXPLICIT module grant, overriding the account's role default.
-
-    Zero rows for a user is not "no modules" — it is "inherit the role". That is
-    why clearing a grant deletes the rows instead of writing an empty marker,
-    and why there is no ``is_explicit`` flag: the row count is the flag.
-    """
-
-    __tablename__ = "dashboard_user_modules"
-    __table_args__ = (
-        UniqueConstraint(
-            "user_id", "module", name="uq_dashboard_user_modules_user_module"
-        ),
-        CheckConstraint(
-            f"module IN ({_MODULE_VALUES})", name="ck_dashboard_user_modules_module"
-        ),
-    )
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(
-        Integer,
-        ForeignKey("dashboard_users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    module = Column(String, nullable=False)
-
-    user = relationship("DashboardUser", back_populates="module_grants")
 
 
 class DashboardUserArea(Base):

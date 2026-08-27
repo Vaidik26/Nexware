@@ -160,7 +160,6 @@ class DashboardOut(DashboardBase):
     areas: List[str] = Field(default_factory=list)
     area_channels: Dict[str, SalesChannel] = Field(default_factory=dict)
     all_areas: bool = False
-    explicit_modules: bool = False
     explicit_areas: bool = False
     created_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
@@ -169,18 +168,14 @@ class DashboardOut(DashboardBase):
     @classmethod
     def _resolve_access(cls, data: Any) -> Any:
         """
-        Fill the resolved fields from the ORM row's role and grant rows.
-
-        Recognised by the presence of the two grant relationships, so a plain
-        dict — a test fixture, a re-validated response — passes through
-        untouched and keeps whatever it already says.
+        Fill the resolved fields from the ORM row's role and area grant rows.
+        Modules are strictly derived from role — no module_grants table.
         """
-        if not (hasattr(data, "module_grants") and hasattr(data, "area_grants")):
+        if not hasattr(data, "area_grants"):
             return data
 
         access = resolve(
             role=data.role,
-            explicit_modules=[g.module for g in data.module_grants],
             explicit_areas=[(g.area, g.channel) for g in data.area_grants],
         )
         return {
@@ -194,7 +189,6 @@ class DashboardOut(DashboardBase):
             "areas": list(access.areas),
             "area_channels": dict(access.area_channels),
             "all_areas": access.all_areas,
-            "explicit_modules": access.explicit_modules,
             "explicit_areas": access.explicit_areas,
         }
 
