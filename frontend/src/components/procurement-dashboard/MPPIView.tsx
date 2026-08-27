@@ -3,7 +3,7 @@ import { groupCalc, n4, n3, pc, pmax, effM } from '@/lib/procurementLogic';
 import { clsx } from 'clsx';
 import { ChevronDown, ChevronRight, X, ExternalLink } from 'lucide-react';
 
-export default function MPPIView({ data, settings, setSettings }: { data: any, settings: any, setSettings: any }) {
+export default function MPPIView({ data, settings, setSettings, onJumpToDesk }: { data: any, settings: any, setSettings: any, onJumpToDesk: (rm: string) => void }) {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('');
   const [showFilter, setShowFilter] = useState('all');
@@ -286,7 +286,7 @@ export default function MPPIView({ data, settings, setSettings }: { data: any, s
 
                 <div className="w-32 flex justify-end">
                   <button 
-                    onClick={(e) => { e.stopPropagation(); /* TODO jump to desk */ }}
+                    onClick={(e) => { e.stopPropagation(); onJumpToDesk(r.name); }}
                     className="flex items-center gap-1 text-xs font-semibold text-primary border border-primary/20 bg-primary/5 hover:bg-primary/10 px-3 py-1.5 rounded-full transition-colors"
                   >
                     Open in Desk <ExternalLink size={12} />

@@ -12,6 +12,14 @@ export default function ProcurementDashboard() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  const [deskFilters, setDeskFilters] = useState({
+    q: '',
+    market: 'ALL',
+    inco: 'CIF',
+    cat: '',
+    showFilter: 'all'
+  });
+
   // Global procurement settings state
   const [settings, setSettings] = useState({
     globalOn: false,
@@ -90,10 +98,13 @@ export default function ProcurementDashboard() {
       {/* Content */}
       <div className="min-h-[500px]">
         {activeTab === 'desk' && (
-          <BuyingDesk data={data} settings={settings} />
+          <BuyingDesk data={data} settings={settings} filters={deskFilters} setFilters={setDeskFilters} />
         )}
         {activeTab === 'mppi' && (
-          <MPPIView data={data} settings={settings} setSettings={setSettings} />
+          <MPPIView data={data} settings={settings} setSettings={setSettings} onJumpToDesk={(rm) => {
+            setDeskFilters({ q: rm, market: 'ALL', inco: 'CIF', cat: '', showFilter: 'all' });
+            setActiveTab('desk');
+          }} />
         )}
         {activeTab === 'trends' && (
           <PriceTrends data={data} settings={settings} />

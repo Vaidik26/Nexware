@@ -2,124 +2,183 @@ import { useMemo, useState } from 'react';
 import { deskRow, n3, pc } from '@/lib/procurementLogic';
 import { clsx } from 'clsx';
 
-export default function BuyingDesk({ data, settings }: { data: any, settings: any }) {
-  const [market, setMarket] = useState('DUBAI'); // 'DUBAI', 'INT', 'OMAN', 'ALL'
-  const [inco, setInco] = useState('CIF');
-  const [q, setQ] = useState('');
-  const [cat, setCat] = useState('');
+export default function BuyingDesk({ data, settings, filters, setFilters }: { data: any, settings: any, filters: any, setFilters: any }) {
+  const { market, inco, q, cat, showFilter } = filters;
+  
+  const [sortFilter, setSortFilter] = useState('name');
 
   const rows = useMemo(() => {
     if (!data || !data.rms) return [];
     
     // settings override for local use
     const localSettings = { ...settings, inco };
-
-    let results: any[] = [];
-    if (market === 'ALL') {
-      for (const r of data.rms) {
-        for (const m of ['DUBAI', 'INT', 'OMAN']) {
-          results.push(deskRow(r, m, localSettings, data.meta));
-        }
-      }
-    } else {
-      results = data.rms.map((r: any) => deskRow(r, market, localSettings, data.meta));
-    }
+    let results = deskRow(data, localSettings, market);
 
     // Filter
     const query = q.toLowerCase().trim();
     if (query) {
-      results = results.filter(row => 
+      results = results.filter((row: any) => 
         row.name.toLowerCase().includes(query) || 
-        row.r.name.toLowerCase().includes(query)
+        (row.dq && row.dq.toLowerCase().includes(query))
       );
     }
     if (cat) {
-      results = results.filter(row => row.r.cat === cat);
+      const catMap = Object.fromEntries(data.rms.map((r: any) => [r.name, r.cat]));
+      results = results.filter((row: any) => catMap[row.name] === cat);
     }
-
-    // Default sort by name
-    results.sort((a, b) => a.name.localeCompare(b.name));
+    if (showFilter === 'under') results = results.filter((row: any) => row.vT != null && row.vT < -settings.tol);
+    if (showFilter === 'at') results = results.filter((row: any) => row.vT != null && Math.abs(row.vT) <= settings.tol);
+    if (showFilter === 'over') results = results.filter((row: any) => row.vT != null && row.vT > settings.tol);
+    if (showFilter === 'nodata') results = results.filter((row: any) => row.px == null);
+    if (showFilter === 'buy') results = results.filter((row: any) => row.verdict.t === 'Buy');
+    
+    // Sort logic
+    if (sortFilter === 'pur') results.sort((a: any, b: any) => (a.pl?.price || 0) - (b.pl?.price || 0));
+    else if (sortFilter === 'mkt') results.sort((a: any, b: any) => (a.px || 0) - (b.px || 0));
+    else if (sortFilter === 'vsTarget') results.sort((a: any, b: any) => (a.vT || 0) - (b.vT || 0));
+    else if (sortFilter === 'vsLast') results.sort((a: any, b: any) => (a.vP || 0) - (b.vP || 0));
+    else if (sortFilter === 'vsLY') results.sort((a: any, b: any) => (a.vB || 0) - (b.vB || 0));
+    else if (sortFilter === 'stock') results.sort((a: any, b: any) => (a.st?.days || 0) - (b.st?.days || 0));
+    else results.sort((a: any, b: any) => a.name.localeCompare(b.name));
 
     return results;
-  }, [data, market, inco, settings, q, cat]);
+  }, [data, settings, market, inco, q, cat, showFilter, sortFilter]);
 
   const cats = useMemo(() => {
     if (!data || !data.rms) return [];
     return [...new Set(data.rms.map((r: any) => r.cat))].sort() as string[];
   }, [data]);
 
+  const setFilter = (key: string, val: string) => {
+    setFilters((prev: any) => ({ ...prev, [key]: val }));
+  };
+
   return (
     <div className="space-y-4">
-      {/* Controls */}
+      {/* Top Filter Bar strictly matching legacy desk */}
       <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-xl border border-slate-200">
+        
         <div className="flex-1 min-w-[200px]">
           <input
             type="search"
             placeholder="Search raw material..."
-            className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full px-3 py-1.5 border border-slate-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-primary"
             value={q}
-            onChange={e => setQ(e.target.value)}
+            onChange={e => setFilter('q', e.target.value)}
           />
         </div>
         
         <div className="flex items-center gap-2">
-          <label className="text-sm font-semibold text-slate-600">Market:</label>
-          <select value={market} onChange={e => setMarket(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-md text-sm">
-            <option value="DUBAI">Dubai</option>
-            <option value="INT">International</option>
-            <option value="OMAN">Oman</option>
-            <option value="ALL">All Markets</option>
-          </select>
-        </div>
-
-        {market === 'INT' && (
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-semibold text-slate-600">Price Point:</label>
-            <select value={inco} onChange={e => setInco(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-md text-sm">
-              <option value="CIF">CIF</option>
-              <option value="FOB">FOB</option>
-            </select>
-          </div>
-        )}
-
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-semibold text-slate-600">Category:</label>
-          <select value={cat} onChange={e => setCat(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-md text-sm">
-            <option value="">All Categories</option>
+          <label className="text-sm text-slate-600">Category</label>
+          <select value={cat} onChange={e => setFilter('cat', e.target.value)} className="px-2 py-1 border border-slate-300 rounded text-sm bg-white">
+            <option value="">All categories</option>
             {cats.map(c => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
         </div>
+
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-slate-600">Show</label>
+          <select value={showFilter} onChange={e => setFilter('showFilter', e.target.value)} className="px-2 py-1 border border-slate-300 rounded text-sm bg-white">
+            <option value="all">All raw materials</option>
+            <option value="under">Under target</option>
+            <option value="at">At target</option>
+            <option value="over">Above target</option>
+            <option value="nodata">No market quote</option>
+            <option value="buy">Verdict says buy</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-slate-600">Sort</label>
+          <select value={sortFilter} onChange={e => setSortFilter(e.target.value)} className="px-2 py-1 border border-slate-300 rounded text-sm bg-white">
+            <option value="name">Raw material (A-Z)</option>
+            <option value="pur">Last purchase price</option>
+            <option value="mkt">Latest market price</option>
+            <option value="vsTarget">vs Target</option>
+            <option value="vsLast">vs Last buy</option>
+            <option value="vsLY">vs Bench.</option>
+            <option value="stock">Stock cover</option>
+          </select>
+        </div>
+
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
-        <table className="w-full text-left text-sm whitespace-nowrap">
-          <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider font-semibold text-slate-600">
+      {/* Global Market Switcher matching legacy */}
+      <div className="flex flex-wrap items-center gap-8 bg-white p-4 rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-400 bg-slate-100 rounded-full w-5 h-5 flex items-center justify-center">1</span>
+          <span className="text-sm font-semibold text-slate-600 mr-2">Market</span>
+          <div className="flex border border-slate-300 rounded overflow-hidden">
+            {['DUBAI', 'INT', 'OMAN', 'ALL'].map(m => (
+              <button 
+                key={m}
+                onClick={() => setFilter('market', m)}
+                className={clsx("px-4 py-1.5 text-sm font-medium transition-colors border-r border-slate-200 last:border-0", market === m ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}
+              >
+                {m === 'INT' ? 'International' : (m === 'OMAN' ? 'Oman - local' : (m === 'ALL' ? 'All markets' : 'Dubai'))}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className={clsx("flex items-center gap-2 transition-opacity", (market === 'INT' || market === 'ALL') ? 'opacity-100' : 'opacity-40 pointer-events-none')}>
+          <span className="text-slate-300">→</span>
+          <span className="text-xs font-bold text-slate-400 bg-slate-100 rounded-full w-5 h-5 flex items-center justify-center">2</span>
+          <span className="text-sm font-semibold text-slate-600 mr-2">Price point</span>
+          <div className="flex border border-slate-300 rounded overflow-hidden">
+            <button onClick={() => setFilter('inco', 'CIF')} className={clsx("px-4 py-1.5 text-sm font-medium transition-colors border-r border-slate-200", inco === 'CIF' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}>CIF</button>
+            <button onClick={() => setFilter('inco', 'FOB')} className={clsx("px-4 py-1.5 text-sm font-medium transition-colors", inco === 'FOB' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}>FOB</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Table: Tighter and cleaner without swiping left/right */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 w-full">
+        <table className="w-full text-left text-[13px] leading-tight">
+          <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
             <tr>
-              <th className="p-3">Raw Material</th>
-              <th className="p-3 text-right">MPPI Target <span className="block text-[10px] text-slate-400 font-normal">OMR / kg</span></th>
-              <th className="p-3 text-right">Last Purchase <span className="block text-[10px] text-slate-400 font-normal">OMR / kg</span></th>
-              <th className="p-3 text-right">Benchmark <span className="block text-[10px] text-slate-400 font-normal">6-mo avg</span></th>
-              <th className="p-3 text-right">Latest Market <span className="block text-[10px] text-slate-400 font-normal">OMR / kg</span></th>
-              <th className="p-3 text-right">vs Target</th>
-              <th className="p-3 text-right">vs Last Buy</th>
-              <th className="p-3 text-right">vs Bench.</th>
-              <th className="p-3 text-right">Stock Cover <span className="block text-[10px] text-slate-400 font-normal">days on hand</span></th>
-              <th className="p-3 text-center">Verdict</th>
+              <th className="p-2 align-bottom border-b border-slate-200 w-1/4">
+                Raw material
+                <div className="text-[10px] text-slate-400 font-normal mt-0.5">as procurement names it, per market</div>
+              </th>
+              <th className="p-2 text-right align-bottom border-b border-slate-200">
+                MPPI target
+                <div className="text-[10px] text-slate-400 font-normal mt-0.5">OMR / kg</div>
+              </th>
+              <th className="p-2 text-right align-bottom border-b border-slate-200">
+                Last purchase
+                <div className="text-[10px] text-slate-400 font-normal mt-0.5">that row's market only</div>
+              </th>
+              <th className="p-2 text-right align-bottom border-b border-slate-200">
+                Benchmark
+                <div className="text-[10px] text-slate-400 font-normal mt-0.5">6-month average</div>
+              </th>
+              <th className="p-2 text-right align-bottom border-b border-slate-200">
+                Latest market price
+                <div className="text-[10px] text-slate-400 font-normal mt-0.5">OMR / kg, and its date</div>
+              </th>
+              <th className="p-2 text-right align-bottom border-b border-slate-200">vs Target</th>
+              <th className="p-2 text-right align-bottom border-b border-slate-200">vs Last b...</th>
+              <th className="p-2 text-right align-bottom border-b border-slate-200">vs Bench.</th>
+              <th className="p-2 text-right align-bottom border-b border-slate-200">
+                Stock cover
+                <div className="text-[10px] text-slate-400 font-normal mt-0.5">days on hand</div>
+              </th>
+              <th className="p-2 text-left align-bottom border-b border-slate-200">Verdict</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((row, i) => {
               const verdictColors = {
-                'Buy': 'bg-emerald-100 text-emerald-800',
-                'Hold': 'bg-rose-100 text-rose-800',
-                'Bridge buy': 'bg-amber-100 text-amber-800',
-                'Review': 'bg-slate-100 text-slate-800',
-                'No quote': 'bg-slate-100 text-slate-500'
+                'Buy': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                'Hold': 'bg-rose-50 text-rose-700 border-rose-200',
+                'Bridge buy': 'bg-amber-50 text-amber-700 border-amber-200',
+                'Review': 'bg-slate-50 text-slate-700 border-slate-200',
+                'No quote': 'bg-slate-50 text-slate-500 border-slate-200'
               };
-              const vColor = (verdictColors as any)[row.verdict.t] || 'bg-slate-100 text-slate-800';
+              const vColor = (verdictColors as any)[row.verdict.t] || 'bg-slate-50 text-slate-700 border-slate-200';
               
               const pctColor = (v: number | null) => {
                 if (v == null) return 'text-slate-400';
@@ -129,37 +188,53 @@ export default function BuyingDesk({ data, settings }: { data: any, settings: an
               };
 
               return (
-                <tr key={`${row.name}-${row.m}-${i}`} className="hover:bg-slate-50 transition-colors">
-                  <td className="p-3 font-medium text-slate-900">
+                <tr key={`${row.name}-${row.m}-${i}`} className={clsx("transition-colors", i % 2 === 0 ? "bg-white" : "bg-slate-50/30", "hover:bg-blue-50/50")}>
+                  <td className="p-2 font-medium text-slate-900 break-words">
                     {row.name}
-                    {market === 'ALL' && <span className="ml-2 text-[10px] uppercase text-slate-400 font-bold bg-slate-100 px-1.5 py-0.5 rounded">{row.m}</span>}
+                    {market === 'ALL' && <span className="ml-1.5 text-[10px] text-slate-500 border border-slate-200 bg-white px-1 py-0.5 rounded shadow-sm">{row.m === 'INT' ? (inco === 'CIF' ? 'Intl CIF' : 'Intl FOB') : (row.m === 'DUBAI' ? 'Dubai' : 'Oman')}</span>}
                   </td>
-                  <td className="p-3 text-right tabular-nums font-bold text-slate-900">
-                    {row.target != null ? n3(row.target) : '-'}
+                  <td className="p-2 text-right tabular-nums font-bold text-slate-900">
+                    {row.target != null ? n3(row.target) : <span className="text-slate-300">-</span>}
                   </td>
-                  <td className="p-3 text-right tabular-nums text-slate-600">
-                    {row.pl != null ? n3(row.pl.price) : '-'}
+                  <td className="p-2 text-right tabular-nums text-slate-600">
+                    {row.pl != null ? (
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span className="font-medium">{n3(row.pl.price)}</span>
+                        <span className="text-[10px] bg-slate-100 text-slate-500 border border-slate-200 px-1 rounded">{row.pl.date}</span>
+                      </div>
+                    ) : <span className="text-slate-400 text-xs italic">- none in {row.m}</span>}
                   </td>
-                  <td className="p-3 text-right tabular-nums text-slate-600">
-                    {row.bench != null ? n3(row.bench) : '-'}
+                  <td className="p-2 text-right tabular-nums text-slate-600">
+                    {row.bench != null ? n3(row.bench) : <span className="text-slate-300">-</span>}
                   </td>
-                  <td className="p-3 text-right tabular-nums font-bold text-slate-900 bg-slate-50/50">
-                    {row.px != null ? n3(row.px) : '-'}
+                  <td className="p-2 text-right tabular-nums text-slate-900 font-medium bg-slate-50/50">
+                    {row.px != null ? (
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span className="font-bold">{n3(row.px)}</span>
+                        <span className="text-[10px] bg-white text-slate-500 border border-slate-200 px-1 rounded shadow-sm">{row.ch?.date}</span>
+                      </div>
+                    ) : <span className="text-slate-300">-</span>}
                   </td>
-                  <td className={clsx("p-3 text-right tabular-nums", pctColor(row.vT))}>
-                    {row.vT != null ? pc(row.vT) : '-'}
+                  <td className={clsx("p-2 text-right tabular-nums", pctColor(row.vT))}>
+                    {row.vT != null ? (row.vT > 0 ? '+' : '') + pc(row.vT) : '-'}
                   </td>
-                  <td className={clsx("p-3 text-right tabular-nums", pctColor(row.vP))}>
-                    {row.vP != null ? pc(row.vP) : '-'}
+                  <td className={clsx("p-2 text-right tabular-nums", pctColor(row.vP))}>
+                    {row.vP != null ? (row.vP > 0 ? '+' : '') + pc(row.vP) : '-'}
                   </td>
-                  <td className={clsx("p-3 text-right tabular-nums", pctColor(row.vB))}>
-                    {row.vB != null ? pc(row.vB) : '-'}
+                  <td className={clsx("p-2 text-right tabular-nums", pctColor(row.vB))}>
+                    {row.vB != null ? (row.vB > 0 ? '+' : '') + pc(row.vB) : '-'}
                   </td>
-                  <td className="p-3 text-right tabular-nums text-slate-600">
-                    {row.st.days != null ? <span className="font-bold">{row.st.days} d</span> : '-'}
+                  <td className="p-2 text-right tabular-nums text-slate-600">
+                    {row.st.days != null ? (
+                      <div className="flex items-center justify-end gap-1">
+                        <span className="font-bold text-emerald-700">{row.st.days} d</span>
+                        <span className="text-[10px] text-emerald-600">Healthy</span>
+                      </div>
+                    ) : '-'}
                   </td>
-                  <td className="p-3 text-center">
-                    <span className={clsx("px-2 py-1 rounded-full text-[11px] font-bold", vColor)}>
+                  <td className="p-2 text-left">
+                    <span className={clsx("px-1.5 py-0.5 rounded text-[11px] font-bold border inline-flex items-center gap-1", vColor)}>
+                      <span className="text-[10px] opacity-70">{row.verdict.t === 'Buy' ? '◆' : (row.verdict.t === 'Hold' ? '▲' : (row.verdict.t === 'Bridge buy' ? '▲' : '-'))}</span>
                       {row.verdict.t}
                     </span>
                   </td>
@@ -168,7 +243,7 @@ export default function BuyingDesk({ data, settings }: { data: any, settings: an
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="p-6 text-center text-slate-500">
+                <td colSpan={10} className="p-8 text-center text-slate-500 bg-slate-50">
                   No materials found matching your filters.
                 </td>
               </tr>
