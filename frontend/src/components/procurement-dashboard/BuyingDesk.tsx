@@ -93,39 +93,21 @@ export default function BuyingDesk({ data, settings }: { data: any, settings: an
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center">
-          <div className="text-sm font-medium text-slate-500 mb-1">Total Monitored</div>
-          <div className="text-3xl font-bold text-slate-900">{rows.length}</div>
-        </div>
-        <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 shadow-sm flex flex-col justify-center">
-          <div className="text-sm font-medium text-emerald-700 mb-1">Action: Buy</div>
-          <div className="text-3xl font-bold text-emerald-900">{rows.filter(r => r.verdict.t === 'Buy').length}</div>
-        </div>
-        <div className="bg-rose-50 p-4 rounded-xl border border-rose-100 shadow-sm flex flex-col justify-center">
-          <div className="text-sm font-medium text-rose-700 mb-1">Action: Hold</div>
-          <div className="text-3xl font-bold text-rose-900">{rows.filter(r => r.verdict.t === 'Hold').length}</div>
-        </div>
-        <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 shadow-sm flex flex-col justify-center">
-          <div className="text-sm font-medium text-amber-700 mb-1">Action: Bridge Buy</div>
-          <div className="text-3xl font-bold text-amber-900">{rows.filter(r => r.verdict.t === 'Bridge buy').length}</div>
-        </div>
-      </div>
-
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
         <table className="w-full text-left text-sm whitespace-nowrap">
           <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider font-semibold text-slate-600">
             <tr>
               <th className="p-3">Raw Material</th>
-              <th className="p-3">Verdict</th>
-              <th className="p-3 text-right">Mkt Quote</th>
-              <th className="p-3 text-right">vs Ceiling</th>
-              <th className="p-3 text-right">vs Cost Basis</th>
+              <th className="p-3 text-right">MPPI Target <span className="block text-[10px] text-slate-400 font-normal">OMR / kg</span></th>
+              <th className="p-3 text-right">Last Purchase <span className="block text-[10px] text-slate-400 font-normal">OMR / kg</span></th>
+              <th className="p-3 text-right">Benchmark <span className="block text-[10px] text-slate-400 font-normal">6-mo avg</span></th>
+              <th className="p-3 text-right">Latest Market <span className="block text-[10px] text-slate-400 font-normal">OMR / kg</span></th>
+              <th className="p-3 text-right">vs Target</th>
               <th className="p-3 text-right">vs Last Buy</th>
-              <th className="p-3 text-right">MPPI Target</th>
-              <th className="p-3 text-right">Days Cover</th>
+              <th className="p-3 text-right">vs Bench.</th>
+              <th className="p-3 text-right">Stock Cover <span className="block text-[10px] text-slate-400 font-normal">days on hand</span></th>
+              <th className="p-3 text-center">Verdict</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -152,35 +134,41 @@ export default function BuyingDesk({ data, settings }: { data: any, settings: an
                     {row.name}
                     {market === 'ALL' && <span className="ml-2 text-[10px] uppercase text-slate-400 font-bold bg-slate-100 px-1.5 py-0.5 rounded">{row.m}</span>}
                   </td>
-                  <td className="p-3">
-                    <span className={clsx("px-2 py-1 rounded-full text-[11px] font-bold", vColor)}>
-                      {row.verdict.t}
-                    </span>
-                  </td>
                   <td className="p-3 text-right tabular-nums font-bold text-slate-900">
+                    {row.target != null ? n3(row.target) : '-'}
+                  </td>
+                  <td className="p-3 text-right tabular-nums text-slate-600">
+                    {row.pl != null ? n3(row.pl.price) : '-'}
+                  </td>
+                  <td className="p-3 text-right tabular-nums text-slate-600">
+                    {row.bench != null ? n3(row.bench) : '-'}
+                  </td>
+                  <td className="p-3 text-right tabular-nums font-bold text-slate-900 bg-slate-50/50">
                     {row.px != null ? n3(row.px) : '-'}
                   </td>
                   <td className={clsx("p-3 text-right tabular-nums", pctColor(row.vT))}>
                     {row.vT != null ? pc(row.vT) : '-'}
                   </td>
-                  <td className={clsx("p-3 text-right tabular-nums", pctColor(row.vB))}>
-                    {row.vB != null ? pc(row.vB) : '-'}
-                  </td>
                   <td className={clsx("p-3 text-right tabular-nums", pctColor(row.vP))}>
                     {row.vP != null ? pc(row.vP) : '-'}
                   </td>
-                  <td className="p-3 text-right tabular-nums text-slate-600">
-                    {row.target != null ? n3(row.target) : '-'}
+                  <td className={clsx("p-3 text-right tabular-nums", pctColor(row.vB))}>
+                    {row.vB != null ? pc(row.vB) : '-'}
                   </td>
                   <td className="p-3 text-right tabular-nums text-slate-600">
-                    {row.st.days != null ? row.st.days : '-'}
+                    {row.st.days != null ? <span className="font-bold">{row.st.days} d</span> : '-'}
+                  </td>
+                  <td className="p-3 text-center">
+                    <span className={clsx("px-2 py-1 rounded-full text-[11px] font-bold", vColor)}>
+                      {row.verdict.t}
+                    </span>
                   </td>
                 </tr>
               );
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="p-6 text-center text-slate-500">
+                <td colSpan={10} className="p-6 text-center text-slate-500">
                   No materials found matching your filters.
                 </td>
               </tr>

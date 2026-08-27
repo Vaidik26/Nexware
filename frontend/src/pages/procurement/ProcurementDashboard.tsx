@@ -5,6 +5,7 @@ import { AreaChart, TrendingUp, DollarSign, Package } from 'lucide-react';
 import BuyingDesk from '@/components/procurement-dashboard/BuyingDesk';
 import MPPIView from '@/components/procurement-dashboard/MPPIView';
 import PriceTrends from '@/components/procurement-dashboard/PriceTrends';
+import ModelAndLogic from '@/components/procurement-dashboard/ModelAndLogic';
 
 export default function ProcurementDashboard() {
   const [activeTab, setActiveTab] = useState<'mppi' | 'desk' | 'trends' | 'model'>('desk');
@@ -12,7 +13,7 @@ export default function ProcurementDashboard() {
   const [loading, setLoading] = useState(true);
 
   // Global procurement settings state
-  const [settings] = useState({
+  const [settings, setSettings] = useState({
     globalOn: false,
     globalM: 0.15,
     grpM: {} as Record<string, number>,
@@ -92,16 +93,13 @@ export default function ProcurementDashboard() {
           <BuyingDesk data={data} settings={settings} />
         )}
         {activeTab === 'mppi' && (
-          <MPPIView data={data} settings={settings} />
+          <MPPIView data={data} settings={settings} setSettings={setSettings} />
         )}
         {activeTab === 'trends' && (
           <PriceTrends data={data} settings={settings} />
         )}
         {activeTab === 'model' && (
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <h2 className="text-lg font-bold mb-4">Model & Logic</h2>
-            <p className="text-sm text-slate-500">Documentation describing how the procurement ceiling works.</p>
-          </div>
+          <ModelAndLogic data={data} settings={settings} />
         )}
       </div>
     </div>
