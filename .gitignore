@@ -151,5 +151,6 @@ misc
 sales_app
 run_local.bat
 .claude
+dashboards
 # Local Netlify folder
 .netlify
