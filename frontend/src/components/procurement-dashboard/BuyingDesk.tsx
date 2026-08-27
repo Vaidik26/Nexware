@@ -12,7 +12,14 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
     
     // settings override for local use
     const localSettings = { ...settings, inco };
-    let results = deskRow(data, localSettings, market);
+    let results: any[] = [];
+    const mlist = market === 'ALL' ? ['DUBAI', 'INT', 'OMAN'] : [market];
+    
+    data.rms.forEach((r: any) => {
+      mlist.forEach(m => {
+        results.push(deskRow(r, m, localSettings, data.meta));
+      });
+    });
 
     // Filter
     const query = q.toLowerCase().trim();
