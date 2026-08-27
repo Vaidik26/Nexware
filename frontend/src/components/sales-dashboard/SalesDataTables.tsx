@@ -213,10 +213,10 @@ export default function SalesDataTables({ data, bootData, filters, onFilterChang
             { header: 'Name', key: '1' },
             { header: 'Gross', key: '2', align: 'right', render: (r: any) => formatNum(r[2]) },
             { header: 'Net', key: '4', align: 'right', render: (r: any) => formatNum((r[2] || 0) - (r[3] || 0)) },
-            { header: 'Returns', key: '3', align: 'right', render: (r: any) => formatNum(r[3]) },
-            { header: 'Volume (kg)', key: '5', align: 'right', render: (r: any) => formatNum(r[5], true) },
+            { header: 'Returns', key: '3', align: 'right', render: (r: any) => formatNum(r[2] - r[3]) },
+            { header: 'Volume (kg)', key: '4', align: 'right', render: (r: any) => formatNum(r[4], true) },
           ]}
-          rowData={data.customers || []}
+          rowData={data.custs || []}
           interactive={true}
           onRowClick={(row) => {
             onFilterChange({ ...filters, customers: new Set([String(row[0])]) });

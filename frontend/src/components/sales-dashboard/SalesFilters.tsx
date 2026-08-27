@@ -29,9 +29,17 @@ export default function SalesFilters({ filters, onChange, bootData, currentData 
   }, [bootData]);
 
   const allCustomers = useMemo(() => {
-    if (!currentData?.customers) return [];
-    return currentData.customers.map((c: any) => ({ value: c[0], label: `${c[0]} - ${c[1]}` })).sort((a: any, b: any) => a.label.localeCompare(b.label));
-  }, [currentData]);
+    // bootData.custs is { id: name } — the full name dictionary (3859 entries)
+    // currentData.custIds is an array of customer IDs that had sales in the current view
+    if (!bootData?.custs) return [];
+    const inScope: Set<string> = new Set(
+      (currentData?.custIds || []).map((id: any) => String(id))
+    );
+    return Object.entries(bootData.custs as Record<string, string>)
+      .filter(([id]) => inScope.size === 0 || inScope.has(id))
+      .map(([id, name]) => ({ value: id, label: `${id} - ${name}` }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [bootData, currentData]);
 
   const Segment = ({ label, options, value, keyName, scrollable = false }: { label: string, options: any[], value: string, keyName: string, scrollable?: boolean }) => (
     <div className="flex flex-col gap-1.5">
