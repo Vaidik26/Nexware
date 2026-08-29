@@ -35,7 +35,7 @@ from backend.schemas.access import (
     TerritoryOut,
 )
 from backend.services.access_service import access_for
-from backend.services.sales_data_service import load_area_map, fetch_area_map_from_rpc
+from backend.services.sales_data_service import load_area_map
 
 router = APIRouter(prefix="/access", tags=["access"])
 
@@ -72,20 +72,20 @@ async def read_access_catalog(_=Depends(get_current_user)):
 @router.get("/territories", response_model=TerritoryCatalogOut)
 async def read_territories(_=Depends(require_module(PortalModule.USER_ADMIN))):
     """
-    Supervisor areas a grant may name, fetched live from the legacy Supabase
-    ``ng2_bootstrap`` RPC so the picker and enforcement share the same source.
+    The supervisor areas a grant may name, with how many customers each reaches
+    per channel.
 
-    The live fetch also warms the in-process cache used by territory-scoping,
-    so the first dashboard request after boot does not have to wait for it.
+    Behind USER_ADMIN because this is the grant picker's data and nobody else
+    has a use for it. Served from the backend's own copy of the generated map —
+    the same file the scoping enforces with — so the screen that WRITES a grant
+    and the code that ENFORCES one cannot disagree about which customers a
+    territory holds.
     """
-    sareas = await fetch_area_map_from_rpc()
-    if not sareas:
-        # RPC unavailable — fall back to the static file if it has data.
-        data = load_area_map()
-        sareas = data.get("salesmanAreas") or {}
-
+    data = load_area_map()
+    areas = data.get("salesmanAreas") or {}
+    
     return TerritoryCatalogOut(
-        source_dated=None,   # live data has no file date
+        source_dated=data.get("sourceDated"),
         territories=[
             TerritoryOut(
                 name=name,
@@ -95,6 +95,6 @@ async def read_territories(_=Depends(require_module(PortalModule.USER_ADMIN))):
                 van_reach=len(slot.get("vanIds") or []),
                 both_reach=len(slot.get("customerIds") or []),
             )
-            for name, slot in sorted(sareas.items())
+            for name, slot in sorted(areas.items())
         ],
     )
