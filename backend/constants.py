@@ -144,9 +144,9 @@ ROLE_DEFAULT_AREAS: dict[DashboardRole, tuple[str, ...]] = {
 
 #: Human labels for the roles, shown wherever a role is displayed.
 ROLE_LABELS: dict[DashboardRole, str] = {
-    DashboardRole.FINANCE: "Procurement Mgr",
-    DashboardRole.MANAGER: "Manager",
-    DashboardRole.SALES: "Area Sales",
+    DashboardRole.FINANCE: "Procurement Manager",
+    DashboardRole.MANAGER: "Sales Manager",
+    DashboardRole.SALES: "Sales User",
 }
 
 #: Human labels for the two sales channels. A null channel is "both channels"

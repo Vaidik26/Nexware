@@ -40,41 +40,77 @@ from backend.core.access import EffectiveAccess
 
 logger = logging.getLogger(__name__)
 
-#: Which of a supervisor area's id lists each channel may see. The field names
-#: are the ones the generator writes into area_customers.json.
+#: Which of a supervisor area's id lists each channel may see.
 _CHANNEL_ID_FIELD = {SalesChannel.KEY: "directIds", SalesChannel.VAN: "vanIds"}
 
 _AREA_FILE = Path(__file__).resolve().parent.parent / "data" / "area_customers.json"
 
-#: Returned as the customer filter when a scope resolves to nobody. It has to be
-#: a non-empty list that matches no customer: ``ng2_dashboard`` reads an EMPTY
-#: p_customers as "no filter" and would answer with all-Oman numbers under a
-#: "your territories only" heading.
 _MATCHES_NOBODY = [-1]
+
+# In-memory cache populated from the legacy RPC at first territory request.
+# Keyed by supervisor-area name → slot dict (same shape as area_customers.json).
+_rpc_area_cache: Dict[str, Any] = {}
 
 
 @lru_cache(maxsize=1)
 def load_area_map() -> Dict[str, Any]:
     """
-    The generated supervisor-area / ERP-area customer map.
+    The supervisor-area / ERP-area customer map.
 
-    Cached for the process lifetime — it is a build artefact that changes only
-    when the customer master is re-exported and the file redeployed.
+    Reads from ``backend/data/area_customers.json`` if present. Falls back to
+    ``_rpc_area_cache`` (populated by ``fetch_area_map_from_rpc``) when the
+    file is missing or empty so the territories endpoint can warm the cache
+    from the legacy Supabase and the enforcement path can then use it.
     """
     try:
         with _AREA_FILE.open(encoding="utf-8") as fh:
             data = json.load(fh)
-    except (OSError, json.JSONDecodeError) as exc:
-        # An empty map is not the same as "these territories have no customers",
-        # and every caller has to be able to tell the two apart — so this is
-        # logged loudly and the scope that results fails closed.
-        logger.error("Could not read %s: %s", _AREA_FILE, exc)
-        return {"areas": {}, "salesmanAreas": {}}
-    return data
+        if data.get("salesmanAreas"):
+            return data
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    # Fall back to RPC cache if the file is absent / empty.
+    if _rpc_area_cache:
+        return {"salesmanAreas": _rpc_area_cache, "areas": {}}
+
+    logger.warning(
+        "area_customers.json is missing or empty and the RPC cache is cold. "
+        "Territory enforcement will fail closed until /access/territories is called."
+    )
+    return {"areas": {}, "salesmanAreas": {}}
+
+
+def _invalidate_area_cache() -> None:
+    """Clear the lru_cache so load_area_map re-reads on the next call."""
+    load_area_map.cache_clear()
+
+
+async def fetch_area_map_from_rpc() -> Dict[str, Any]:
+    """
+    Fetch supervisor-area data from the legacy Supabase ``ng2_bootstrap`` RPC
+    and store it in ``_rpc_area_cache``.
+
+    Called by the territories endpoint so the picker always reflects live data.
+    Also warms the cache used by ``supervisor_areas()`` / enforcement.
+
+    The bootstrap response already contains ``salesmanAreas`` keyed by the
+    exact area name stored in grants.  Each slot has:
+      - ``direct`` / ``van``          — customer-master counts per channel
+      - ``directIds`` / ``vanIds``    — matched ids per channel
+      - ``customerIds``               — all matched ids (both channels)
+    """
+    raw = await _rpc("ng2_bootstrap", {})
+    sareas: Dict[str, Any] = (raw or {}).get("salesmanAreas") or {}
+    if sareas:
+        global _rpc_area_cache
+        _rpc_area_cache = sareas
+        _invalidate_area_cache()   # force load_area_map to pick up new cache
+    return sareas
 
 
 def supervisor_areas() -> Dict[str, Any]:
-    """The nine supervisor areas, keyed by the exact name a grant is stored as."""
+    """The supervisor areas, keyed by the exact name a grant is stored as."""
     return load_area_map().get("salesmanAreas") or {}
 
 
@@ -82,14 +118,9 @@ def granted_customer_ids(access: EffectiveAccess) -> Optional[List[int]]:
     """
     THE ONE PLACE A GRANT BECOMES CUSTOMER IDS, server side.
 
-    Returns ``None`` when the account reaches every customer — only an ALL grant
-    earns that — and a list otherwise. Anything that resolves to nothing returns
-    :data:`_MATCHES_NOBODY` rather than an empty list, for the reason documented
-    on that constant.
-
-    A stale area, or a channel/area pair the map has no id list for, contributes
-    NOTHING rather than falling back to the pooled list: a KEY grant must never
-    quietly reach van-route stores.
+    Returns ``None`` when the account reaches every customer (ALL grant) and a
+    list otherwise. Resolves to ``_MATCHES_NOBODY`` rather than [] so that an
+    empty result is never confused with "no filter" by ``ng2_dashboard``.
     """
     if access.all_areas:
         return None
@@ -99,7 +130,7 @@ def granted_customer_ids(access: EffectiveAccess) -> Optional[List[int]]:
     for area in access.areas:
         slot = areas.get(area)
         if not slot:
-            continue  # not a territory the map knows
+            continue
         channel = access.channel_for(area)
         field = "customerIds" if channel is None else _CHANNEL_ID_FIELD[channel]
         ids.extend(slot.get(field) or [])

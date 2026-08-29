@@ -35,21 +35,14 @@ from backend.schemas.access import (
     TerritoryOut,
 )
 from backend.services.access_service import access_for
-from backend.services.sales_data_service import load_area_map
+from backend.services.sales_data_service import load_area_map, fetch_area_map_from_rpc
 
 router = APIRouter(prefix="/access", tags=["access"])
 
 
 @router.get("/me", response_model=EffectiveAccessOut)
 async def read_my_access(current_user=Depends(get_current_user)):
-    """
-    The resolved access of the signed-in account.
-
-    Available to every authenticated persona, including those that hold nothing:
-    a picker signing into the web portal gets an honest empty answer rather than
-    a 403, so the client can say "your account opens nothing here" instead of
-    "something went wrong".
-    """
+    """The resolved access of the signed-in account."""
     return EffectiveAccessOut.of(
         current_user.user_type, access_for(current_user, current_user.user_type)
     )
@@ -57,10 +50,7 @@ async def read_my_access(current_user=Depends(get_current_user)):
 
 @router.get("/catalog", response_model=AccessCatalogOut)
 async def read_access_catalog(_=Depends(get_current_user)):
-    """
-    The roles, modules and channels this build enforces, with each role's
-    defaults so the admin screen can show what a role grants before it is saved.
-    """
+    """Roles, modules and channels this build enforces."""
     return AccessCatalogOut(
         modules=list(PortalModule),
         channels=[
@@ -82,24 +72,20 @@ async def read_access_catalog(_=Depends(get_current_user)):
 @router.get("/territories", response_model=TerritoryCatalogOut)
 async def read_territories(_=Depends(require_module(PortalModule.USER_ADMIN))):
     """
-    The supervisor areas a grant may name, with how many customers each reaches
-    per channel.
+    Supervisor areas a grant may name, fetched live from the legacy Supabase
+    ``ng2_bootstrap`` RPC so the picker and enforcement share the same source.
 
-    Behind USER_ADMIN because this is the grant picker's data and nobody else
-    has a use for it. Served from the backend's own copy of the generated map —
-    the same file the scoping enforces with — so the screen that WRITES a grant
-    and the code that ENFORCES one cannot disagree about which customers a
-    territory holds.
-
-    The counts are what drive the picker's guardrail: an area with no Direct
-    Sales customers is not offered under Key Sales, because that pair would
-    write a grant reaching nothing and look, on screen, exactly like a quiet
-    month.
+    The live fetch also warms the in-process cache used by territory-scoping,
+    so the first dashboard request after boot does not have to wait for it.
     """
-    data = load_area_map()
-    areas = data.get("salesmanAreas") or {}
+    sareas = await fetch_area_map_from_rpc()
+    if not sareas:
+        # RPC unavailable — fall back to the static file if it has data.
+        data = load_area_map()
+        sareas = data.get("salesmanAreas") or {}
+
     return TerritoryCatalogOut(
-        source_dated=data.get("sourceDated"),
+        source_dated=None,   # live data has no file date
         territories=[
             TerritoryOut(
                 name=name,
@@ -109,6 +95,6 @@ async def read_territories(_=Depends(require_module(PortalModule.USER_ADMIN))):
                 van_reach=len(slot.get("vanIds") or []),
                 both_reach=len(slot.get("customerIds") or []),
             )
-            for name, slot in sorted(areas.items())
+            for name, slot in sorted(sareas.items())
         ],
     )

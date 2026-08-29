@@ -5,6 +5,7 @@ import {
   ALL_AREAS,
   CHANNEL_LABELS,
   DashboardRole,
+  MODULE_LABELS,
   PortalModule,
   ROLE_HAS_AREAS,
   ROLE_HAS_CHANNEL,
@@ -155,7 +156,7 @@ export function AccessGrantEditor({ catalog, value, onChange, lockSelf, assignab
         >
           {offeredRoles.map((r) => (
             <option key={r.role} value={r.role}>
-              {r.role} — {r.label}
+              {r.label}
             </option>
           ))}
         </select>
@@ -165,20 +166,20 @@ export function AccessGrantEditor({ catalog, value, onChange, lockSelf, assignab
           <p>
             <span className="font-semibold">Opens: </span>
             {fixedMods.length
-              ? fixedMods.join(', ')
+              ? fixedMods.map(m => MODULE_LABELS[m]).join(', ')
               : <span className="italic">nothing</span>}
           </p>
           {value.role === 'SALES' && (
-            <p>Sales Dashboard, filtered to the channel and supervisor area configured below.</p>
+            <p>Sales Dashboard filtered to the channel and supervisor area set below.</p>
           )}
           {value.role === 'MANAGER' && (
             <p>
               Sales Dashboard for <b>every</b> supervisor area in the channel set below, plus User
-              Management (can create Sales Users only).
+              Management. Can create Sales Users only.
             </p>
           )}
           {value.role === 'FINANCE' && (
-            <p>Buying Desk only — no channel or supervisor area applies.</p>
+            <p>Procurement Desk only — no channel or supervisor area applies.</p>
           )}
         </div>
       </div>
