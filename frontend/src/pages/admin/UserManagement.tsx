@@ -471,41 +471,45 @@ export default function UserManagement() {
       ),
     });
 
-    base.push({
-      header: 'Actions',
-      accessor: (r: any) => {
-        // Deleting the signed-in admin is rejected by the backend; hiding the
-        // button avoids offering an action that always fails.
-        const isSelf =
-          persona.id === 'admins' && String(r.id) === String(currentUser?.id ?? '');
-        return (
-          <div className="flex space-x-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              className="text-primary border-primary/20 hover:bg-primary/5 px-2"
-              onClick={() => openEditModal(r)}
-            >
-              <Pencil className="w-4 h-4" />
-            </Button>
-            {!isSelf && (
+    const isManager = currentAccess?.user_type === 'dashboard' && currentAccess?.role === 'MANAGER';
+
+    if (!isManager) {
+      base.push({
+        header: 'Actions',
+        accessor: (r: any) => {
+          // Deleting the signed-in admin is rejected by the backend; hiding the
+          // button avoids offering an action that always fails.
+          const isSelf =
+            persona.id === 'admins' && String(r.id) === String(currentUser?.id ?? '');
+          return (
+            <div className="flex space-x-2">
               <Button
                 variant="secondary"
                 size="sm"
-                className="text-error border-error/20 hover:bg-error/5 px-2"
-                onClick={() => handleDelete(r)}
+                className="text-primary border-primary/20 hover:bg-primary/5 px-2"
+                onClick={() => openEditModal(r)}
               >
-                <Trash2 className="w-4 h-4" />
+                <Pencil className="w-4 h-4" />
               </Button>
-            )}
-          </div>
-        );
-      },
-    });
+              {!isSelf && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="text-error border-error/20 hover:bg-error/5 px-2"
+                  onClick={() => handleDelete(r)}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+          );
+        },
+      });
+    }
 
     return base;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [persona, rows, currentUser?.id]);
+  }, [persona, rows, currentUser?.id, currentAccess]);
 
   const modalFields = isEditMode
     ? [...persona.fields, { ...PASSWORD_FIELD, label: 'New Password (leave blank to keep current)' }]
