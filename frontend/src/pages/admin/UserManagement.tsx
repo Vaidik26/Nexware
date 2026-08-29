@@ -564,39 +564,50 @@ export default function UserManagement() {
         isOpen={isModalOpen}
         onClose={closeModal}
         title={`${isEditMode ? 'Edit' : 'Create'} ${persona.label.replace(/s$/, '')}`}
+        maxWidth={persona.hasAccessGrants ? '4xl' : 'md'}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {modalFields.map((f) => (
-            <Input
-              key={f.key}
-              label={f.label}
-              type={f.type || 'text'}
-              placeholder={f.placeholder}
-              value={formData[f.key] ?? ''}
-              onChange={(e) => setFormData({ ...formData, [f.key]: e.target.value })}
-              required={f.required}
-            />
-          ))}
+        <form onSubmit={handleSubmit} className="flex flex-col h-full max-h-full">
+          <div className={persona.hasAccessGrants ? "grid grid-cols-1 md:grid-cols-2 gap-6" : "space-y-4"}>
+            {/* Left side: Basic Info */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-on-surface-variant uppercase tracking-wider mb-2">Account Details</h3>
+              {modalFields.map((f) => (
+                <Input
+                  key={f.key}
+                  label={f.label}
+                  type={f.type || 'text'}
+                  placeholder={f.placeholder}
+                  value={formData[f.key] ?? ''}
+                  onChange={(e) => setFormData({ ...formData, [f.key]: e.target.value })}
+                  required={f.required}
+                />
+              ))}
+            </div>
 
-          {persona.hasAccessGrants && (
-            <AccessGrantEditor
-              catalog={catalog}
-              value={grant}
-              onChange={setGrant}
-              lockSelf={
-                isEditMode &&
-                currentUser?.user_type === 'dashboard' &&
-                String(editingId) === String(currentUser?.id ?? '')
-              }
-              assignableRoles={
-                currentUser?.user_type === 'dashboard' && currentAccess?.role === 'MANAGER'
-                  ? ['SALES']
-                  : undefined
-              }
-            />
-          )}
+            {/* Right side: Access Grant */}
+            {persona.hasAccessGrants && (
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-on-surface-variant uppercase tracking-wider mb-2">Access & Permissions</h3>
+                <AccessGrantEditor
+                  catalog={catalog}
+                  value={grant}
+                  onChange={setGrant}
+                  lockSelf={
+                    isEditMode &&
+                    currentUser?.user_type === 'dashboard' &&
+                    String(editingId) === String(currentUser?.id ?? '')
+                  }
+                  assignableRoles={
+                    currentUser?.user_type === 'dashboard' && currentAccess?.role === 'MANAGER'
+                      ? ['SALES']
+                      : undefined
+                  }
+                />
+              </div>
+            )}
+          </div>
 
-          <div className="flex justify-end space-x-3 pt-4">
+          <div className="flex justify-end space-x-3 pt-6 mt-auto border-t border-outline-variant/50">
             <Button type="button" variant="secondary" onClick={closeModal}>
               Cancel
             </Button>
