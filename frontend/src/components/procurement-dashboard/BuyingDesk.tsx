@@ -114,21 +114,21 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
 
       {/* Global Market Switcher matching legacy */}
       <div className="flex flex-wrap items-center gap-8 bg-white p-4 rounded-xl border border-slate-200">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-400 bg-slate-100 rounded-full w-5 h-5 flex items-center justify-center">1</span>
-          <span className="text-sm font-semibold text-slate-600 mr-2">Market</span>
-          <div className="flex border border-slate-300 rounded overflow-hidden">
-            {['DUBAI', 'INT', 'OMAN', 'ALL'].map(m => (
-              <button 
-                key={m}
-                onClick={() => setFilter('market', m)}
-                className={clsx("px-4 py-1.5 text-sm font-medium transition-colors border-r border-slate-200 last:border-0", market === m ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}
-              >
-                {m === 'INT' ? 'International' : (m === 'OMAN' ? 'Oman - local' : (m === 'ALL' ? 'All markets' : 'Dubai'))}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <span className="text-xs font-bold text-slate-400 bg-slate-100 rounded-full w-5 h-5 flex items-center justify-center shrink-0">1</span>
+            <span className="text-sm font-semibold text-slate-600 mr-2 shrink-0">Market</span>
+            <div className="flex flex-wrap gap-1">
+              {['DUBAI', 'INT', 'OMAN', 'ALL'].map(m => (
+                <button 
+                  key={m}
+                  onClick={() => setFilter('market', m)}
+                  className={clsx("px-3 py-1 text-xs sm:text-sm font-medium transition-colors border border-slate-200 rounded-md", market === m ? 'bg-primary text-white border-primary' : 'bg-white text-slate-600 hover:bg-slate-50')}
+                >
+                  {m === 'INT' ? 'International' : (m === 'OMAN' ? 'Oman - local' : (m === 'ALL' ? 'All markets' : 'Dubai'))}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
         <div className={clsx("flex items-center gap-2 transition-opacity", (market === 'INT' || market === 'ALL') ? 'opacity-100' : 'opacity-40 pointer-events-none')}>
           <span className="text-slate-300">→</span>
@@ -141,7 +141,7 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
         </div>
       </div>
 
-      {/* Table — all 10 legacy columns, scrollable container to never clip */}
+      {/* Table - all 10 legacy columns, hidden selectively on mobile to fit without swiping */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 w-full overflow-x-auto">
         <table className="min-w-full text-left text-[13px] leading-tight whitespace-nowrap">
           <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600">
@@ -154,11 +154,11 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
                 MPPI target
                 <div className="text-[10px] text-slate-400 font-normal mt-0.5">OMR / kg</div>
               </th>
-              <th className="px-2 py-2 text-right align-bottom border-b border-slate-200">
+              <th className="hidden md:table-cell px-2 py-2 text-right align-bottom border-b border-slate-200">
                 Last purchase
                 <div className="text-[10px] text-slate-400 font-normal mt-0.5">that row's market only</div>
               </th>
-              <th className="px-2 py-2 text-right align-bottom border-b border-slate-200">
+              <th className="hidden lg:table-cell px-2 py-2 text-right align-bottom border-b border-slate-200">
                 Benchmark
                 <div className="text-[10px] text-slate-400 font-normal mt-0.5">6-month average</div>
               </th>
@@ -167,9 +167,9 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
                 <div className="text-[10px] text-slate-400 font-normal mt-0.5">OMR / kg, and its date</div>
               </th>
               <th className="px-2 py-2 text-right align-bottom border-b border-slate-200">vs Target</th>
-              <th className="px-2 py-2 text-right align-bottom border-b border-slate-200">vs Last buy</th>
-              <th className="px-2 py-2 text-right align-bottom border-b border-slate-200">vs Bench.</th>
-              <th className="px-2 py-2 text-right align-bottom border-b border-slate-200">
+              <th className="hidden md:table-cell px-2 py-2 text-right align-bottom border-b border-slate-200">vs Last buy</th>
+              <th className="hidden lg:table-cell px-2 py-2 text-right align-bottom border-b border-slate-200">vs Bench.</th>
+              <th className="hidden xl:table-cell px-2 py-2 text-right align-bottom border-b border-slate-200">
                 Stock cover
                 <div className="text-[10px] text-slate-400 font-normal mt-0.5">days on hand</div>
               </th>
@@ -203,7 +203,7 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
                   <td className="px-2 py-2 text-right tabular-nums font-bold text-slate-900">
                     {row.target != null ? n3(row.target) : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="px-2 py-2 text-right tabular-nums text-slate-600">
+                  <td className="hidden md:table-cell px-2 py-2 text-right tabular-nums text-slate-600">
                     {row.pl != null ? (
                       <span className="inline-flex items-center gap-1">
                         <span className="font-medium">{n3(row.pl.price)}</span>
@@ -211,7 +211,7 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
                       </span>
                     ) : <span className="text-slate-400 text-xs italic">— none in {row.m}</span>}
                   </td>
-                  <td className="px-2 py-2 text-right tabular-nums text-slate-600">
+                  <td className="hidden lg:table-cell px-2 py-2 text-right tabular-nums text-slate-600">
                     {row.bench != null ? n3(row.bench) : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums text-slate-900 font-medium">
@@ -225,13 +225,13 @@ export default function BuyingDesk({ data, settings, filters, setFilters }: { da
                   <td className={clsx("px-2 py-2 text-right tabular-nums", pctColor(row.vT))}>
                     {row.vT != null ? (row.vT > 0 ? '+' : '') + pc(row.vT) : '—'}
                   </td>
-                  <td className={clsx("px-2 py-2 text-right tabular-nums", pctColor(row.vP))}>
+                  <td className={clsx("hidden md:table-cell px-2 py-2 text-right tabular-nums", pctColor(row.vP))}>
                     {row.vP != null ? (row.vP > 0 ? '+' : '') + pc(row.vP) : '—'}
                   </td>
-                  <td className={clsx("px-2 py-2 text-right tabular-nums", pctColor(row.vB))}>
+                  <td className={clsx("hidden lg:table-cell px-2 py-2 text-right tabular-nums", pctColor(row.vB))}>
                     {row.vB != null ? (row.vB > 0 ? '+' : '') + pc(row.vB) : '—'}
                   </td>
-                  <td className="px-2 py-2 text-right tabular-nums text-slate-600">
+                  <td className="hidden xl:table-cell px-2 py-2 text-right tabular-nums text-slate-600">
                     {row.st.days != null ? (
                       <span className="inline-flex items-center gap-1">
                         <span className="font-bold text-emerald-700">{row.st.days} d</span>
