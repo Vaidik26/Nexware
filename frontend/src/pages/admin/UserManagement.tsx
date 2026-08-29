@@ -146,10 +146,23 @@ export default function UserManagement() {
   const currentUser = useAuthStore((s) => s.user);
   const currentAccess = useAuthStore((s) => s.access);
 
-  const [activeTab, setActiveTab] = useState(PERSONAS[0].id);
+  const visiblePersonas = useMemo(() => {
+    return currentAccess?.user_type === 'admin'
+      ? PERSONAS
+      : PERSONAS.filter(p => p.id === 'dashboard-users');
+  }, [currentAccess]);
+
+  const [activeTab, setActiveTab] = useState(visiblePersonas[0]?.id || 'dashboard-users');
+  
+  useEffect(() => {
+    if (!visiblePersonas.find(p => p.id === activeTab)) {
+      setActiveTab(visiblePersonas[0]?.id || 'dashboard-users');
+    }
+  }, [visiblePersonas, activeTab]);
+
   const persona = useMemo(
-    () => PERSONAS.find((p) => p.id === activeTab) ?? PERSONAS[0],
-    [activeTab]
+    () => visiblePersonas.find((p) => p.id === activeTab) ?? visiblePersonas[0],
+    [activeTab, visiblePersonas]
   );
 
   const [rows, setRows] = useState<any[]>([]);
@@ -160,7 +173,7 @@ export default function UserManagement() {
   const [restrictedMsg, setRestrictedMsg] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [formData, setFormData] = useState<Record<string, string>>(blankForm(PERSONAS[0]));
+  const [formData, setFormData] = useState<Record<string, string>>({});
   const [grant, setGrant] = useState<GrantDraft>(BLANK_GRANT);
   const [catalog, setCatalog] = useState<AccessCatalog | null>(null);
 
@@ -190,14 +203,16 @@ export default function UserManagement() {
   };
 
   useEffect(() => {
-    fetchRows(persona);
+    if (persona) {
+      fetchRows(persona);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [persona.id]);
+  }, [persona?.id]);
 
   // Tab badges: fetch every group's size once so the counts are visible without
-  // clicking through. Failures are silent — a missing badge is not worth a toast.
+  // clicking through. Failures are silent - a missing badge is not worth a toast.
   useEffect(() => {
-    PERSONAS.forEach(async (p) => {
+    visiblePersonas.forEach(async (p) => {
       try {
         const res = await api.get(p.endpoint);
         setCounts((prev) => ({ ...prev, [p.id]: (res.data || []).length }));
@@ -512,7 +527,7 @@ export default function UserManagement() {
 
       {/* ── Persona tabs ─────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-2 border-b border-outline-variant pb-px">
-        {PERSONAS.map((p) => {
+        {visiblePersonas.map((p) => {
           const Icon = p.icon;
           const isActive = p.id === persona.id;
           return (
