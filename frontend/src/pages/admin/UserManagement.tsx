@@ -14,7 +14,7 @@ import {
   AccessCatalog,
   GrantDraft,
 } from '@/components/admin/AccessGrantEditor';
-import { ALL_AREAS, DashboardRole, channelFor, grantLabel } from '@/lib/access';
+import { ALL_AREAS, DashboardRole, ROLE_MODULES, channelFor, grantLabel } from '@/lib/access';
 import api from '@/lib/api';
 
 /**
@@ -115,7 +115,7 @@ const PERSONAS: Persona[] = [
     endpoint: '/dashboard-users',
     icon: LineChart,
     blurb:
-      'Portal access is set per account: a role supplies the defaults, and an explicit grant of modules or territories replaces them for that user.',
+      'Portal access is set per account. The role determines which modules open; supervisor areas and channel can be configured for Sales Users and Managers.',
     identifierKey: 'email',
     nameKey: 'full_name',
     hasAccessGrants: true,
@@ -126,8 +126,8 @@ const PERSONAS: Persona[] = [
   },
 ];
 
-/** A new account starts on SALES, whose default opens nothing. Fail closed. */
-const BLANK_GRANT: GrantDraft = { role: 'SALES', modules: [], areas: [], channel: null };
+/** A new account starts on SALES, which opens Sales Dashboard. */
+const BLANK_GRANT: GrantDraft = { role: 'SALES', areas: [], channel: null };
 
 const PASSWORD_FIELD: FieldDef = {
   key: 'password',
@@ -144,6 +144,7 @@ function blankForm(persona: Persona): Record<string, string> {
 
 export default function UserManagement() {
   const currentUser = useAuthStore((s) => s.user);
+  const currentAccess = useAuthStore((s) => s.access);
 
   const [activeTab, setActiveTab] = useState(PERSONAS[0].id);
   const persona = useMemo(
@@ -221,19 +222,11 @@ export default function UserManagement() {
     persona.fields.forEach((f) => (form[f.key] = row[f.key] ?? ''));
     setFormData(form);
 
-    // Re-open on what was EXPLICITLY granted, not on what the account resolves
-    // to. Seeding the ticks from the resolved answer would turn an inherited
-    // account into an explicitly-granted one the moment anybody saved a phone
-    // number — and it would then stop following its role.
     if (persona.hasAccessGrants) {
       const areas: string[] = row.explicit_areas ? row.areas ?? [] : [];
-      // The rows could disagree with each other if written by hand; the first
-      // one wins the selector, and saving unifies them. The API applies one
-      // channel to the whole save, which is what the picker offers.
       const channel = areas.length ? channelFor(row, areas[0]) : null;
       setGrant({
         role: (row.role as DashboardRole) ?? 'SALES',
-        modules: row.explicit_modules ? row.modules ?? [] : [],
         areas,
         channel,
       });
@@ -276,12 +269,9 @@ export default function UserManagement() {
 
     if (persona.hasAccessGrants) {
       payload.role = grant.role;
-      // Always sent, including empty. An omitted list means "leave that half of
-      // the grant alone" to the API, which would make it impossible to take a
-      // module away or to put an account back on its role defaults — and this
-      // form shows the WHOLE grant, so what is on screen is what should be
-      // stored.
-      payload.modules = grant.modules;
+      // Always sent. An omitted list means "leave that half alone" to the API,
+      // which would make it impossible to clear areas or put the account back
+      // on role defaults — and this form shows the WHOLE grant.
       payload.areas = grant.areas;
       payload.channel = grant.channel;
     }
@@ -392,16 +382,14 @@ export default function UserManagement() {
       });
       base.push({
         header: 'Modules',
-        accessor: (r: any) => (
-          <div className="max-w-[220px] text-xs">
-            <span className="text-on-surface">
-              {r.modules?.length ? r.modules.join(', ') : 'opens nothing'}
-            </span>
-            {!r.explicit_modules && (
-              <em className="ml-1 text-on-surface-variant">(role default)</em>
-            )}
-          </div>
-        ),
+        accessor: (r: any) => {
+          const mods = ROLE_MODULES[r.role as DashboardRole] ?? [];
+          return (
+            <div className="max-w-[220px] text-xs text-on-surface">
+              {mods.length ? mods.join(', ') : <em className="text-on-surface-variant">opens nothing</em>}
+            </div>
+          );
+        },
       });
       base.push({
         header: 'Supervisor area · channel',
@@ -414,9 +402,10 @@ export default function UserManagement() {
                   ? areas
                       .map((a) => (a === ALL_AREAS ? a : grantLabel(a, channelFor(r, a))))
                       .join(', ')
-                  : 'reaches no customers'}
+                  : <em className="text-on-surface-variant">
+                      {r.role === 'MANAGER' ? 'every area' : r.role === 'FINANCE' ? 'n/a' : 'none'}
+                    </em>}
               </span>
-              {!r.explicit_areas && <em className="ml-1 text-on-surface-variant">(role default)</em>}
             </div>
           );
         },
@@ -594,12 +583,15 @@ export default function UserManagement() {
               catalog={catalog}
               value={grant}
               onChange={setGrant}
-              // Cosmetic; the backend refuses the write anyway. This just avoids
-              // inviting a refusal.
               lockSelf={
                 isEditMode &&
                 currentUser?.user_type === 'dashboard' &&
                 String(editingId) === String(currentUser?.id ?? '')
+              }
+              assignableRoles={
+                currentUser?.user_type === 'dashboard' && currentAccess?.role === 'MANAGER'
+                  ? ['SALES']
+                  : undefined
               }
             />
           )}

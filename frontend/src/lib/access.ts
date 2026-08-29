@@ -17,7 +17,7 @@
 export const PORTAL_MODULES = ['SALES_DASH', 'PROCUREMENT', 'USER_ADMIN'] as const;
 export type PortalModule = (typeof PORTAL_MODULES)[number];
 
-export const DASHBOARD_ROLES = ['DEV', 'FINANCE', 'MANAGER', 'SALES', 'WAREHOUSE'] as const;
+export const DASHBOARD_ROLES = ['FINANCE', 'MANAGER', 'SALES'] as const;
 export type DashboardRole = (typeof DASHBOARD_ROLES)[number];
 
 export const SALES_CHANNELS = ['KEY', 'VAN'] as const;
@@ -30,6 +30,33 @@ export const MODULE_LABELS: Record<PortalModule, string> = {
   SALES_DASH: 'Sales Dashboard',
   PROCUREMENT: 'Procurement Desk',
   USER_ADMIN: 'User Management',
+};
+
+export const ROLE_LABELS: Record<DashboardRole, string> = {
+  SALES: 'Sales User',
+  MANAGER: 'Sales Manager',
+  FINANCE: 'Procurement Manager',
+};
+
+/** Modules are strictly fixed by role — no per-user overrides. */
+export const ROLE_MODULES: Record<DashboardRole, PortalModule[]> = {
+  SALES: ['SALES_DASH'],
+  MANAGER: ['SALES_DASH', 'USER_ADMIN'],
+  FINANCE: ['PROCUREMENT'],
+};
+
+/** Does this role carry supervisor areas? Only SALES. */
+export const ROLE_HAS_AREAS: Record<DashboardRole, boolean> = {
+  SALES: true,
+  MANAGER: false,
+  FINANCE: false,
+};
+
+/** Does this role have a sales channel configured? SALES + MANAGER. */
+export const ROLE_HAS_CHANNEL: Record<DashboardRole, boolean> = {
+  SALES: true,
+  MANAGER: true,
+  FINANCE: false,
 };
 
 export const CHANNEL_LABELS: Record<SalesChannel, string> = {
@@ -45,9 +72,9 @@ export interface EffectiveAccess {
   /** area -> channel. An area absent from this map reaches both books. */
   area_channels: Record<string, SalesChannel>;
   all_areas: boolean;
-  explicit_modules: boolean;
   explicit_areas: boolean;
 }
+
 
 /**
  * One supervisor area, as `GET /access/territories` describes it.
