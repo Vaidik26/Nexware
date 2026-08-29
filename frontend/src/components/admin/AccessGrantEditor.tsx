@@ -178,7 +178,7 @@ export function AccessGrantEditor({ catalog, value, onChange, lockSelf, assignab
               Management. Can create Sales Users only.
             </p>
           )}
-          {value.role === 'FINANCE' && (
+          {value.role === 'PROCUREMENT_MANAGER' && (
             <p>Procurement Desk only — no channel or supervisor area applies.</p>
           )}
         </div>

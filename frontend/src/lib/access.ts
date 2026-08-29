@@ -17,7 +17,7 @@
 export const PORTAL_MODULES = ['SALES_DASH', 'PROCUREMENT', 'USER_ADMIN'] as const;
 export type PortalModule = (typeof PORTAL_MODULES)[number];
 
-export const DASHBOARD_ROLES = ['FINANCE', 'MANAGER', 'SALES'] as const;
+export const DASHBOARD_ROLES = ['PROCUREMENT_MANAGER', 'MANAGER', 'SALES'] as const;
 export type DashboardRole = (typeof DASHBOARD_ROLES)[number];
 
 export const SALES_CHANNELS = ['KEY', 'VAN'] as const;
@@ -35,28 +35,28 @@ export const MODULE_LABELS: Record<PortalModule, string> = {
 export const ROLE_LABELS: Record<DashboardRole, string> = {
   SALES: 'Sales User',
   MANAGER: 'Sales Manager',
-  FINANCE: 'Procurement Manager',
+  PROCUREMENT_MANAGER: 'Procurement Manager',
 };
 
 /** Modules are strictly fixed by role — no per-user overrides. */
 export const ROLE_MODULES: Record<DashboardRole, PortalModule[]> = {
   SALES: ['SALES_DASH'],
   MANAGER: ['SALES_DASH', 'USER_ADMIN'],
-  FINANCE: ['PROCUREMENT'],
+  PROCUREMENT_MANAGER: ['PROCUREMENT'],
 };
 
 /** Does this role carry supervisor areas? Only SALES. */
 export const ROLE_HAS_AREAS: Record<DashboardRole, boolean> = {
   SALES: true,
   MANAGER: false,
-  FINANCE: false,
+  PROCUREMENT_MANAGER: false,
 };
 
 /** Does this role have a sales channel configured? SALES + MANAGER. */
 export const ROLE_HAS_CHANNEL: Record<DashboardRole, boolean> = {
   SALES: true,
   MANAGER: true,
-  FINANCE: false,
+  PROCUREMENT_MANAGER: false,
 };
 
 export const CHANNEL_LABELS: Record<SalesChannel, string> = {

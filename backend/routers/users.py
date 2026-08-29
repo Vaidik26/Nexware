@@ -7,7 +7,7 @@ and ``/dashboard-users``.
 
 WHO MAY MANAGE USERS. Every write here is gated on the ``USER_ADMIN`` module
 rather than on the admin persona, because holding USER_ADMIN is exactly what
-that module means and a DEV or FINANCE dashboard account holds it by role
+that module means and a DEV or PROCUREMENT_MANAGER dashboard account holds it by role
 default. The gate still admits every admin — :data:`PORTAL_OWNER` gives them
 every module — so nothing an admin could do before is refused now.
 

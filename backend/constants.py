@@ -49,7 +49,7 @@ class DashboardRole(str, Enum):
     module overrides anymore.
     """
 
-    FINANCE = "FINANCE"
+    PROCUREMENT_MANAGER = "PROCUREMENT_MANAGER"
     MANAGER = "MANAGER"
     SALES = "SALES"
 
@@ -127,7 +127,7 @@ ALL_AREAS = "ALL"
 #: The exact portal modules each role is granted.
 #: There is no explicit module grant override; this map is absolute.
 ROLE_MODULES: dict[DashboardRole, tuple[PortalModule, ...]] = {
-    DashboardRole.FINANCE: (PortalModule.PROCUREMENT,),
+    DashboardRole.PROCUREMENT_MANAGER: (PortalModule.PROCUREMENT,),
     DashboardRole.MANAGER: (
         PortalModule.SALES_DASH,
         PortalModule.USER_ADMIN,
@@ -137,14 +137,14 @@ ROLE_MODULES: dict[DashboardRole, tuple[PortalModule, ...]] = {
 
 #: What each role's data scope is when the account carries no explicit area grant.
 ROLE_DEFAULT_AREAS: dict[DashboardRole, tuple[str, ...]] = {
-    DashboardRole.FINANCE: (ALL_AREAS,),
+    DashboardRole.PROCUREMENT_MANAGER: (ALL_AREAS,),
     DashboardRole.MANAGER: (ALL_AREAS,),
     DashboardRole.SALES: (),
 }
 
 #: Human labels for the roles, shown wherever a role is displayed.
 ROLE_LABELS: dict[DashboardRole, str] = {
-    DashboardRole.FINANCE: "Procurement Manager",
+    DashboardRole.PROCUREMENT_MANAGER: "Procurement Manager",
     DashboardRole.MANAGER: "Sales Manager",
     DashboardRole.SALES: "Sales User",
 }

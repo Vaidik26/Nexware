@@ -403,7 +403,7 @@ export default function UserManagement() {
                       .map((a) => (a === ALL_AREAS ? a : grantLabel(a, channelFor(r, a))))
                       .join(', ')
                   : <em className="text-on-surface-variant">
-                      {r.role === 'MANAGER' ? 'every area' : r.role === 'FINANCE' ? 'n/a' : 'none'}
+                      {r.role === 'MANAGER' ? 'every area' : r.role === 'PROCUREMENT_MANAGER' ? 'n/a' : 'none'}
                     </em>}
               </span>
             </div>

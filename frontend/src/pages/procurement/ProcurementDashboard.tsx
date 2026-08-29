@@ -49,7 +49,7 @@ export default function ProcurementDashboard() {
 
   const tabs = [
     { id: 'desk', label: 'Buying Desk', icon: DollarSign },
-    ...(access?.role === 'FINANCE' ? [] : [
+    ...(access?.role === 'PROCUREMENT_MANAGER' ? [] : [
       { id: 'mppi', label: 'MPPI Ceiling', icon: Package },
       { id: 'trends', label: 'Price Trends', icon: TrendingUp },
       { id: 'model', label: 'Model & Logic', icon: AreaChart },
