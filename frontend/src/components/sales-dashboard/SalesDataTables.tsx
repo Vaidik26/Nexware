@@ -108,7 +108,7 @@ export default function SalesDataTables({ data, bootData, filters, onFilterChang
           </div>
         </div>
         <div className="overflow-auto flex-1 p-0">
-          <table className="w-full text-xs text-left">
+          <table className="w-full min-w-[700px] text-xs text-left">
             <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
               <tr>
                 {columns.map((c, i) => (

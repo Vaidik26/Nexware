@@ -76,11 +76,30 @@ export default function SalesFilters({ filters, onChange, bootData, currentData 
     </div>
   );
 
+  const allowedChannels = useMemo(() => {
+    if (!access || access.all_areas) return ['key', 'van'];
+    
+    const channels = new Set<string>();
+    Object.values(access.area_channels || {}).forEach((ch: any) => {
+      if (ch === 'KEY') channels.add('key');
+      if (ch === 'VAN') channels.add('van');
+    });
+    
+    if (channels.size === 0 && access.areas?.length > 0) return ['key', 'van'];
+    return Array.from(channels);
+  }, [access]);
+
+  const channelOptions = [
+    ...(allowedChannels.length !== 1 ? [{ label: 'All', value: 'all' }] : []),
+    ...(allowedChannels.includes('key') ? [{ label: 'Key Sales', value: 'key' }] : []),
+    ...(allowedChannels.includes('van') ? [{ label: 'Van Sales', value: 'van' }] : [])
+  ];
+
   return (
     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4 relative">
       <button 
         onClick={() => onChange({
-          channel: 'all',
+          channel: allowedChannels.length === 1 ? allowedChannels[0] : 'all',
           area: 'all',
           sarea: 'all',
           period: 'last12',
@@ -91,22 +110,20 @@ export default function SalesFilters({ filters, onChange, bootData, currentData 
           customStart: new Date('2021-01-01'),
           customEnd: new Date('2025-12-01')
         })}
-        className="absolute top-4 right-4 text-xs font-bold text-slate-400 hover:text-red-500 transition-colors"
+        className="absolute top-4 right-4 text-xs font-semibold text-primary hover:text-primary/80 transition-colors bg-primary/5 px-2 py-1 rounded"
       >
         Reset Filters
       </button>
       
       <div className="flex flex-wrap gap-4 items-end pr-24">
-        <Segment 
-          label="Channel" 
-          keyName="channel"
-          value={filters.channel}
-          options={[
-            { label: 'All', value: 'all' },
-            { label: 'Key Sales', value: 'key' },
-            { label: 'Van Sales', value: 'van' }
-          ]} 
-        />
+        {channelOptions.length > 1 && (
+          <Segment 
+            label="Channel" 
+            keyName="channel"
+            value={filters.channel}
+            options={channelOptions} 
+          />
+        )}
         
         <div className="flex flex-col gap-1.5 min-w-[200px] flex-1 max-w-xs">
           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Area</label>

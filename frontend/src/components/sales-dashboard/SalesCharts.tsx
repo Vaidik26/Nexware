@@ -126,23 +126,25 @@ export default function SalesCharts({ data, filters, onFilterChange }: { data: a
             <GranButton label="Y" active={gran === 'Y'} />
           </div>
         </div>
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={trendData} margin={{ top: 5, right: 0, left: 0, bottom: 5 }} onClick={handleChartClick} className="cursor-pointer" title="Click to filter by this period">
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} dy={10} />
-              <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} tickFormatter={formatYAxis} />
-              <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} tickFormatter={formatYAxis} />
-              <Tooltip 
-                contentStyle={{ borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '12px' }}
-                formatter={(value: number) => new Intl.NumberFormat('en-US').format(value)}
-              />
-              <Legend wrapperStyle={{ fontSize: '12px' }} />
-              <Bar yAxisId="right" dataKey="Volume" fill="#80bea6" opacity={0.6} radius={[2, 2, 0, 0]} maxBarSize={40} />
-              <Line yAxisId="left" type="monotone" dataKey="Gross" stroke="#003527" strokeWidth={2.5} dot={false} />
-              <Line yAxisId="left" type="monotone" dataKey="Net" stroke="#006c49" strokeWidth={2.5} strokeDasharray="5 5" dot={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
+        <div className="h-64 overflow-x-auto no-scrollbar">
+          <div className="min-w-[700px] h-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={trendData} margin={{ top: 5, right: 0, left: 0, bottom: 5 }} onClick={handleChartClick} className="cursor-pointer" title="Click to filter by this period">
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} dy={10} />
+                <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} tickFormatter={formatYAxis} />
+                <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} tickFormatter={formatYAxis} />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '12px' }}
+                  formatter={(value: number) => new Intl.NumberFormat('en-US').format(value)}
+                />
+                <Legend wrapperStyle={{ fontSize: '12px' }} />
+                <Bar yAxisId="right" dataKey="Volume" fill="#80bea6" opacity={0.6} radius={[2, 2, 0, 0]} maxBarSize={40} />
+                <Line yAxisId="left" type="monotone" dataKey="Gross" stroke="#003527" strokeWidth={2.5} dot={false} />
+                <Line yAxisId="left" type="monotone" dataKey="Net" stroke="#006c49" strokeWidth={2.5} strokeDasharray="5 5" dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
 
@@ -152,19 +154,21 @@ export default function SalesCharts({ data, filters, onFilterChange }: { data: a
           <h2 className="text-sm font-bold text-slate-900">Sales returns over time</h2>
           <p className="text-xs text-slate-500 mt-0.5">Returns as % of gross per period</p>
         </div>
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={returnsData} margin={{ top: 5, right: 0, left: -20, bottom: 5 }} onClick={handleChartClick} className="cursor-pointer" title="Click to filter by this period">
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} dy={10} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} tickFormatter={(val) => val + '%'} />
-              <Tooltip 
-                contentStyle={{ borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '12px' }}
-                formatter={(value: number) => value.toFixed(2) + '%'}
-              />
-              <Bar dataKey="ReturnPct" name="Return %" fill="#003527" maxBarSize={30} radius={[2, 2, 0, 0]} />
-            </ComposedChart>
-          </ResponsiveContainer>
+        <div className="h-64 overflow-x-auto no-scrollbar">
+          <div className="min-w-[700px] h-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={returnsData} margin={{ top: 5, right: 0, left: -20, bottom: 5 }} onClick={handleChartClick} className="cursor-pointer" title="Click to filter by this period">
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748B' }} tickFormatter={(val) => val + '%'} />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '12px' }}
+                  formatter={(value: number) => value.toFixed(2) + '%'}
+                />
+                <Bar dataKey="ReturnPct" name="Return %" fill="#003527" maxBarSize={30} radius={[2, 2, 0, 0]} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
 

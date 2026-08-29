@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { AreaChart, TrendingUp, DollarSign, Package } from 'lucide-react';
+import { useAuthStore } from '@/store/authStore';
 
 import BuyingDesk from '@/components/procurement-dashboard/BuyingDesk';
 import MPPIView from '@/components/procurement-dashboard/MPPIView';
@@ -44,11 +45,15 @@ export default function ProcurementDashboard() {
       });
   }, []);
 
+  const access = useAuthStore((s) => s.access);
+
   const tabs = [
     { id: 'desk', label: 'Buying Desk', icon: DollarSign },
-    { id: 'mppi', label: 'MPPI Ceiling', icon: Package },
-    { id: 'trends', label: 'Price Trends', icon: TrendingUp },
-    { id: 'model', label: 'Model & Logic', icon: AreaChart },
+    ...(access?.role === 'FINANCE' ? [] : [
+      { id: 'mppi', label: 'MPPI Ceiling', icon: Package },
+      { id: 'trends', label: 'Price Trends', icon: TrendingUp },
+      { id: 'model', label: 'Model & Logic', icon: AreaChart },
+    ])
   ];
 
   if (loading) {
