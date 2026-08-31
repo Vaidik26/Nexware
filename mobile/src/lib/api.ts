@@ -14,7 +14,7 @@ const baseURL = getBaseUrl();
 
 export const api = axios.create({
  baseURL,
- timeout: 35000, // 35-second safety limit to accommodate Vercel serverless cold starts
+ timeout: 8000, // Reduced from 35s since backend is on Railway and does not have cold starts
  headers: {
   'Content-Type': 'application/json',
  },
