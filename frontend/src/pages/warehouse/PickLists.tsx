@@ -8,6 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { getErrorMessage, getCachedData, setCachedData } from '@/lib/utils';
+import { useLiveEvent, PICKLIST_EVENTS } from '@/lib/liveEvents';
 
 import api from '@/lib/api';
 
@@ -100,6 +101,11 @@ export default function PickLists() {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  // Push updates: the moment a picker or another admin moves a job, the socket
+  // in AppLayout fires and we re-read silently. The 10s poll above stays as a
+  // fallback for when the socket is down.
+  useLiveEvent(() => fetchData(true), PICKLIST_EVENTS);
 
   const handleAssign = async (pickerId: number, pickerName: string) => {
     if (!selectedList || assigningPickerId !== null) return;

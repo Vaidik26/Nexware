@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import api from '@/lib/api';
+import api, { clearApiCache } from '@/lib/api';
 import { RefreshCw, Search, FileText, ArrowRight } from 'lucide-react';
 import { PageLoader } from '@/components/ui/PageLoader';
 
@@ -29,17 +29,33 @@ export default function LpoManagement() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Use React Query for caching, background syncing, and instant reloads
+  // Use React Query for caching, background syncing, and instant reloads.
+  // The WebSocket in AppLayout invalidates ['lpos'] the moment an order is
+  // created or its status changes; the interval is only a fallback for a
+  // dropped socket, and refetches silently in place.
   const { data: lpos = [], isFetching, refetch } = useQuery<LPO[]>({
     queryKey: ['lpos'],
     queryFn: async () => {
       const { data } = await api.get('/lpos');
       return data;
     },
+    staleTime: 0,
+    refetchInterval: 20000,
+    refetchIntervalInBackground: false,
   });
 
-  const handleManualRefresh = () => {
-    refetch();
+  // Only a click spins the icon — the 20s background sync stays invisible.
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+
+  const handleManualRefresh = async () => {
+    if (isManualRefreshing) return;
+    setIsManualRefreshing(true);
+    try {
+      clearApiCache('/lpos');
+      await refetch();
+    } finally {
+      setIsManualRefreshing(false);
+    }
   };
 
   const filteredLpos = lpos.filter((lpo) => {
@@ -64,7 +80,7 @@ export default function LpoManagement() {
           onClick={handleManualRefresh}
           className="p-2 rounded-lg bg-surface-variant text-on-surface-variant hover:bg-surface-variant/80 transition-colors"
         >
-          <RefreshCw className={`w-5 h-5 ${isFetching ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-5 h-5 ${isManualRefreshing ? 'animate-spin' : ''}`} />
         </button>
       </div>
 

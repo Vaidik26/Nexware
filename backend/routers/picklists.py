@@ -895,6 +895,14 @@ async def start_picklist(
 
     pl.status = "picking"
     await db.commit()
+
+    await broadcast_event(
+        "PICKLIST_STARTED",
+        picklist_id=pl.id,
+        order_number=pl.order_number,
+        status=pl.status,
+    )
+
     return {"status": pl.status}
 
 
@@ -1536,7 +1544,11 @@ async def verify_picklist(
     """Verifies a picklist, deducting inventory automatically."""
     from backend.services.picklist_service import verify_picklist_service
 
-    return await verify_picklist_service(picklist_id, db)
+    result = await verify_picklist_service(picklist_id, db)
+
+    await broadcast_event("PICKLIST_VERIFIED", picklist_id=picklist_id)
+
+    return result
 
 
 # ---------- Export ----------

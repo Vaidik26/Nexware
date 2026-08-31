@@ -1,15 +1,15 @@
 import axios from 'axios';
 import { useAuthStore } from '@/store/authStore';
 
-const getBaseUrl = () => {
+export const getBaseUrl = () => {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) return envUrl.replace(/\/+$/, '');
-  
+
   if (import.meta.env.PROD) {
     console.warn('VITE_API_URL is not set. Production requests will fail if not configured.');
     return '';
   }
-  
+
   return 'http://localhost:8000';
 };
 
@@ -31,6 +31,18 @@ const cacheMap = new Map<string, CacheEntry>();
 const pendingRequests = new Map<string, Promise<any>>();
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes retention (auto-invalidates on mutations)
 
+// Operational endpoints change from outside this tab — a picker on the mobile app, a
+// second admin, an LPO posted by a sales rep. Serving those from the master cache is
+// what made LPO Management and Picklists look frozen until a hard browser reload, so
+// they are read-through only. They still benefit from in-flight deduplication below.
+const VOLATILE_PREFIXES = ['/lpos', '/picklists', '/orders', '/pickers'];
+
+function getCacheTtl(url: string) {
+  return VOLATILE_PREFIXES.some((p) => url.startsWith(p) || url.startsWith(`/api${p}`))
+    ? 0
+    : CACHE_TTL;
+}
+
 export function clearApiCache(prefix?: string) {
   if (!prefix) {
     cacheMap.clear();
@@ -41,6 +53,12 @@ export function clearApiCache(prefix?: string) {
       }
     }
   }
+}
+
+// Drop several cache prefixes at once. Used by the live WebSocket handler, where one
+// event can touch more than one module (a picklist assignment also moves its LPO).
+export function invalidateApiCache(prefixes: string[]) {
+  prefixes.forEach((prefix) => clearApiCache(prefix));
 }
 
 export function handleMutationInvalidation(url?: string) {
@@ -124,10 +142,12 @@ api.get = async (url: string, config?: any) => {
     }
   }
 
+  const ttl = getCacheTtl(url);
+
   // 1. Return instantly from in-memory cache if valid
-  if (!bypassCache && cacheMap.has(cacheKey)) {
+  if (!bypassCache && ttl > 0 && cacheMap.has(cacheKey)) {
     const entry = cacheMap.get(cacheKey)!;
-    if (Date.now() - entry.timestamp < CACHE_TTL) {
+    if (Date.now() - entry.timestamp < ttl) {
       return Promise.resolve({
         data: JSON.parse(JSON.stringify(entry.data)),
         status: entry.status,
@@ -147,7 +167,7 @@ api.get = async (url: string, config?: any) => {
 
   const requestPromise = originalGet(url, config)
     .then((response) => {
-      if (response.status >= 200 && response.status < 300) {
+      if (ttl > 0 && response.status >= 200 && response.status < 300) {
         cacheMap.set(cacheKey, {
           data: JSON.parse(JSON.stringify(response.data)),
           status: response.status,

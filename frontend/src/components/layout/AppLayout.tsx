@@ -2,7 +2,14 @@ import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
-import { preloadAllMasterData } from '@/lib/api';
+import { preloadAllMasterData, clearApiCache, invalidateApiCache } from '@/lib/api';
+import {
+  EVENT_CACHE_PREFIXES,
+  LIVE_EVENT,
+  LPO_EVENTS,
+  getWebSocketUrl,
+  type LiveEvent,
+} from '@/lib/liveEvents';
 import { useAuthStore } from '@/store/authStore';
 import { ownsPortal } from '@/lib/access';
 import { useQueryClient } from '@tanstack/react-query';
@@ -37,30 +44,103 @@ export default function AppLayout() {
 
   useEffect(() => {
     if (canPreload) preloadAllMasterData();
+  }, [canPreload]);
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = import.meta.env.PROD
-      ? `${protocol}//${window.location.host}/ws/notifications`
-      : `ws://localhost:8000/ws/notifications`;
+  // Single app-wide notification socket. Reconnects on its own so a dropped
+  // connection never leaves the panel silently showing stale data.
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+    let attempt = 0;
+    let disposed = false;
 
-    const ws = new WebSocket(wsUrl);
-    ws.onmessage = (event) => {
+    const stopHeartbeat = () => {
+      if (heartbeat) clearInterval(heartbeat);
+      heartbeat = null;
+    };
+
+    const scheduleReconnect = () => {
+      if (disposed || reconnectTimer) return;
+      const delay = Math.min(1000 * 2 ** attempt, 15000);
+      attempt += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, delay);
+    };
+
+    const handleMessage = (raw: string) => {
+      let data: LiveEvent;
       try {
-        const data = JSON.parse(event.data);
-        if (data.event === 'READY_FOR_AUDIT') {
-          playBeep();
-          toast.success(`🔔 ${data.message}`, { duration: 8000 });
-        } else if (data.event === 'ORDER_CREATED') {
-          playBeep();
-          toast.success(`🔔 ${data.message}`, { duration: 5000 });
-          queryClient.invalidateQueries({ queryKey: ['lpos'] });
-        }
+        data = JSON.parse(raw);
       } catch {
-        /* ignore */
+        return;
+      }
+      if (!data?.event) return;
+
+      // 1. Drop the HTTP cache this event just invalidated. Without this the
+      //    refetch below would be answered from the same stale entry.
+      const prefixes = EVENT_CACHE_PREFIXES[data.event];
+      if (prefixes) invalidateApiCache(prefixes);
+      else clearApiCache();
+
+      // 2. Refetch whatever React Query is holding.
+      if (LPO_EVENTS.includes(data.event)) {
+        queryClient.invalidateQueries({ queryKey: ['lpos'] });
+      }
+
+      // 3. Let pages that manage their own state re-read silently.
+      window.dispatchEvent(new CustomEvent<LiveEvent>(LIVE_EVENT, { detail: data }));
+
+      // Audible alerts are unchanged — only these two interrupt the user.
+      if (data.event === 'READY_FOR_AUDIT') {
+        playBeep();
+        toast.success(`🔔 ${data.message}`, { duration: 8000 });
+      } else if (data.event === 'ORDER_CREATED') {
+        playBeep();
+        toast.success(`🔔 ${data.message}`, { duration: 5000 });
       }
     };
-    return () => ws.close();
-  }, [queryClient, canPreload]);
+
+    const connect = () => {
+      if (disposed) return;
+      try {
+        ws = new WebSocket(getWebSocketUrl());
+      } catch {
+        scheduleReconnect();
+        return;
+      }
+
+      ws.onopen = () => {
+        attempt = 0;
+        // Keeps idle proxies from dropping the connection. The backend's
+        // receive loop discards whatever text arrives.
+        heartbeat = setInterval(() => {
+          if (ws?.readyState === WebSocket.OPEN) ws.send('ping');
+        }, 25000);
+      };
+      ws.onmessage = (event) => handleMessage(event.data);
+      ws.onerror = () => ws?.close();
+      ws.onclose = () => {
+        stopHeartbeat();
+        scheduleReconnect();
+      };
+    };
+
+    connect();
+
+    return () => {
+      disposed = true;
+      stopHeartbeat();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (ws) {
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.close();
+      }
+    };
+  }, [queryClient]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">

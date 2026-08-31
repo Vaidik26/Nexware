@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '@/lib/api';
+import { useLiveEvent, PICKLIST_EVENTS } from '@/lib/liveEvents';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -34,19 +35,28 @@ export default function PickListDetails() {
     fetchPicklist();
   }, [id]);
 
-  const fetchPicklist = async () => {
+  const fetchPicklist = async (quiet = false) => {
     try {
       const res = await api.get(`/picklists/${id}`);
       setPicklist(res.data);
       const auditedIds = res.data.boxes.filter((b: any) => b.is_audited).map((b: any) => b.id);
       setVerifiedBoxes(new Set(auditedIds));
     } catch (err) {
+      // A background sync failing must not eject the user from the page.
+      if (quiet) return;
       toast.error('Failed to load picklist details');
       navigate('/warehouse/picklists');
     } finally {
-      setIsLoading(false);
+      if (!quiet) setIsLoading(false);
     }
   };
+
+  // Track the job live while it is open. Held back while the QR verification
+  // modal is in use so a server snapshot cannot undo the boxes just scanned.
+  useLiveEvent(() => {
+    if (isVerifyModalOpen || isVerifying) return;
+    fetchPicklist(true);
+  }, PICKLIST_EVENTS);
 
   const handlePdfDownload = async () => {
     if (!picklist) return;

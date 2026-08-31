@@ -65,6 +65,19 @@ _LPO_LOAD_OPTIONS = (
 )
 
 
+async def broadcast_event(event: str, **payload) -> None:
+    """
+    Push a live update to every connected client.
+
+    Always call this *after* the transaction commits: the socket message tells
+    clients to refetch, and refetching before the commit lands would return the
+    pre-change state.
+    """
+    from backend.ws_manager import manager
+
+    await manager.broadcast({"event": event, **payload})
+
+
 async def _reload_lpo(db: AsyncSession, lpo_id: int) -> Lpo:
     result = await db.execute(
         select(Lpo).options(*_LPO_LOAD_OPTIONS).filter(Lpo.id == lpo_id)
@@ -301,7 +314,10 @@ async def update_lpo(
 
     await db.commit()
     logger.info("LPO updated: id=%s", lpo_id)
-    return await _reload_lpo(db, lpo_id)
+
+    lpo_obj = await _reload_lpo(db, lpo_id)
+    await broadcast_event("LPO_UPDATED", lpo_id=lpo_id, status=lpo_obj.status)
+    return lpo_obj
 
 
 @router.patch("/{lpo_id}/url", response_model=LpoOut)
@@ -315,7 +331,10 @@ async def update_lpo_url(
     lpo.signed_lpo_url = url
     await db.commit()
     logger.info("LPO %s URL updated by user=%s", lpo_id, current_user.id)
-    return await _reload_lpo(db, lpo_id)
+
+    lpo_obj = await _reload_lpo(db, lpo_id)
+    await broadcast_event("LPO_UPDATED", lpo_id=lpo_id, status=lpo_obj.status)
+    return lpo_obj
 
 
 @router.post("/{lpo_id}/upload-pdf")
@@ -421,7 +440,10 @@ async def update_lpo_status(
     logger.info(
         "LPO %s status changed %s → %s by admin=%s", lpo_id, old_status, lpo.status, current_user.id
     )
-    return await _reload_lpo(db, lpo_id)
+
+    lpo_obj = await _reload_lpo(db, lpo_id)
+    await broadcast_event("LPO_UPDATED", lpo_id=lpo_id, status=lpo_obj.status)
+    return lpo_obj
 
 
 @router.post("/{lpo_id}/disapprove", response_model=LpoOut)
@@ -438,7 +460,10 @@ async def disapprove_lpo(
     lpo.status = "disapproved"
     await db.commit()
     logger.info("LPO %s disapproved by admin=%s", lpo_id, current_user.id)
-    return await _reload_lpo(db, lpo_id)
+
+    lpo_obj = await _reload_lpo(db, lpo_id)
+    await broadcast_event("LPO_UPDATED", lpo_id=lpo_id, status=lpo_obj.status)
+    return lpo_obj
 
 
 @router.post("/{lpo_id}/approve")
@@ -529,6 +554,8 @@ async def delete_lpo(
     await db.delete(lpo)  # lpo_items go with it via ON DELETE CASCADE
     await db.commit()
     logger.info("LPO %s deleted by admin=%s", lpo_id, current_user.id)
+
+    await broadcast_event("LPO_UPDATED", lpo_id=lpo_id, status="deleted")
     return {"message": "LPO deleted successfully"}
 
 
@@ -549,6 +576,8 @@ async def convert_lpo_to_picklist(
     await db.refresh(db_picklist)
 
     logger.info("LPO %s converted to picklist %s by admin=%s", lpo_id, db_picklist.id, current_user.id)
+
+    await broadcast_event("LPO_UPDATED", lpo_id=lpo_id, status=lpo.status)
     return {
         "message": "LPO converted to pick list successfully",
         "picklist_id": db_picklist.id,
@@ -568,4 +597,7 @@ async def update_lpo_delivery_date(
     lpo.delivery_date = delivery_date
     await db.commit()
     logger.info("LPO %s delivery date updated by admin=%s", lpo_id, current_user.id)
-    return await _reload_lpo(db, lpo_id)
+
+    lpo_obj = await _reload_lpo(db, lpo_id)
+    await broadcast_event("LPO_UPDATED", lpo_id=lpo_id, status=lpo_obj.status)
+    return lpo_obj

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '@/lib/api';
+import { useLiveEvent, LPO_EVENTS } from '@/lib/liveEvents';
 import { toast } from '@/components/ui/Toast';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
@@ -58,19 +59,24 @@ export default function LpoDetails() {
     fetchData();
   }, [id]);
 
-  const fetchData = async () => {
+  const fetchData = async (quiet = false) => {
     if (!id) return;
     try {
-      setLoading(true);
+      if (!quiet) setLoading(true);
       const lpoRes = await api.get(`/lpos/${id}`);
       setLpo(lpoRes.data);
     } catch (err: any) {
+      // A background sync failing must not eject the user from the page.
+      if (quiet) return;
       toast.error('Failed to load LPO details');
       navigate('/warehouse/lpos');
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   };
+
+  // Keep an open LPO in step with changes made elsewhere — no reload, no flicker.
+  useLiveEvent(() => fetchData(true), LPO_EVENTS);
 
   const handleFileUpload = async (file: File) => {
     if (!lpo) return;
