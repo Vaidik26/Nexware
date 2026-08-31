@@ -396,6 +396,13 @@ export default function LpoCreateScreen() {
     .footer-table td { border: none; padding: 8px 0; font-size: 14px; }
    </style></head><body>
     
+    <div style="text-align: center; margin-bottom: 40px; font-family: Arial, sans-serif;">
+      <h2 style="margin: 0; font-size: 18px; font-weight: bold; color: #000;">GAZAL AL KHADARA TRADING CO LLC - (VAT NO :OM1100024353)</h2>
+      <p style="margin: 4px 0; font-size: 14px; color: #000;">Al-suwaiq , North Batinah,Sultanate of oman 315,489</p>
+      <p style="margin: 4px 0; font-size: 14px; color: #000; font-weight: bold;"><span style="text-decoration: underline;">E-mail :gazalsales@gmail.com ,sales@gazalfoods.net </span></p>
+      <h3 style="margin: 8px 0 0 0; font-size: 15px; font-weight: bold; text-decoration: underline; color: #000;">NORMAL ORDER FORM</h3>
+    </div>
+
     <table class="header-table">
       <tr>
         <td style="width: 50%;">Date: <strong>${dateStr}</strong></td>
