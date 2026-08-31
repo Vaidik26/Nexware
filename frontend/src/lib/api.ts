@@ -174,8 +174,13 @@ api.get = async (url: string, config?: any) => {
     }
   }
 
-  // 2. Request deduplication: if identical fetch is already in flight, reuse its promise
-  if (pendingRequests.has(cacheKey)) {
+  // 2. Request deduplication: if identical fetch is already in flight, reuse its promise.
+  // A bypassCache caller never joins one. That request was issued BEFORE this
+  // caller asked, so its answer can predate the mutation this read exists to
+  // pick up — which is how a saved role or supervisor area came back looking
+  // unchanged. Such a caller always goes to the network; it still PUBLISHES its
+  // promise below, so ordinary cache-tolerant readers keep deduplicating onto it.
+  if (!bypassCache && pendingRequests.has(cacheKey)) {
     return pendingRequests.get(cacheKey)!;
   }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, Trash2, Shield, Pencil, PackageSearch, Briefcase, LineChart } from 'lucide-react';
 import { Table } from '@/components/ui/Table';
 import { Button } from '@/components/ui/Button';
@@ -189,22 +189,40 @@ export default function UserManagement() {
       .catch(() => setCatalog(null));
   }, []);
 
+  /**
+   * The newest read issued per tab. Two reads of the same tab can be in flight
+   * at once — the tab effect, the mount prefetch and the post-save refresh all
+   * call `fetchRows` — and without this the LAST ONE TO ARRIVE wins rather than
+   * the last one asked for. That is how a just-saved role or supervisor area
+   * reappeared as its old value: a read issued before the save answered after
+   * the one issued after it, and overwrote the fresh rows with stale ones.
+   */
+  const fetchSeq = useRef<Record<string, number>>({});
+
+  /** Hide what this account is not allowed to list. */
+  const visibleRows = (target: Persona, data: any[]) =>
+    currentAccess?.user_type === 'dashboard' &&
+    currentAccess?.role === 'MANAGER' &&
+    target.id === 'dashboard-users'
+      ? // A Sales Manager can only view Sales Users in the dashboard users table
+        data.filter((r: any) => r.role === 'SALES')
+      : data;
+
   const fetchRows = async (target: Persona, silent = false) => {
     if (!silent) {
       setLoadingTabs((prev) => ({ ...prev, [target.id]: true }));
     }
+    const seq = (fetchSeq.current[target.id] = (fetchSeq.current[target.id] ?? 0) + 1);
     try {
       const res = await api.get(target.endpoint, { bypassCache: true } as any);
-      let data = res.data || [];
-
-      // A Sales Manager can only view Sales Users in the dashboard users table
-      if (currentAccess?.user_type === 'dashboard' && currentAccess?.role === 'MANAGER' && target.id === 'dashboard-users') {
-        data = data.filter((r: any) => r.role === 'SALES');
-      }
+      // A newer read has been asked for since; its answer is the current one.
+      if (seq !== fetchSeq.current[target.id]) return;
+      const data = visibleRows(target, res.data || []);
 
       setRowCache((prev) => ({ ...prev, [target.id]: data }));
       setCounts((prev) => ({ ...prev, [target.id]: data.length }));
     } catch (error) {
+      if (seq !== fetchSeq.current[target.id]) return;
       if (!silent) {
         toast.error(getErrorMessage(error, `Failed to load ${target.label.toLowerCase()}`));
         setRowCache((prev) => ({ ...prev, [target.id]: [] }));
@@ -212,6 +230,30 @@ export default function UserManagement() {
     } finally {
       setLoadingTabs((prev) => ({ ...prev, [target.id]: false }));
     }
+  };
+
+  /**
+   * Put the row the server just stored on screen.
+   *
+   * The create and update endpoints both answer with the saved account, fully
+   * resolved — so the table can show what was WRITTEN instead of waiting on a
+   * background re-read to tell it. The re-read still runs, to pick up anything
+   * changed by somebody else; it is no longer what makes your own save visible.
+   */
+  const applySavedRow = (target: Persona, saved: any) => {
+    if (!saved || saved.id === undefined) return;
+    // Newer than any read already in flight, so drop those when they answer.
+    fetchSeq.current[target.id] = (fetchSeq.current[target.id] ?? 0) + 1;
+    const rows = rowCache[target.id] ?? [];
+    const exists = rows.some((r) => String(r.id) === String(saved.id));
+    const next = visibleRows(
+      target,
+      exists
+        ? rows.map((r) => (String(r.id) === String(saved.id) ? saved : r))
+        : [...rows, saved]
+    );
+    setRowCache((prev) => ({ ...prev, [target.id]: next }));
+    setCounts((prev) => ({ ...prev, [target.id]: next.length }));
   };
 
   useEffect(() => {
@@ -308,10 +350,12 @@ export default function UserManagement() {
     try {
       setIsSubmitting(true);
       if (isEditMode && editingId) {
-        await api.patch(`${persona.endpoint}/${editingId}`, payload);
+        const res = await api.patch(`${persona.endpoint}/${editingId}`, payload);
+        applySavedRow(persona, res.data);
         toast.success('Account updated');
       } else {
-        await api.post(persona.endpoint, payload);
+        const res = await api.post(persona.endpoint, payload);
+        applySavedRow(persona, res.data);
         toast.success('Account created');
       }
       closeModal();
@@ -329,6 +373,8 @@ export default function UserManagement() {
     try {
       await api.delete(`${persona.endpoint}/${row.id}`);
       toast.success('Account deleted');
+      // Newer than any read already in flight, so the row cannot come back.
+      fetchSeq.current[persona.id] = (fetchSeq.current[persona.id] ?? 0) + 1;
       setRowCache((prev) => ({
         ...prev,
         [persona.id]: (prev[persona.id] ?? []).filter((r) => r.id !== row.id),
@@ -355,16 +401,11 @@ export default function UserManagement() {
   const handleToggleAvailability = async (row: any) => {
     try {
       const next = !row.is_available;
-      await api.patch(`${persona.endpoint}/${row.id}/status?is_available=${next}`);
+      const res = await api.patch(`${persona.endpoint}/${row.id}/status?is_available=${next}`);
       toast.success(
         `${row[persona.nameKey]} marked ${next ? 'Online (Available)' : 'Offline'}`
       );
-      setRowCache((prev) => ({
-        ...prev,
-        [persona.id]: (prev[persona.id] ?? []).map((r) =>
-          r.id === row.id ? { ...r, is_available: next } : r
-        ),
-      }));
+      applySavedRow(persona, res.data);
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Failed to update availability'));
     }
@@ -373,16 +414,11 @@ export default function UserManagement() {
   const handleToggleActive = async (row: any) => {
     try {
       const next = !row.is_active;
-      await api.patch(`${persona.endpoint}/${row.id}`, { is_active: next });
+      const res = await api.patch(`${persona.endpoint}/${row.id}`, { is_active: next });
       toast.success(
         `${row[persona.nameKey]} account ${next ? 'enabled' : 'disabled'}`
       );
-      setRowCache((prev) => ({
-        ...prev,
-        [persona.id]: (prev[persona.id] ?? []).map((r) =>
-          r.id === row.id ? { ...r, is_active: next } : r
-        ),
-      }));
+      applySavedRow(persona, res.data);
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Failed to update account status'));
     }
