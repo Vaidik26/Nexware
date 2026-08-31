@@ -343,7 +343,15 @@ export default function UserManagement() {
       // Always sent. An omitted list means "leave that half alone" to the API,
       // which would make it impossible to clear areas or put the account back
       // on role defaults — and this form shows the WHOLE grant.
-      payload.areas = grant.areas;
+      
+      let finalAreas = grant.areas;
+      // MANAGER role hides the area checkboxes because it implies ALL areas.
+      // But to attach a channel in the DB, we must explicitly send that ALL area grant.
+      if (grant.role === 'MANAGER') {
+        finalAreas = grant.channel ? [ALL_AREAS] : [];
+      }
+      
+      payload.areas = finalAreas;
       payload.channel = grant.channel;
     }
 
