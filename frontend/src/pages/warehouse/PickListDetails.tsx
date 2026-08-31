@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '@/lib/api';
-import { useLiveEvent, PICKLIST_EVENTS } from '@/lib/liveEvents';
+import { useLiveEvent, isForPicklist, PICKLIST_DETAIL_EVENTS } from '@/lib/liveEvents';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -51,12 +51,44 @@ export default function PickListDetails() {
     }
   };
 
-  // Track the job live while it is open. Held back while the QR verification
-  // modal is in use so a server snapshot cannot undo the boxes just scanned.
-  useLiveEvent(() => {
+  // Track the job live while it is open — every item the picker scans arrives
+  // as PICKLIST_PROGRESS. Held back while the QR verification modal is in use
+  // so a server snapshot cannot undo the boxes just scanned.
+  //
+  // Rapid scans are coalesced into one refetch: a picker working through a
+  // carton can fire several events a second.
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleSync = () => {
     if (isVerifyModalOpen || isVerifying) return;
-    fetchPicklist(true);
-  }, PICKLIST_EVENTS);
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+    syncTimer.current = setTimeout(() => {
+      syncTimer.current = null;
+      fetchPicklist(true);
+    }, 400);
+  };
+
+  useLiveEvent((event) => {
+    if (!isForPicklist(event, id)) return;
+    scheduleSync();
+  }, PICKLIST_DETAIL_EVENTS);
+
+  // Fallback for a dropped socket: keep syncing while the job is still moving.
+  useEffect(() => {
+    const status = picklist?.status;
+    if (status !== 'assigned' && status !== 'picking' && status !== 'waiting_verification') {
+      return;
+    }
+    const poll = setInterval(() => {
+      if (isVerifyModalOpen || isVerifying) return;
+      fetchPicklist(true);
+    }, 8000);
+    return () => clearInterval(poll);
+  }, [picklist?.status, isVerifyModalOpen, isVerifying, id]);
+
+  useEffect(() => () => {
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+  }, []);
 
   const handlePdfDownload = async () => {
     if (!picklist) return;

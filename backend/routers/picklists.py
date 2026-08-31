@@ -366,6 +366,18 @@ async def broadcast_event(event: str, **payload) -> None:
     await manager.broadcast({"event": event, **payload})
 
 
+async def broadcast_progress(picklist_id: int) -> None:
+    """
+    Announce an item- or box-level change inside one job.
+
+    Kept separate from the job-level events on purpose: this fires once per
+    scan, so only the client that has *this* picklist open reacts to it. The
+    picklist list view stays on its own refresh cadence rather than reloading
+    every row each time a picker ticks off an item.
+    """
+    await broadcast_event("PICKLIST_PROGRESS", picklist_id=picklist_id)
+
+
 # ─── Reads ────────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=List[PicklistOut])
@@ -946,6 +958,9 @@ async def mark_item_picked(
         pl.status = "picking"
 
     await db.commit()
+
+    await broadcast_progress(picklist_id)
+
     return {"is_picked": item.is_picked, "item_id": item_id}
 
 
@@ -968,6 +983,9 @@ async def audit_item(
 
     item.is_audited = not item.is_audited
     await db.commit()
+
+    await broadcast_progress(picklist_id)
+
     return {"is_audited": item.is_audited, "item_id": item_id}
 
 
@@ -993,6 +1011,9 @@ async def verify_box(
             bi.item.is_audited = True
 
     await db.commit()
+
+    await broadcast_progress(picklist_id)
+
     return {"message": "Box verified successfully"}
 
 
@@ -1014,6 +1035,9 @@ async def verify_item(
 
     item.is_audited = True
     await db.commit()
+
+    await broadcast_progress(picklist_id)
+
     return {"message": "Item verified successfully"}
 
 
@@ -1187,6 +1211,9 @@ async def create_box(
 
     await db.commit()
     await db.refresh(box)
+
+    await broadcast_progress(picklist_id)
+
     return box
 
 
@@ -1426,6 +1453,9 @@ async def seal_loose_item_box(
 
     await db.commit()
     await db.refresh(box)
+
+    await broadcast_progress(picklist_id)
+
     return box
 
 
@@ -1448,6 +1478,9 @@ async def report_missing_item(
 
     item.missing_reported = True
     await db.commit()
+
+    await broadcast_progress(picklist_id)
+
     return {"message": "Missing reported", "item_id": item_id}
 
 
@@ -1477,6 +1510,9 @@ async def approve_missing_item(
         item.missing_reported = False  # rejected, need to find it
 
     await db.commit()
+
+    await broadcast_progress(picklist_id)
+
     return {"message": "Missing status updated", "item_id": item_id}
 
 
@@ -1844,4 +1880,7 @@ async def toggle_item_carton(
         )
 
     await db.commit()
+
+    await broadcast_progress(picklist_id)
+
     return {"is_full_carton": item.is_full_carton}

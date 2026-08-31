@@ -30,12 +30,16 @@ export const EVENT_CACHE_PREFIXES: Record<string, string[]> = {
   PICKLIST_CANCELLED: ['/picklists'],
   PICKLIST_PURGED: ['/picklists'],
   PICKLIST_REASSIGNED: ['/picklists'],
+  PICKLIST_PROGRESS: ['/picklists'],
 };
 
 /** Events after which the `['lpos']` React Query cache must refetch. */
 export const LPO_EVENTS = ['ORDER_CREATED', 'LPO_UPDATED', 'PICKLIST_ASSIGNED'];
 
-/** Events after which any picklist view should re-read from the server. */
+/**
+ * Job-level events — a picklist appeared, moved, or left. The picklist list
+ * view reloads on these.
+ */
 export const PICKLIST_EVENTS = [
   'PICKLIST_ASSIGNED',
   'READY_FOR_AUDIT',
@@ -46,6 +50,22 @@ export const PICKLIST_EVENTS = [
   'PICKLIST_PURGED',
   'PICKLIST_REASSIGNED',
 ];
+
+/**
+ * Everything a single open job cares about, including `PICKLIST_PROGRESS`,
+ * which fires once per item scanned or box sealed. Detail views match it
+ * against their own id (see `isForPicklist`) so one picker's scanning does not
+ * make every other open view refetch.
+ */
+export const PICKLIST_DETAIL_EVENTS = [...PICKLIST_EVENTS, 'PICKLIST_PROGRESS'];
+
+/** True when a live event refers to the picklist currently on screen. */
+export function isForPicklist(event: LiveEvent, id: string | number | undefined) {
+  if (id === undefined) return false;
+  // Job-level events carry no id when they concern the whole queue — take those.
+  if (event.picklist_id === undefined || event.picklist_id === null) return true;
+  return String(event.picklist_id) === String(id);
+}
 
 /**
  * The socket lives on the API host, not on the host serving the SPA — in

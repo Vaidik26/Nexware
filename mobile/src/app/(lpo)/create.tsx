@@ -374,57 +374,59 @@ export default function LpoCreateScreen() {
    const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
    const totalQty = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-   const itemRows = cart.map((item, idx) => (
-    `<tr><td class="num">${idx + 1}</td><td class="desc">${item.product_name}</td><td class="bc">${item.barcode}</td><td class="uom">${item.unit}</td><td class="qty">${item.quantity}</td></tr>`
+   const itemRows = cart.map((item) => (
+    `<tr>
+      <td class="cell">${item.product_name}</td>
+      <td class="cell center">${item.unit || ''}</td>
+      <td class="cell center">${item.quantity}</td>
+    </tr>`
    )).join('');
 
    const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>
-    @page { size: 80mm auto; margin: 4mm 3mm; }
+    @page { size: A4; margin: 20mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Courier New', Courier, monospace; font-size: 10px; width: 74mm; color: #000; background: #fff; }
+    body { font-family: Arial, sans-serif; font-size: 14px; width: 100%; color: #000; background: #fff; line-height: 1.5; }
     .center { text-align: center; }
-    .header-company { font-size: 13px; font-weight: bold; text-align: center; margin-bottom: 2px; }
-    .header-sub { font-size: 9px; text-align: center; margin-bottom: 4px; }
-    .divider { border-top: 1px dashed #000; margin: 3px 0; }
-    .thick-div { border-top: 2px solid #000; margin: 4px 0; }
-    .field-row { display: flex; justify-content: space-between; margin: 1.5px 0; font-size: 10px; }
-    .field-label { font-weight: bold; min-width: 65px; }
-    .section-title { font-weight: bold; font-size: 11px; text-align: center; margin: 3px 0; text-transform: uppercase; letter-spacing: 1px; }
-    table { width: 100%; border-collapse: collapse; margin: 3px 0; font-size: 9px; }
-    th { font-weight: bold; border-bottom: 1px solid #000; padding: 2px 1px; text-align: left; }
-    td { padding: 2px 1px; border-bottom: 1px dotted #ccc; vertical-align: top; }
-    .num { width: 8%; text-align: center; }
-    .desc { width: 42%; word-break: break-word; }
-    .bc { width: 26%; font-size: 8px; color: #333; }
-    .uom { width: 10%; text-align: center; }
-    .qty { width: 14%; text-align: right; font-weight: bold; }
-    .total-row { display: flex; justify-content: space-between; font-size: 10px; font-weight: bold; margin: 1px 0; }
-    .footer { font-size: 8px; text-align: center; margin-top: 6px; color: #444; }
-    .status-box { border: 1px solid #000; padding: 3px 6px; margin: 4px 0; font-size: 9px; text-align: center; }
+    .header-table { width: 100%; border: none; margin-bottom: 30px; }
+    .header-table td { border: none; padding: 8px 0; font-size: 14px; }
+    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+    .items-table th, .items-table td { border: 1px solid #000; padding: 10px; text-align: left; }
+    .items-table th { font-weight: bold; }
+    .footer-table { width: 100%; border: none; margin-top: 50px; }
+    .footer-table td { border: none; padding: 8px 0; font-size: 14px; }
    </style></head><body>
-    <div class="header-company">NOOR GHAZAL GENERAL TRADING LLC</div>
-    <div class="header-sub">Dubai, UAE | Internal Warehouse Document</div>
-    <div class="thick-div"></div>
-    <div class="section-title">Local Purchase Order</div>
-    <div class="thick-div"></div>
-    <div class="field-row"><span class="field-label">LPO Ref:</span><span>${orderNumber}</span></div>
-    <div class="field-row"><span class="field-label">Date:</span><span>${dateStr} ${timeStr}</span></div>
-    <div class="field-row"><span class="field-label">Customer:</span><span>${customerName}</span></div>
-    <div class="field-row"><span class="field-label">Sales Rep:</span><span>${picker?.full_name || 'System User'}</span></div>
-    ${deliveryDate ? `<div class="field-row"><span class="field-label">Delivery:</span><span>${deliveryDate.toISOString().split('T')[0]}</span></div>` : ''}
-    <div class="field-row"><span class="field-label">Status:</span><span>PENDING</span></div>
-    <div class="thick-div"></div>
-    <div class="section-title">Line Items (${cart.length})</div>
-    <div class="divider"></div>
-    <table><thead><tr>
-     <th class="num">#</th><th class="desc">Description</th><th class="bc">Barcode</th><th class="uom">UOM</th><th class="qty">Qty</th>
-    </tr></thead><tbody>${itemRows}</tbody></table>
-    <div class="thick-div"></div>
-    <div class="total-row"><span>Total Lines:</span><span>${cart.length}</span></div>
-    <div class="total-row"><span>Total Qty:</span><span>${totalQty}</span></div>
-    <div class="thick-div"></div>
-    <div class="status-box"><strong>INTERNAL USE ONLY</strong><br/>Generated via NexWare Terminal</div>
-    <div class="footer">* Please verify all items before dispatch *</div>
+    
+    <table class="header-table">
+      <tr>
+        <td style="width: 50%;">Date: <strong>${dateStr}</strong></td>
+        <td style="width: 50%;">LPO ref no. <strong>${orderNumber}</strong></td>
+      </tr>
+      <tr>
+        <td>Customer name: <strong>${customerName}</strong></td>
+        <td>Delivery Date: <strong>${deliveryDate ? deliveryDate.toISOString().split('T')[0] : ''}</strong></td>
+      </tr>
+    </table>
+
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th>Item Description</th>
+          <th class="center" style="width: 20%;">Qty / CTN</th>
+          <th class="center" style="width: 20%;">Order Qty</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemRows}
+      </tbody>
+    </table>
+
+    <table class="footer-table">
+      <tr>
+        <td style="width: 50%;">Merchandiser name : <strong>${picker?.full_name || '___________________'}</strong></td>
+        <td style="width: 50%;">Customer Signature ___________________</td>
+      </tr>
+    </table>
+
    </body></html>`;
 
    const { uri } = await Print.printToFileAsync({ html: htmlContent, base64: false });
