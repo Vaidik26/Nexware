@@ -1,5 +1,6 @@
 import { clsx } from 'clsx';
 import { useMemo } from 'react';
+import { X } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { areaAllowed } from '@/lib/access';
 
@@ -19,10 +20,7 @@ export default function SalesFilters({ filters, onChange, bootData, currentData 
 
   const areas = Object.keys(bootData?.areas || {}).sort();
 
-  // Only the supervisor areas this account is granted. Cosmetic — the grant is
-  // intersected into every query regardless, so picking one outside it would
-  // return nothing anyway. Offering it would just make an enforced empty result
-  // look like a real one.
+  // Only the supervisor areas this account is granted.
   const sAreas = useMemo(() => {
     const all = Object.keys(bootData?.salesmanAreas || {}).sort();
     if (!access || access.all_areas) return all;
@@ -42,8 +40,6 @@ export default function SalesFilters({ filters, onChange, bootData, currentData 
   }, [bootData]);
 
   const allCustomers = useMemo(() => {
-    // bootData.custs is { id: name } — the full name dictionary (3859 entries)
-    // currentData.custIds is an array of customer IDs that had sales in the current view
     if (!bootData?.custs) return [];
     const inScope: Set<string> = new Set(
       (currentData?.custIds || []).map((id: any) => String(id))
@@ -53,28 +49,6 @@ export default function SalesFilters({ filters, onChange, bootData, currentData 
       .map(([id, name]) => ({ value: id, label: `${id} - ${name}` }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [bootData, currentData]);
-
-  const Segment = ({ label, options, value, keyName, scrollable = false }: { label: string, options: any[], value: string, keyName: string, scrollable?: boolean }) => (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{label}</label>
-      <div className={clsx("flex bg-white border border-slate-200 rounded-lg p-1 gap-1 w-fit", scrollable ? "overflow-x-auto max-w-[300px] sm:max-w-md no-scrollbar" : "flex-wrap")}>
-        {options.map(opt => (
-          <button
-            key={opt.value}
-            onClick={() => update(keyName, opt.value)}
-            className={clsx(
-              "text-xs font-semibold px-3 py-1.5 rounded-md transition-colors whitespace-nowrap",
-              value === opt.value 
-                ? "bg-primary text-white" 
-                : "text-slate-600 hover:bg-slate-100"
-            )}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
 
   const allowedChannels = useMemo(() => {
     if (!access) return ['key', 'van'];
@@ -102,25 +76,130 @@ export default function SalesFilters({ filters, onChange, bootData, currentData 
     ...(allowedChannels.includes('van') ? [{ label: 'Van Sales', value: 'van' }] : [])
   ];
 
+  const activeChips = useMemo(() => {
+    const chips: any[] = [];
+    if (channelOptions.length > 1 && filters.channel !== 'all') {
+      chips.push({
+        label: 'Channel',
+        display: filters.channel === 'key' ? 'Key Sales' : 'Van Sales',
+        onClear: () => update('channel', allowedChannels.length === 1 ? allowedChannels[0] : 'all')
+      });
+    }
+    if (filters.area !== 'all') {
+      chips.push({
+        label: 'Area',
+        display: filters.area,
+        onClear: () => update('area', 'all')
+      });
+    }
+    if (filters.sarea !== 'all') {
+      chips.push({
+        label: 'Supervisor Area',
+        display: filters.sarea,
+        onClear: () => update('sarea', 'all')
+      });
+    }
+    if (filters.products.size > 0) {
+      const p = Array.from(filters.products)[0] as string;
+      chips.push({
+        label: 'Product',
+        display: p,
+        onClear: () => update('products', new Set())
+      });
+    }
+    if (filters.skus.size > 0) {
+      const s = Array.from(filters.skus)[0] as string;
+      const skuObj = allSkus.find((x: any) => x.value === s);
+      chips.push({
+        label: 'SKU',
+        display: skuObj ? skuObj.label : s,
+        onClear: () => update('skus', new Set())
+      });
+    }
+    if (filters.customers.size > 0) {
+      const c = Array.from(filters.customers)[0] as string;
+      const custObj = allCustomers.find((x: any) => x.value === c);
+      chips.push({
+        label: 'Customer',
+        display: custObj ? custObj.label : c,
+        onClear: () => update('customers', new Set())
+      });
+    }
+    return chips;
+  }, [filters, channelOptions, allowedChannels, allSkus, allCustomers]);
+
+  const clearAllFilters = () => {
+    onChange({
+      channel: allowedChannels.length === 1 ? allowedChannels[0] : 'all',
+      area: 'all',
+      sarea: 'all',
+      period: 'last12',
+      active: 'all',
+      products: new Set(),
+      skus: new Set(),
+      customers: new Set(),
+      customStart: new Date('2021-01-01'),
+      customEnd: new Date('2025-12-01')
+    });
+  };
+
+  const Segment = ({ label, options, value, keyName, scrollable = false }: { label: string, options: any[], value: string, keyName: string, scrollable?: boolean }) => (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">{label}</label>
+      <div className={clsx("flex bg-white border border-slate-200 rounded-lg p-1 gap-1 w-fit", scrollable ? "overflow-x-auto max-w-[300px] sm:max-w-md no-scrollbar" : "flex-wrap")}>
+        {options.map(opt => (
+          <button
+            key={opt.value}
+            onClick={() => update(keyName, opt.value)}
+            className={clsx(
+              "text-xs font-semibold px-3 py-1.5 rounded-md transition-colors whitespace-nowrap",
+              value === opt.value 
+                ? "bg-primary text-white" 
+                : "text-slate-600 hover:bg-slate-100"
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4 relative">
-      <button 
-        onClick={() => onChange({
-          channel: allowedChannels.length === 1 ? allowedChannels[0] : 'all',
-          area: 'all',
-          sarea: 'all',
-          period: 'last12',
-          active: 'all',
-          products: new Set(),
-          skus: new Set(),
-          customers: new Set(),
-          customStart: new Date('2021-01-01'),
-          customEnd: new Date('2025-12-01')
-        })}
-        className="absolute top-4 right-4 text-xs font-semibold text-primary hover:text-primary/80 transition-colors bg-primary/5 px-2 py-1 rounded"
-      >
-        Reset Filters
-      </button>
+      
+      {activeChips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+          {activeChips.map((chip, idx) => (
+            <div key={idx} className="flex items-center gap-1.5 bg-white border border-slate-200 shadow-sm px-2.5 py-1 rounded-full text-xs transition-transform hover:scale-[1.02]">
+              <span className="text-slate-500 font-semibold">{chip.label}</span>
+              <span className="font-bold text-slate-800 truncate max-w-[200px]">{chip.display}</span>
+              <button 
+                onClick={chip.onClear} 
+                className="text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full p-0.5 transition-colors ml-1"
+                title="Remove filter"
+              >
+                <X size={14} strokeWidth={2.5} />
+              </button>
+            </div>
+          ))}
+          <button 
+            onClick={clearAllFilters}
+            className="text-xs font-bold text-red-600 hover:text-red-700 ml-2 hover:underline"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+
+      {activeChips.length === 0 && (
+        <button 
+          onClick={clearAllFilters}
+          className="absolute top-4 right-4 text-xs font-semibold text-primary hover:text-primary/80 transition-colors bg-primary/5 px-2 py-1 rounded"
+        >
+          Reset Filters
+        </button>
+      )}
       
       <div className="flex flex-wrap gap-4 items-end pr-24">
         {channelOptions.length > 1 && (
