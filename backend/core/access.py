@@ -59,6 +59,8 @@ class EffectiveAccess:
 
     def channel_for(self, area: str) -> Optional[SalesChannel]:
         """The channel this area is narrowed to, or ``None`` meaning both books."""
+        if self.all_areas:
+            return self.area_channels.get(ALL_AREAS)
         return self.area_channels.get(area)
 
 

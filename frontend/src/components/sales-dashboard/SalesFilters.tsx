@@ -77,7 +77,14 @@ export default function SalesFilters({ filters, onChange, bootData, currentData 
   );
 
   const allowedChannels = useMemo(() => {
-    if (!access || access.all_areas) return ['key', 'van'];
+    if (!access) return ['key', 'van'];
+    
+    if (access.all_areas) {
+      const channel = access.area_channels?.['ALL'];
+      if (channel === 'KEY') return ['key'];
+      if (channel === 'VAN') return ['van'];
+      return ['key', 'van'];
+    }
     
     const channels = new Set<string>();
     Object.values(access.area_channels || {}).forEach((ch: any) => {

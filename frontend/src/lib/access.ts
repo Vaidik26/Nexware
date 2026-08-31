@@ -137,7 +137,7 @@ export const channelLabel = (channel: SalesChannel | null | undefined): string =
   channel ? CHANNEL_LABELS[channel] ?? `${channel} (unknown channel)` : 'both channels';
 
 export const grantLabel = (area: string, channel: SalesChannel | null): string =>
-  area === ALL_AREAS ? area : `${area} · ${channelLabel(channel)}`;
+  channel ? `${area} - ${channelLabel(channel)}` : area;
 
 // A grant no longer becomes a list of customer ids in the browser. That
 // translation is `granted_customer_ids` in backend/services/sales_data_service.py,

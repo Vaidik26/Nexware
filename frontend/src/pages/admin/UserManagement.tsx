@@ -497,7 +497,7 @@ export default function UserManagement() {
               <span className="text-on-surface">
                 {areas.length
                   ? areas
-                      .map((a) => (a === ALL_AREAS ? a : grantLabel(a, channelFor(r, a))))
+                      .map((a) => grantLabel(a, channelFor(r, a)))
                       .join(', ')
                   : <em className="text-on-surface-variant">
                       {r.role === 'MANAGER' ? 'every area' : r.role === 'PROCUREMENT_MANAGER' ? 'n/a' : 'none'}
