@@ -450,11 +450,24 @@ export default function UserManagement() {
     if (persona.hasAccessGrants) {
       base.push({
         header: 'Role',
-        accessor: (r: any) => (
-          <span className="rounded-full bg-surface-container px-2.5 py-1 text-xs font-bold text-on-surface">
-            {r.role ?? '—'}
-          </span>
-        ),
+        accessor: (r: any) => {
+          let displayRole = r.role ?? '-';
+          if (displayRole === 'MANAGER') {
+            const areas: string[] = r.areas ?? [];
+            const channel = areas.length ? channelFor(r, areas[0]) : null;
+            if (channel === 'KEY_ACCOUNT') displayRole = 'KEY SALES MANAGER';
+            else if (channel === 'VAN') displayRole = 'VAN MANAGER';
+            else displayRole = 'BOTH CHANNEL MANAGER';
+          } else if (displayRole === 'PROCUREMENT_MANAGER') {
+            displayRole = 'PROCUREMENT MANAGER';
+          }
+
+          return (
+            <span className="rounded-full bg-surface-container px-2.5 py-1 text-xs font-bold text-on-surface">
+              {displayRole}
+            </span>
+          );
+        },
       });
       base.push({
         header: 'Modules',
