@@ -191,7 +191,13 @@ export default function UserManagement() {
     try {
       setIsLoading(true);
       const res = await api.get(target.endpoint, { bypassCache: true } as any);
-      const data = res.data || [];
+      let data = res.data || [];
+      
+      // A Sales Manager can only view Sales Users in the dashboard users table
+      if (currentAccess?.user_type === 'dashboard' && currentAccess?.role === 'MANAGER' && target.id === 'dashboard-users') {
+        data = data.filter((r: any) => r.role === 'SALES');
+      }
+      
       setRows(data);
       setCounts((prev) => ({ ...prev, [target.id]: data.length }));
     } catch (error) {
