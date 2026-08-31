@@ -19,23 +19,18 @@ export default function JobsScreen() {
  const [stats, setStats] = useState({ today_items_picked: 0, lifetime_items_picked: 0, lifetime_orders_picked: 0 });
 
  const fetchAssignedJobs = async () => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
-  
   try {
    // Both calls go out together. They were sequential, so the screen waited for
-   // the full round trip of one before starting the other — on a remote API
+   // the full round trip of one before starting the other - on a remote API
    // that is a doubled wait for no reason: neither depends on the other.
    //
    // /my/summary returns one aggregated row per job instead of every item, box
    // and product of every job. The counts and bin range below used to be
    // computed on the phone from that whole payload.
    const [jobsResult, statsResult] = await Promise.allSettled([
-    api.get('/picklists/my/summary', { signal: controller.signal }),
-    api.get('/picklists/my/stats', { signal: controller.signal }),
+    api.get('/picklists/my/summary'),
+    api.get('/picklists/my/stats'),
    ]);
-
-   clearTimeout(timeoutId);
 
    if (statsResult.status === 'fulfilled' && statsResult.value?.data) {
     setStats(statsResult.value.data);

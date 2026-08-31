@@ -21,6 +21,15 @@ export const api = axios.create({
 });
 
 api.interceptors.request.use(async (config) => {
+ // Guarantee request drops after 8s even if React Native XHR bridge deadlocks
+ if (!config.signal) {
+  const controller = new AbortController();
+  config.signal = controller.signal;
+  setTimeout(() => {
+   try { controller.abort(); } catch (e) {}
+  }, 8000);
+ }
+
  try {
   // getToken() serves from an in-memory cache after the first call, so the
   // Android KeyStore is touched once per app launch rather than once per
