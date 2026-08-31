@@ -234,7 +234,7 @@ export default function UserManagement() {
   };
 
   useLiveEvent(
-    (e) => {
+    () => {
       const pickersTab = PERSONAS.find(p => p.id === 'pickers');
       if (pickersTab) fetchRows(pickersTab, true);
     },
