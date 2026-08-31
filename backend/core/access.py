@@ -149,7 +149,7 @@ def refuse_grant(
     Check an area grant *before* it is written, returning a reason to refuse it.
 
     Returns ``None`` when the grant is storable. The database's CHECK
-    constraints enforce the same two rules, but reaching them means the refusal
+    constraints enforce the same rules, but reaching them means the refusal
     arrives as a constraint-violation traceback rather than a sentence an
     operator can act on.
 
@@ -160,12 +160,6 @@ def refuse_grant(
     instead is visibility, not secrecy: an area nobody owns matches no customer,
     and :attr:`EffectiveAccess.scoped` keeps that closed.
     """
-    if channel is not None and ALL_AREAS in areas:
-        return (
-            f"'{ALL_AREAS}' means every supervisor area of both books, so it cannot also "
-            "name a sales channel. Grant ALL on its own, or list the individual areas "
-            "you want narrowed to that channel."
-        )
     if any(not area.strip() for area in areas):
         return "A supervisor area cannot be blank."
     return None

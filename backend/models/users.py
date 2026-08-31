@@ -141,12 +141,6 @@ class DashboardUserArea(Base):
             f"channel IS NULL OR channel IN ({_CHANNEL_VALUES})",
             name="ck_dashboard_user_areas_channel",
         ),
-        # ALL already means every area of both books; pairing it with a channel
-        # would be a third, undefined thing. Refused rather than reinterpreted.
-        CheckConstraint(
-            f"area <> '{ALL_AREAS}' OR channel IS NULL",
-            name="ck_dashboard_user_areas_all_has_no_channel",
-        ),
         CheckConstraint(
             "length(btrim(area)) > 0", name="ck_dashboard_user_areas_area_not_blank"
         ),
