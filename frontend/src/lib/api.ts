@@ -127,8 +127,11 @@ api.interceptors.response.use(
       const requestToken = requestAuth ? requestAuth.replace('Bearer ', '') : null;
 
       // Only log out if the 401 was for the currently active token
-      // (prevents in-flight requests from a previous session killing a new login)
-      if (!currentToken || requestToken === currentToken) {
+      // (prevents in-flight requests from a previous session killing a new login).
+      // With no current token there is no session to end, and ending one anyway
+      // would wipe a sign-in that happened between the request failing and this
+      // handler running — the same race that made switching accounts impossible.
+      if (currentToken && requestToken === currentToken) {
         useAuthStore.getState().logout();
         clearApiCache();
       }

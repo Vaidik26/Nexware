@@ -16,7 +16,9 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    clearApiCache();
+    // `logout` drops the session and every cached response itself, so both
+    // sign-out buttons behave identically — this one used to clear the cache
+    // and the sidebar's did not.
     logout();
     toast.success('Logged out successfully');
     navigate('/login');
