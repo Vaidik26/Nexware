@@ -239,25 +239,23 @@ export function AccessGrantEditor({ catalog, value, onChange, lockSelf, assignab
             </p>
           ) : (
             <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-lowest p-2">
-              {!value.channel && (
-                <label
-                  className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-surface-container ${
-                    disabled ? 'cursor-not-allowed opacity-60' : ''
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    className="accent-primary"
-                    checked={value.areas.includes(ALL_AREAS)}
-                    disabled={disabled}
-                    onChange={() => toggleArea(ALL_AREAS)}
-                  />
-                  <span className="font-semibold">{ALL_AREAS}</span>
-                  <span className="text-xs text-on-surface-variant">
-                    every supervisor area, both channels, including ones added later
-                  </span>
-                </label>
-              )}
+              <label
+                className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-surface-container ${
+                  disabled ? 'cursor-not-allowed opacity-60' : ''
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="accent-primary"
+                  checked={value.areas.includes(ALL_AREAS)}
+                  disabled={disabled}
+                  onChange={() => toggleArea(ALL_AREAS)}
+                />
+                <span className="font-semibold">{ALL_AREAS}</span>
+                <span className="text-xs text-on-surface-variant">
+                  every supervisor area, {value.channel ? CHANNEL_LABELS[value.channel] : 'both channels'}, including ones added later
+                </span>
+              </label>
 
               {offered.map((territory) => {
                 const reach = grantReach(territory, value.channel);
