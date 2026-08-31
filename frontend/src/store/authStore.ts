@@ -69,8 +69,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
     },
     logout: async () => {
       try {
-        const { default: api } = await import('../lib/api');
+        const { default: api, clearApiCache } = await import('../lib/api');
         await api.post('/auth/logout');
+        clearApiCache();
       } catch (err) {
         console.error('Logout API failed:', err);
       }

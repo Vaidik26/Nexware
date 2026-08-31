@@ -46,10 +46,16 @@ function getCacheTtl(url: string) {
 export function clearApiCache(prefix?: string) {
   if (!prefix) {
     cacheMap.clear();
+    pendingRequests.clear();
   } else {
     for (const key of cacheMap.keys()) {
       if (key.includes(prefix)) {
         cacheMap.delete(key);
+      }
+    }
+    for (const key of pendingRequests.keys()) {
+      if (key.includes(prefix)) {
+        pendingRequests.delete(key);
       }
     }
   }
@@ -116,8 +122,16 @@ api.interceptors.response.use(
   },
   (error) => {
     if (error.response?.status === 401) {
-      useAuthStore.getState().logout();
-      clearApiCache();
+      const currentToken = useAuthStore.getState().token;
+      const requestAuth = error.config?.headers?.Authorization;
+      const requestToken = requestAuth ? requestAuth.replace('Bearer ', '') : null;
+
+      // Only log out if the 401 was for the currently active token
+      // (prevents in-flight requests from a previous session killing a new login)
+      if (!currentToken || requestToken === currentToken) {
+        useAuthStore.getState().logout();
+        clearApiCache();
+      }
     }
     return Promise.reject(error);
   }
