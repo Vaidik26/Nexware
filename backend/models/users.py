@@ -76,8 +76,6 @@ class SalesUser(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
     display_name = Column(String, nullable=False)
-    emp_id = Column(String, nullable=True, index=True)
-    phone = Column(String, nullable=True)
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     last_login_at = Column(DateTime(timezone=True), nullable=True)

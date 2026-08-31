@@ -98,8 +98,6 @@ const PERSONAS: Persona[] = [
     fields: [
       { key: 'display_name', label: 'Display Name', placeholder: 'John Doe', required: true },
       { key: 'username', label: 'Username', placeholder: 'john.doe', required: true },
-      { key: 'emp_id', label: 'Employee ID', placeholder: 'EMP-1042' },
-      { key: 'phone', label: 'Phone', type: 'tel', placeholder: '+971 50 123 4567' },
     ],
     extraColumns: [
       {
@@ -165,9 +163,9 @@ export default function UserManagement() {
     [activeTab, visiblePersonas]
   );
 
-  const [rows, setRows] = useState<any[]>([]);
+  const [rowCache, setRowCache] = useState<Record<string, any[]>>({});
+  const [loadingTabs, setLoadingTabs] = useState<Record<string, boolean>>({});
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [restrictedMsg, setRestrictedMsg] = useState<string | null>(null);
@@ -176,6 +174,10 @@ export default function UserManagement() {
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [grant, setGrant] = useState<GrantDraft>(BLANK_GRANT);
   const [catalog, setCatalog] = useState<AccessCatalog | null>(null);
+
+  // Derive current tab rows and loading state from cache
+  const rows = rowCache[persona?.id ?? ''] ?? [];
+  const isLoading = loadingTabs[persona?.id ?? ''] ?? true;
 
   // The roles, modules and channels this build enforces. Read from the server
   // rather than declared here so the pickers cannot offer a value the database
@@ -187,45 +189,51 @@ export default function UserManagement() {
       .catch(() => setCatalog(null));
   }, []);
 
-  const fetchRows = async (target: Persona) => {
+  const fetchRows = async (target: Persona, silent = false) => {
+    if (!silent) {
+      setLoadingTabs((prev) => ({ ...prev, [target.id]: true }));
+    }
     try {
-      setIsLoading(true);
       const res = await api.get(target.endpoint, { bypassCache: true } as any);
       let data = res.data || [];
-      
+
       // A Sales Manager can only view Sales Users in the dashboard users table
       if (currentAccess?.user_type === 'dashboard' && currentAccess?.role === 'MANAGER' && target.id === 'dashboard-users') {
         data = data.filter((r: any) => r.role === 'SALES');
       }
-      
-      setRows(data);
+
+      setRowCache((prev) => ({ ...prev, [target.id]: data }));
       setCounts((prev) => ({ ...prev, [target.id]: data.length }));
     } catch (error) {
-      toast.error(getErrorMessage(error, `Failed to load ${target.label.toLowerCase()}`));
-      setRows([]);
+      if (!silent) {
+        toast.error(getErrorMessage(error, `Failed to load ${target.label.toLowerCase()}`));
+        setRowCache((prev) => ({ ...prev, [target.id]: [] }));
+      }
     } finally {
-      setIsLoading(false);
+      setLoadingTabs((prev) => ({ ...prev, [target.id]: false }));
     }
   };
 
   useEffect(() => {
     if (persona) {
-      fetchRows(persona);
+      // If we already have cached data, show it immediately and refresh silently
+      if (rowCache[persona.id]) {
+        fetchRows(persona, true);
+      } else {
+        fetchRows(persona, false);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [persona?.id]);
 
-  // Tab badges: fetch every group's size once so the counts are visible without
-  // clicking through. Failures are silent - a missing badge is not worth a toast.
+  // Pre-fetch all visible tabs once on mount so badges are populated
   useEffect(() => {
-    visiblePersonas.forEach(async (p) => {
-      try {
-        const res = await api.get(p.endpoint);
-        setCounts((prev) => ({ ...prev, [p.id]: (res.data || []).length }));
-      } catch {
-        /* leave the badge blank */
+    visiblePersonas.forEach((p) => {
+      if (!rowCache[p.id]) {
+        fetchRows(p, false);
       }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const openCreateModal = () => {
@@ -307,7 +315,7 @@ export default function UserManagement() {
         toast.success('Account created');
       }
       closeModal();
-      fetchRows(persona);
+      fetchRows(persona, true);
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Failed to save account'));
     } finally {
@@ -321,7 +329,10 @@ export default function UserManagement() {
     try {
       await api.delete(`${persona.endpoint}/${row.id}`);
       toast.success('Account deleted');
-      setRows((prev) => prev.filter((r) => r.id !== row.id));
+      setRowCache((prev) => ({
+        ...prev,
+        [persona.id]: (prev[persona.id] ?? []).filter((r) => r.id !== row.id),
+      }));
       setCounts((prev) => ({ ...prev, [persona.id]: (prev[persona.id] ?? 1) - 1 }));
     } catch (error: any) {
       const detail =
@@ -348,9 +359,12 @@ export default function UserManagement() {
       toast.success(
         `${row[persona.nameKey]} marked ${next ? 'Online (Available)' : 'Offline'}`
       );
-      setRows((prev) =>
-        prev.map((r) => (r.id === row.id ? { ...r, is_available: next } : r))
-      );
+      setRowCache((prev) => ({
+        ...prev,
+        [persona.id]: (prev[persona.id] ?? []).map((r) =>
+          r.id === row.id ? { ...r, is_available: next } : r
+        ),
+      }));
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Failed to update availability'));
     }
@@ -363,15 +377,20 @@ export default function UserManagement() {
       toast.success(
         `${row[persona.nameKey]} account ${next ? 'enabled' : 'disabled'}`
       );
-      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, is_active: next } : r)));
+      setRowCache((prev) => ({
+        ...prev,
+        [persona.id]: (prev[persona.id] ?? []).map((r) =>
+          r.id === row.id ? { ...r, is_active: next } : r
+        ),
+      }));
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Failed to update account status'));
     }
   };
 
   const columns = useMemo(() => {
-    const base: { header: string; accessor: (row: any) => any; className?: string }[] = [
-      { header: 'ID', accessor: (r: any) => `#${r.id}` },
+    const base: { header: string; accessor: (row: any, index: number) => any; className?: string }[] = [
+      { header: '#', accessor: (_r: any, i: number) => `#${i + 1}` },
       {
         header: persona.nameKey === 'display_name' ? 'Display Name' : 'Full Name',
         accessor: (r: any) => r[persona.nameKey] || '—',

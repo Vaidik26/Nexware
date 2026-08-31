@@ -76,6 +76,54 @@ async def _reject_duplicate(db: AsyncSession, column, value: str, label: str, ex
     _ = exclude_id  # the ilike lookup is on a unique column; caller checks for change first
 
 
+async def _reject_duplicate_email(db: AsyncSession, email: str, exclude_model=None, exclude_id=None) -> None:
+    """
+    Raise 400 if the email is already registered in ANY of the email-login tables
+    (admin_users, dashboard_users). This prevents a single person holding accounts
+    in two different roles under the same address, which would make the login screen
+    ambiguous and the audit trail unreliable.
+    """
+    email = email.strip().lower()
+    for model in (AdminUser, DashboardUser):
+        if exclude_model is model:
+            # When editing, allow the row being edited to keep its own email
+            stmt = select(model.email).filter(
+                model.email.ilike(email), model.id != exclude_id
+            )
+        else:
+            stmt = select(model.email).filter(model.email.ilike(email))
+        result = await db.execute(stmt)
+        if result.scalars().first() is not None:
+            table_label = "Admin" if model is AdminUser else "Dashboard Viewer"
+            raise HTTPException(
+                status_code=400,
+                detail=f"Email '{email}' is already registered as a {table_label} account.",
+            )
+
+
+async def _reject_duplicate_username(db: AsyncSession, username: str, exclude_model=None, exclude_id=None) -> None:
+    """
+    Raise 400 if the username is already registered in ANY of the username-login tables
+    (picker_users, sales_users). Pickers and Sales Reps both log in with a username,
+    so sharing one would make their tokens indistinguishable.
+    """
+    username = username.strip().lower()
+    for model in (PickerUser, SalesUser):
+        if exclude_model is model:
+            stmt = select(model.username).filter(
+                model.username.ilike(username), model.id != exclude_id
+            )
+        else:
+            stmt = select(model.username).filter(model.username.ilike(username))
+        result = await db.execute(stmt)
+        if result.scalars().first() is not None:
+            table_label = "Picker" if model is PickerUser else "Sales Rep"
+            raise HTTPException(
+                status_code=400,
+                detail=f"Username '{username}' is already registered as a {table_label} account.",
+            )
+
+
 def _reject_bad_grant(data: GrantIn) -> None:
     """
     Refuse an unstorable area grant with a sentence, before anything is written.
@@ -104,7 +152,7 @@ async def create_admin(
     data: AdminCreate, db: AsyncSession = Depends(get_db), _=Depends(user_admin)
 ):
     email = data.email.strip()
-    await _reject_duplicate(db, AdminUser.email, email, "Email")
+    await _reject_duplicate_email(db, email)
 
     admin = AdminUser(
         email=email,
@@ -131,8 +179,8 @@ async def update_admin(
     if not admin:
         raise HTTPException(status_code=404, detail="Admin not found")
 
-    if data.email and data.email.strip() != admin.email:
-        await _reject_duplicate(db, AdminUser.email, data.email.strip(), "Email")
+    if data.email and data.email.strip().lower() != admin.email.lower():
+        await _reject_duplicate_email(db, data.email.strip(), exclude_model=AdminUser, exclude_id=admin_id)
         admin.email = data.email.strip()
     if data.full_name:
         admin.full_name = data.full_name.strip()
@@ -190,7 +238,7 @@ async def create_picker(
     data: PickerCreate, db: AsyncSession = Depends(get_db), _=Depends(user_admin)
 ):
     username = data.username.strip()
-    await _reject_duplicate(db, PickerUser.username, username, "Username")
+    await _reject_duplicate_username(db, username)
 
     picker = PickerUser(
         username=username,
@@ -255,8 +303,8 @@ async def update_picker(
     if not picker:
         raise HTTPException(status_code=404, detail="Picker not found")
 
-    if data.username and data.username.strip() != picker.username:
-        await _reject_duplicate(db, PickerUser.username, data.username.strip(), "Username")
+    if data.username and data.username.strip().lower() != picker.username.lower():
+        await _reject_duplicate_username(db, data.username.strip(), exclude_model=PickerUser, exclude_id=picker_id)
         picker.username = data.username.strip()
     if data.full_name:
         picker.full_name = data.full_name.strip()
@@ -335,13 +383,11 @@ async def create_sales_user(
     data: SalesCreate, db: AsyncSession = Depends(get_db), _=Depends(user_admin)
 ):
     username = data.username.strip()
-    await _reject_duplicate(db, SalesUser.username, username, "Username")
+    await _reject_duplicate_username(db, username)
 
     sales_user = SalesUser(
         username=username,
         display_name=data.display_name.strip(),
-        emp_id=data.emp_id,
-        phone=data.phone,
         hashed_password=hash_password(data.password),
         is_active=data.is_active,
     )
@@ -364,15 +410,11 @@ async def update_sales_user(
     if not sales_user:
         raise HTTPException(status_code=404, detail="Sales user not found")
 
-    if data.username and data.username.strip() != sales_user.username:
-        await _reject_duplicate(db, SalesUser.username, data.username.strip(), "Username")
+    if data.username and data.username.strip().lower() != sales_user.username.lower():
+        await _reject_duplicate_username(db, data.username.strip(), exclude_model=SalesUser, exclude_id=sales_id)
         sales_user.username = data.username.strip()
     if data.display_name:
         sales_user.display_name = data.display_name.strip()
-    if data.emp_id is not None:
-        sales_user.emp_id = data.emp_id
-    if data.phone is not None:
-        sales_user.phone = data.phone
     if data.password:
         sales_user.hashed_password = hash_password(data.password)
     if data.is_active is not None:
@@ -411,7 +453,7 @@ async def create_dashboard_user(
     data: DashboardCreate, db: AsyncSession = Depends(get_db), _=Depends(user_admin)
 ):
     email = data.email.strip()
-    await _reject_duplicate(db, DashboardUser.email, email, "Email")
+    await _reject_duplicate_email(db, email)
     _reject_bad_grant(data)
 
     user = DashboardUser(
@@ -465,8 +507,8 @@ async def update_dashboard_user(
 
     _reject_bad_grant(data)
 
-    if data.email and data.email.strip() != user.email:
-        await _reject_duplicate(db, DashboardUser.email, data.email.strip(), "Email")
+    if data.email and data.email.strip().lower() != user.email.lower():
+        await _reject_duplicate_email(db, data.email.strip(), exclude_model=DashboardUser, exclude_id=user_id)
         user.email = data.email.strip()
     if data.full_name:
         user.full_name = data.full_name.strip()

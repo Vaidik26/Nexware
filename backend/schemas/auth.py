@@ -80,8 +80,6 @@ class PickerOut(PickerBase):
 class SalesBase(BaseModel):
     username: str
     display_name: str
-    emp_id: Optional[str] = None
-    phone: Optional[str] = None
     is_active: bool = True
 
 
@@ -92,8 +90,6 @@ class SalesCreate(SalesBase):
 class SalesUpdate(BaseModel):
     username: Optional[str] = None
     display_name: Optional[str] = None
-    emp_id: Optional[str] = None
-    phone: Optional[str] = None
     password: Optional[str] = None
     is_active: Optional[bool] = None
 
