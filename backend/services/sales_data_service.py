@@ -36,7 +36,7 @@ from fastapi import HTTPException, status
 
 from backend.config import settings
 from backend.constants import SalesChannel
-from backend.core.access import EffectiveAccess
+from backend.core.access import ALL_AREAS, EffectiveAccess
 
 logger = logging.getLogger(__name__)
 
@@ -123,11 +123,17 @@ def granted_customer_ids(access: EffectiveAccess) -> Optional[List[int]]:
     empty result is never confused with "no filter" by ``ng2_dashboard``.
     """
     if access.all_areas:
-        return None
-
+        channel = access.channel_for(ALL_AREAS)
+        if channel is None:
+            return None
+    
     areas = supervisor_areas()
     ids: List[int] = []
-    for area in access.areas:
+    
+    # If all_areas is true, we must pull customers for ALL areas but ONLY for that specific channel.
+    target_areas = areas.keys() if access.all_areas else access.areas
+
+    for area in target_areas:
         slot = areas.get(area)
         if not slot:
             continue

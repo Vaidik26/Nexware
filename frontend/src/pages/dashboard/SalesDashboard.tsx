@@ -147,7 +147,9 @@ export default function SalesDashboard() {
       <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
           <h1 className="text-2xl font-bold text-primary">Sales Trends</h1>
-          <p className="text-sm text-slate-500">Key & Van Sales · gross & net of returns</p>
+          <p className="text-sm text-slate-500">
+            {filters.channel === 'key' ? 'Key Sales' : filters.channel === 'van' ? 'Van Sales' : 'Key & Van Sales'} · gross & net of returns
+          </p>
         </div>
 
         {/*
