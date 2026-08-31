@@ -455,7 +455,7 @@ export default function UserManagement() {
           if (displayRole === 'MANAGER') {
             const areas: string[] = r.areas ?? [];
             const channel = areas.length ? channelFor(r, areas[0]) : null;
-            if (channel === 'KEY_ACCOUNT') displayRole = 'KEY SALES MANAGER';
+            if (channel === 'KEY') displayRole = 'KEY SALES MANAGER';
             else if (channel === 'VAN') displayRole = 'VAN MANAGER';
             else displayRole = 'BOTH CHANNEL MANAGER';
           } else if (displayRole === 'PROCUREMENT_MANAGER') {
