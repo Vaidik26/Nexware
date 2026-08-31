@@ -16,6 +16,7 @@ import {
 } from '@/components/admin/AccessGrantEditor';
 import { ALL_AREAS, DashboardRole, ROLE_MODULES, channelFor, grantLabel } from '@/lib/access';
 import api from '@/lib/api';
+import { useLiveEvent } from '@/lib/liveEvents';
 
 /**
  * The `users` table was split into four tables, one per persona, and they no
@@ -231,6 +232,14 @@ export default function UserManagement() {
       setLoadingTabs((prev) => ({ ...prev, [target.id]: false }));
     }
   };
+
+  useLiveEvent(
+    (e) => {
+      const pickersTab = PERSONAS.find(p => p.id === 'pickers');
+      if (pickersTab) fetchRows(pickersTab, true);
+    },
+    ['PICKER_STATUS_CHANGED']
+  );
 
   /**
    * Put the row the server just stored on screen.

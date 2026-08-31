@@ -288,6 +288,14 @@ async def update_my_availability(
     current_user.is_available = is_available
     await db.commit()
     await db.refresh(current_user)
+    
+    from backend.ws_manager import manager
+    await manager.broadcast({
+        "event": "PICKER_STATUS_CHANGED",
+        "picker_id": current_user.id,
+        "is_available": is_available
+    })
+    
     return current_user
 
 
@@ -303,6 +311,7 @@ async def update_picker(
     if not picker:
         raise HTTPException(status_code=404, detail="Picker not found")
 
+    status_changed = False
     if data.username and data.username.strip().lower() != picker.username.lower():
         await _reject_duplicate_username(db, data.username.strip(), exclude_model=PickerUser, exclude_id=picker_id)
         picker.username = data.username.strip()
@@ -311,12 +320,23 @@ async def update_picker(
     if data.password:
         picker.hashed_password = hash_password(data.password)
     if data.is_available is not None:
+        if picker.is_available != data.is_available:
+            status_changed = True
         picker.is_available = data.is_available
     if data.is_active is not None:
         picker.is_active = data.is_active
 
     await db.commit()
     await db.refresh(picker)
+    
+    if status_changed:
+        from backend.ws_manager import manager
+        await manager.broadcast({
+            "event": "PICKER_STATUS_CHANGED",
+            "picker_id": picker.id,
+            "is_available": picker.is_available
+        })
+        
     return picker
 
 
@@ -334,6 +354,14 @@ async def update_picker_status(
     picker.is_available = is_available
     await db.commit()
     await db.refresh(picker)
+    
+    from backend.ws_manager import manager
+    await manager.broadcast({
+        "event": "PICKER_STATUS_CHANGED",
+        "picker_id": picker.id,
+        "is_available": is_available
+    })
+    
     return picker
 
 
