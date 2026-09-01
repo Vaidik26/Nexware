@@ -4,9 +4,12 @@ NexWare Backend — Application entry point.
 Responsibilities:
 - Configure structured logging (must be first)
 - Validate critical settings on startup
-- Run DB schema creation via create_all (idempotent — safe every boot)
 - Mount all routers under root path AND /api prefix (for Vercel routing)
 - Configure CORS — reads origin list from environment, never uses wildcard regex
+- Log unhandled exceptions with their request and answer in JSON
+
+The schema is owned by Alembic; startup deliberately does NOT call create_all.
+See the lifespan handler below for why.
 """
 import sys
 import os
@@ -34,8 +37,9 @@ logger = logging.getLogger(__name__)
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from backend.config import settings
 from backend.routers import (
@@ -127,6 +131,46 @@ app.add_middleware(
 )
 
 logger.info("CORS configured for origins: %s", _origins)
+
+
+# ─── Unhandled errors ──────────────────────────────────────────────────────────
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """
+    Log any unhandled exception with its request, and answer in JSON.
+
+    Starlette's default replies with the plain text "Internal Server Error" and
+    no body structure, so a crash reaches the client as a 500 the UI cannot
+    describe — every client here reads ``detail``, finds nothing, and falls back
+    to a generic message. That turned real backend crashes into "could not
+    confirm photos" and "incorrect email or password", which sent debugging
+    after the wrong problem more than once.
+
+    The response names the error type and the request id only. The message is
+    deliberately withheld: it can carry SQL fragments and identifiers. The full
+    traceback goes to the log, where it belongs.
+    """
+    request_id = request.headers.get("x-request-id") or "-"
+    logger.exception(
+        "Unhandled %s on %s %s (request_id=%s)",
+        type(exc).__name__,
+        request.method,
+        request.url.path,
+        request_id,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": (
+                f"The server hit an unexpected error ({type(exc).__name__}). "
+                "It has been logged — please report this if it keeps happening."
+            ),
+            "error_type": type(exc).__name__,
+            "path": request.url.path,
+            "request_id": request_id,
+        },
+    )
 
 # ─── Routers ───────────────────────────────────────────────────────────────────
 # Each router is mounted at root AND under /api prefix.
