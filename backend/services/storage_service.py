@@ -22,9 +22,11 @@ _PLACEHOLDER_KEYS = {"PASTE_YOUR_SERVICE_ROLE_KEY_HERE", "your-service-role-key"
 
 #: How long the server will wait on the Supabase Storage hop.
 #:
-#: Must stay above the mobile upload budget in mobile/src/lib/api.ts (TIMEOUT
-#: .uploadLpo), or a large document fails here while the phone is still waiting.
-#: The SDK's own default is 20s.
+#: The SDK's own default is 20s, which is short enough that a large signed LPO
+#: fails here while the client is still patiently waiting — a failure the user
+#: can do nothing about. The mobile upload has no timeout of its own, so this is
+#: the effective ceiling on an upload; it stays finite only to bound how long a
+#: worker thread can be tied up by one stuck request.
 SUPABASE_STORAGE_TIMEOUT_SECONDS = 120
 
 # Kept strictly ASCII: this string is logged, and a cp1252 console (Windows dev)

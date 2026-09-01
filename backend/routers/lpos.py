@@ -536,13 +536,23 @@ async def upload_lpo_pdf(
     # identity map from the read at the top of the handler, and without it
     # SQLAlchemy returns that instance with its original attribute values — so
     # the status check below would run against data read before the lock.
+    #
+    # It also resets the instance's loaded relationships, which is why `items`
+    # is re-loaded here explicitly. _convert_to_picklist iterates lpo.items, and
+    # on an expired collection that becomes a lazy load part-way through an
+    # async request — which raises MissingGreenlet and surfaces as a bare 500.
+    #
+    # selectinload, not joinedload: it runs as its own follow-up query, so the
+    # FOR UPDATE stays on a plain single-table select. A joinedload would make
+    # it an outer join, which PostgreSQL refuses to lock.
     locked = await db.execute(
         select(Lpo)
+        .options(selectinload(Lpo.items).joinedload(LpoItem.product))
         .filter(Lpo.id == lpo_id)
         .with_for_update()
         .execution_options(populate_existing=True)
     )
-    lpo = locked.scalars().one_or_none()
+    lpo = locked.scalars().unique().one_or_none()
     if not lpo:
         await _discard_orphan_upload(public_url, lpo_id)
         raise HTTPException(status_code=404, detail="LPO not found")

@@ -102,7 +102,9 @@ export default function LpoOrderDetailsScreen() {
    setLpo(res.data);
   } catch (err) {
    console.error(err);
-   Alert.alert('Error', 'Failed to load order details.');
+   // Say why. A slow connection and a deleted order both used to read as the
+   // same message, and both dropped the user straight out of the screen.
+   Alert.alert('Could not open order', describeApiError(err, 'Failed to load order details.').message);
    router.back();
   } finally {
    setIsLoading(false);
@@ -153,9 +155,12 @@ export default function LpoOrderDetailsScreen() {
    setLpo(res.data);
    setIsEditing(false);
    Alert.alert('Success', 'Order updated successfully.');
-  } catch (err: any) {
+  } catch (err) {
    console.error(err);
-   Alert.alert('Error', err.response?.data?.detail || 'Failed to update order.');
+   // Not `detail` directly: the backend returns it as an object for stock
+   // validation failures and as an array for request validation, either of
+   // which Alert cannot render as a message.
+   Alert.alert('Error', describeApiError(err, 'Failed to update order.').message);
   } finally {
    setIsSaving(false);
   }
@@ -383,6 +388,10 @@ export default function LpoOrderDetailsScreen() {
 
    await api.post(`/lpos/${lpo.id}/upload-pdf`, formData, {
     timeout: TIMEOUT.uploadLpo,
+    // Required — see the matching call in (lpo)/create.tsx. Dropping this sends
+    // the instance default of application/json and the server rejects the
+    // multipart body with a 422.
+    headers: { 'Content-Type': 'multipart/form-data' },
    });
 
    Alert.alert('✅ Success', 'LPO Photos Confirmed successfully!');

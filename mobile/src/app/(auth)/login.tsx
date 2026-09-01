@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StatusBar, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
-import { api } from '../../lib/api';
+import { api, describeApiError } from '../../lib/api';
 import { setToken, setPickerInfo } from '../../lib/session';
 import { useAuthStore } from '../../store/authStore';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -48,12 +48,17 @@ export default function LoginScreen() {
    setPicker(user);
    setAuthenticated(true);
    // Navigation is handled by _layout.tsx based on authentication and role
-  } catch (err: any) {
-   if (err.message && err.message.includes('Network Error')) {
-    setError('Cannot connect to NexWare server. Please check network connection.');
-   } else {
-    setError(err.response?.data?.detail || 'Incorrect email or password');
-   }
+  } catch (err) {
+   // setError feeds a <Text>, so this has to be a string. `detail` is an array
+   // on a 422, which React Native refuses to render as a child.
+   const failure = describeApiError(err, 'Incorrect email or password');
+   setError(
+    failure.kind === 'offline'
+     ? 'Cannot connect to NexWare server. Please check network connection.'
+     : failure.kind === 'auth'
+      ? 'Incorrect email or password'
+      : failure.message
+   );
   } finally {
    setIsLoading(false);
   }

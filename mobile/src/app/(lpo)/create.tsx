@@ -135,14 +135,19 @@ export default function LpoCreateScreen() {
   return () => clearTimeout(timer);
  }, [customerSearch]);
 
+ const [catalogueError, setCatalogueError] = useState<string | null>(null);
+
  const fetchCatalogue = async () => {
   try {
    // Served from the shared cache: instant on every visit after the first, and
    // refreshed in the background when stale.
    const items = await getCatalogue(setCatalogue);
    setCatalogue(items);
+   setCatalogueError(null);
   } catch (err) {
-   // Handle error quietly
+   // Failing quietly here meant the item picker opened empty and looked like a
+   // catalogue with no products in it, rather than a load that did not finish.
+   setCatalogueError(describeApiError(err, 'Could not load products.').message);
   }
  };
 
@@ -347,6 +352,11 @@ export default function LpoCreateScreen() {
 
    await api.post(`/lpos/${createdLpo.id}/upload-pdf`, formData, {
     timeout: TIMEOUT.uploadLpo,
+    // Required. Without it the instance default of application/json is sent,
+    // the server cannot parse the multipart body, and the request is rejected
+    // with a 422 before a single byte of the file is uploaded. React Native
+    // replaces this value with the real boundary when it serialises FormData.
+    headers: { 'Content-Type': 'multipart/form-data' },
    });
 
    setIsConfirmed(true);
@@ -366,15 +376,35 @@ export default function LpoCreateScreen() {
   executeOrderCreation();
  };
 
+ /** "Cancel & Edit" — go back to the form without discarding the user's work. */
  const handleCloseSuccess = () => {
   setSuccessModalVisible(false);
+
   if (isConfirmed) {
    resetFormExplicitly();
+   return;
   }
-  // Otherwise keep everything exactly as it is. Clearing hasDownloadedPDF and
-  // selectedLpoFile here used to mean that a network failure cost the user the
-  // printed PDF and every photo they had taken — they had to redo all of it
-  // before the Confirm button would even reappear.
+
+  if (pendingAttachment) {
+   // The order is already saved under the current LPO number. Issuing a fresh
+   // number and replay key here would sever the link to it, so the next
+   // Confirm would create a second order — the exact duplicate this is meant
+   // to prevent. Keep the identity; the user retries the attachment.
+   return;
+  }
+
+  // Nothing has been saved yet, so this is a clean new attempt. Take a fresh
+  // LPO number and replay key so a later submit can never collide with, or be
+  // suffixed onto, an order left behind by an earlier round of editing.
+  setOrderNumber(generateAutoLpoNumber());
+  idempotencyKeyRef.current = generateIdempotencyKey();
+
+  // The new number invalidates anything produced under the old one: the printed
+  // sheet carries the previous LPO number, and the photos are of that sheet.
+  // Keeping them would file a document against an order it does not name, so
+  // the user re-prints — which they need to do anyway after editing the items.
+  setHasDownloadedPDF(false);
+  setSelectedLpoFile(null);
  };
 
  const resetFormExplicitly = () => {
@@ -667,6 +697,26 @@ export default function LpoCreateScreen() {
      <FlatList
       data={filteredCatalogue}
       keyExtractor={(item, index) => item.id ? item.id.toString() : (item.primary_barcode || `cat-${index}`)}
+      ListEmptyComponent={
+       catalogueError ? (
+        <View className="p-8 items-center">
+         <Text className="text-base font-bold text-red-600 text-center mb-2">Products could not be loaded</Text>
+         <Text className="text-sm text-slate-500 text-center mb-4">{catalogueError}</Text>
+         <TouchableOpacity
+          onPress={fetchCatalogue}
+          className="px-5 py-3 rounded-xl bg-[#003527]"
+         >
+          <Text className="font-bold text-white text-sm">Try Again</Text>
+         </TouchableOpacity>
+        </View>
+       ) : (
+        <View className="p-8 items-center">
+         <Text className="text-sm text-slate-400 text-center">
+          {search ? 'No products match your search.' : 'No products available.'}
+         </Text>
+        </View>
+       )
+      }
       renderItem={({ item }) => (
        <TouchableOpacity
         className="px-4 py-4 border-b border-gray-100 flex-row justify-between items-center hover:bg-gray-50"

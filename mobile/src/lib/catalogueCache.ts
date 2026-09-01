@@ -56,8 +56,15 @@ export async function getCatalogue(onUpdate?: (items: any[]) => void): Promise<a
   }
   try {
     return await inFlight;
-  } catch {
-    return cache || [];
+  } catch (err) {
+    // Only swallow the failure when there is something real to fall back on.
+    //
+    // Returning [] on a cold start reported success with an empty product list,
+    // so a slow connection looked exactly like a catalogue with nothing in it —
+    // the caller had no way to tell the difference and showed an empty picker
+    // with no error. Let the caller decide how to say so.
+    if (cache) return cache;
+    throw err;
   }
 }
 

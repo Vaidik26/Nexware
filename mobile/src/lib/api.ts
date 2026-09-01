@@ -28,13 +28,19 @@ export const TIMEOUT = {
  /** Product catalogue. */
  catalogue: 20000,
  /**
-  * Signed-LPO document upload — a multi-megabyte body over mobile data.
+  * Signed-LPO document upload — no time limit.
   *
-  * Two minutes. Photos go in at full camera resolution, so a several-page LPO
-  * on a weak warehouse connection genuinely needs this long; cutting it short
-  * loses the upload for a request the server was still happily receiving.
+  * 0 disables the timeout in axios. Photos go in at full camera resolution, so
+  * the body is large and the time it takes depends entirely on the warehouse
+  * connection; every fixed budget tried here cut off uploads the server was
+  * still happily receiving. The request now ends when the network or the server
+  * ends it.
+  *
+  * The cost is that a genuinely dead connection leaves the spinner up until the
+  * OS gives up on the socket, so the upload screens must keep offering a way
+  * out rather than relying on a timeout to release them.
   */
- uploadLpo: 120000,
+ uploadLpo: 0,
  /** Order creation. */
  createOrder: 45000,
 } as const;
@@ -59,6 +65,18 @@ export const api = axios.create({
 });
 
 api.interceptors.request.use(async (config) => {
+ // The instance declares Content-Type: application/json, which is right for
+ // almost every call and catastrophic for the few that post a file: the server
+ // receives a multipart body labelled as JSON, fails to find the file field,
+ // and rejects the request with a 422 before any of it is uploaded.
+ //
+ // Correcting it here rather than trusting each call site to remember. React
+ // Native replaces the value with the real boundary when it serialises the
+ // FormData, so naming the type without one is enough.
+ if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+  config.headers['Content-Type'] = 'multipart/form-data';
+ }
+
  try {
   // getToken() serves from an in-memory cache after the first call, so the
   // Android KeyStore is touched once per app launch rather than once per
@@ -115,13 +133,27 @@ export function describeApiError(error: unknown, fallback: string): ApiFailure {
  if (err?.response) {
   const status = err.response.status;
   const detail = err.response.data?.detail;
-  const serverMessage =
-   typeof detail === 'string' ? detail : detail?.message || err.response.data?.message;
+
+  let serverMessage: string | undefined;
+  if (typeof detail === 'string') {
+   serverMessage = detail;
+  } else if (Array.isArray(detail)) {
+   // FastAPI request-validation errors arrive as a list of {loc, msg, type}.
+   // Reading `.message` off the array yields undefined, which used to collapse
+   // a precise validation complaint into the caller's generic fallback.
+   serverMessage = detail
+    .map((d: any) => (typeof d === 'string' ? d : d?.msg))
+    .filter(Boolean)
+    .join('; ');
+  } else {
+   serverMessage = detail?.message;
+  }
+  serverMessage = serverMessage || err.response.data?.message;
 
   if (status === 401 || status === 403) {
    return { kind: 'auth', status, message: serverMessage || 'Your session has expired. Please sign in again.' };
   }
-  return { kind: 'server', status, message: serverMessage || fallback };
+  return { kind: 'server', status, message: serverMessage || `${fallback} (error ${status})` };
  }
 
  // No response. Axios reports its own timeout as ECONNABORTED; a dropped or
