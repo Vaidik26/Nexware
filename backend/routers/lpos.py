@@ -529,33 +529,33 @@ async def upload_lpo_pdf(
     # transaction open across a multi-second external upload would serialise
     # every concurrent upload behind it.
     #
-    # A plain select, not _reload_lpo: its joinedloads render as LEFT OUTER JOINs
-    # and PostgreSQL rejects FOR UPDATE on the nullable side of an outer join.
-    #
-    # populate_existing is required: this LPO is already in the session's
-    # identity map from the read at the top of the handler, and without it
-    # SQLAlchemy returns that instance with its original attribute values — so
-    # the status check below would run against data read before the lock.
-    #
-    # It also resets the instance's loaded relationships, which is why `items`
-    # is re-loaded here explicitly. _convert_to_picklist iterates lpo.items, and
-    # on an expired collection that becomes a lazy load part-way through an
-    # async request — which raises MissingGreenlet and surfaces as a bare 500.
-    #
-    # selectinload, not joinedload: it runs as its own follow-up query, so the
-    # FOR UPDATE stays on a plain single-table select. A joinedload would make
-    # it an outer join, which PostgreSQL refuses to lock.
+    # This locks by selecting a single column rather than the entity. Lpo maps
+    # customer, sales_person and created_by_admin with lazy="joined", so *any*
+    # select(Lpo) — options or not — is emitted as a LEFT OUTER JOIN, and
+    # PostgreSQL rejects "FOR UPDATE cannot be applied to the nullable side of
+    # an outer join". Selecting Lpo.id skips the mapper's eager loaders and
+    # produces the plain single-table select the lock needs.
     locked = await db.execute(
-        select(Lpo)
-        .options(selectinload(Lpo.items).joinedload(LpoItem.product))
-        .filter(Lpo.id == lpo_id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
+        select(Lpo.id).filter(Lpo.id == lpo_id).with_for_update()
     )
-    lpo = locked.scalars().unique().one_or_none()
-    if not lpo:
+    if locked.scalars().first() is None:
         await _discard_orphan_upload(public_url, lpo_id)
         raise HTTPException(status_code=404, detail="LPO not found")
+
+    # Re-read the full row now that it is held. populate_existing is required:
+    # this LPO is already in the session's identity map from the read at the top
+    # of the handler, and without it SQLAlchemy hands back that instance with
+    # its pre-lock attribute values, so the status check below would decide on
+    # stale data. _LPO_LOAD_OPTIONS keeps `items` loaded — _convert_to_picklist
+    # iterates it, and on an expired collection that becomes a lazy load inside
+    # an async request, which raises MissingGreenlet and surfaces as a bare 500.
+    refreshed = await db.execute(
+        select(Lpo)
+        .options(*_LPO_LOAD_OPTIONS)
+        .filter(Lpo.id == lpo_id)
+        .execution_options(populate_existing=True)
+    )
+    lpo = refreshed.scalars().unique().one()
 
     # Re-check now that the row is held: a concurrent call may have won the race
     # while this one was uploading.
