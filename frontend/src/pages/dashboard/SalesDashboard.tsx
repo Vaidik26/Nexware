@@ -166,8 +166,14 @@ export default function SalesDashboard() {
     return { start: s, end: e };
   };
 
+  // True on first load (no data yet); false on filter-change refetches so
+  // existing content stays visible while the new data comes in.
+  const isInitialLoad = loading && !data;
+  const isRefetching = loading && !!data;
+
   return (
     <div className="space-y-6">
+      {/* Header — always visible */}
       <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
           <h1 className="text-2xl font-bold text-primary">Sales Trends</h1>
@@ -176,12 +182,6 @@ export default function SalesDashboard() {
           </p>
         </div>
 
-        {/*
-          A scoped viewer must be able to tell a restricted total from a quiet
-          month. Without this, "OMR 0" for a territory they cannot see is
-          indistinguishable from "OMR 0" for one they can — so the scope is
-          stated wherever the numbers are, not only on the admin screen.
-        */}
         {access && !access.all_areas && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs">
             <span className="font-bold uppercase tracking-wider text-amber-700">Your territories</span>
@@ -194,19 +194,86 @@ export default function SalesDashboard() {
         )}
       </div>
 
-      <SalesFilters filters={filters} onChange={handleFilterChange} bootData={bootData} currentData={data} />
-      
+      {/* Thin top-of-page progress bar while refetching (filter change) */}
+      {isRefetching && (
+        <div className="fixed top-0 left-0 right-0 z-50 h-0.5 bg-primary/20 overflow-hidden">
+          <div className="h-full bg-primary animate-[slide_1.2s_ease-in-out_infinite]" style={{ width: '40%' }} />
+        </div>
+      )}
+
       {error ? (
         <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
           <p className="font-semibold text-red-800">Could not load the sales data</p>
           <p className="mt-1 text-sm text-red-700">{error}</p>
         </div>
-      ) : loading ? (
-        <div className="flex justify-center py-20">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-emerald-600"></div>
+      ) : isInitialLoad ? (
+        /* ── Full-page skeleton matching the real layout ── */
+        <div className="space-y-4 animate-pulse">
+          {/* Filters skeleton */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4">
+            <div className="h-3 w-40 bg-slate-200 rounded" />
+            <div className="flex flex-wrap gap-4">
+              <div className="h-9 w-36 bg-slate-100 rounded-lg" />
+              <div className="h-9 flex-1 min-w-[180px] max-w-xs bg-slate-100 rounded-lg" />
+              <div className="h-9 flex-1 min-w-[180px] max-w-xs bg-slate-100 rounded-lg" />
+              <div className="h-9 flex-1 min-w-[180px] max-w-xs bg-slate-100 rounded-lg" />
+            </div>
+            <div className="h-3 w-32 bg-slate-200 rounded" />
+            <div className="flex flex-wrap gap-4">
+              <div className="h-9 flex-1 min-w-[180px] max-w-xs bg-slate-100 rounded-lg" />
+              <div className="h-9 flex-1 min-w-[180px] max-w-xs bg-slate-100 rounded-lg" />
+              <div className="h-9 flex-1 min-w-[180px] max-w-xs bg-slate-100 rounded-lg" />
+            </div>
+            <div className="h-3 w-28 bg-slate-200 rounded" />
+            <div className="flex flex-wrap gap-4">
+              <div className="h-9 w-52 bg-slate-100 rounded-lg" />
+              <div className="h-9 w-44 bg-slate-100 rounded-lg" />
+            </div>
+          </div>
+
+          {/* KPI cards skeleton */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+                <div className="h-3 w-16 bg-slate-200 rounded" />
+                <div className="h-6 w-24 bg-slate-100 rounded" />
+                <div className="h-2 w-12 bg-slate-100 rounded" />
+              </div>
+            ))}
+          </div>
+
+          {/* Chart skeleton */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="h-3 w-32 bg-slate-200 rounded mb-4" />
+            <div className="h-48 bg-slate-50 rounded-lg flex items-end gap-2 px-4 pb-2">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex-1 bg-slate-200 rounded-t"
+                  style={{ height: `${30 + Math.sin(i) * 20 + 40}%` }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Table skeleton */}
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="bg-slate-50 border-b border-slate-200 px-4 py-3">
+              <div className="h-3 w-24 bg-slate-200 rounded" />
+            </div>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex gap-4 px-4 py-3 border-b border-slate-100">
+                <div className="h-3 flex-1 bg-slate-100 rounded" />
+                <div className="h-3 w-20 bg-slate-100 rounded" />
+                <div className="h-3 w-20 bg-slate-100 rounded" />
+                <div className="h-3 w-20 bg-slate-100 rounded" />
+              </div>
+            ))}
+          </div>
         </div>
       ) : (
         <>
+          <SalesFilters filters={filters} onChange={handleFilterChange} bootData={bootData} />
           <SalesKPIs data={data} />
           <SalesCharts data={data} filters={filters} onFilterChange={handleFilterChange} />
           <SalesDataTables data={data} bootData={bootData} filters={filters} onFilterChange={handleFilterChange} />
