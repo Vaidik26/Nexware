@@ -293,7 +293,6 @@ export default function LpoCreateScreen() {
 
     await api.post(`/lpos/${createdLpo.id}/upload-pdf`, formData, {
      headers: { 'Content-Type': 'multipart/form-data' },
-     timeout: 60000,
     });
    }
 

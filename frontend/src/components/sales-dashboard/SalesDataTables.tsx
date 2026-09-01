@@ -66,7 +66,7 @@ export default function SalesDataTables({ data, bootData, filters, onFilterChang
     return Array.from(map.values()).sort((a: any, b: any) => b.gross - a.gross);
   }, [processedSkus]);
 
-  const SimpleTable = ({ title, columns, rowData, onRowClick, interactive = false }: { title: string, columns: any[], rowData: any[], onRowClick?: (row: any) => void, interactive?: boolean }) => {
+  const SimpleTable = ({ title, columns, rowData, onRowClick, interactive = false, isRowSelected }: { title: string, columns: any[], rowData: any[], onRowClick?: (row: any) => void, interactive?: boolean, isRowSelected?: (row: any) => boolean }) => {
     const isMax = maximizedTable === title;
     const [search, setSearch] = useState('');
 
@@ -123,23 +123,28 @@ export default function SalesDataTables({ data, bootData, filters, onFilterChang
                 <tr>
                   <td colSpan={columns.length} className="text-center p-8 text-slate-400">No data found</td>
                 </tr>
-              ) : filteredRows.map((row, i) => (
-                <tr 
-                  key={i} 
-                  onClick={() => onRowClick && onRowClick(row)}
-                  className={clsx(
-                    "border-b border-slate-100 transition-colors",
-                    interactive ? "cursor-pointer hover:bg-primary/5 active:bg-primary/10" : "hover:bg-slate-50"
-                  )}
-                  title={interactive ? "Click to filter" : ""}
-                >
+                ) : filteredRows.map((row, i) => {
+                  const selected = isRowSelected ? isRowSelected(row) : false;
+                  return (
+                  <tr 
+                    key={i} 
+                    onClick={() => onRowClick && onRowClick(row)}
+                    className={clsx(
+                      "border-b border-slate-100 transition-all",
+                      interactive ? "cursor-pointer" : "hover:bg-slate-50",
+                      interactive && !selected && "hover:bg-primary/5 active:bg-primary/10",
+                      selected && "bg-primary/10 border-l-2 border-l-primary"
+                    )}
+                    title={interactive ? (selected ? "Click to deselect" : "Click to filter") : ""}
+                  >
                   {columns.map((c, j) => (
                     <td key={j} className={clsx("p-3 text-slate-700 whitespace-nowrap", c.align === 'right' && 'text-right', c.bold && 'font-semibold')}>
                       {c.render ? c.render(row) : row[c.key]}
                     </td>
                   ))}
-                </tr>
-              ))}
+                  </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
@@ -164,11 +169,16 @@ export default function SalesDataTables({ data, bootData, filters, onFilterChang
           ]}
           rowData={categoryData}
           interactive={true}
+          isRowSelected={(row) => filters.categories?.has(row.name)}
           onRowClick={(row) => {
             const catName = row.name;
-            const prodsInCat = bootData.catalogue.filter((c: any) => c.cat === catName).map((c: any) => c.product);
-            onFilterChange({ ...filters, products: new Set(prodsInCat) });
-            // scroll to top smoothly
+            const newCats = new Set(filters.categories || []);
+            if (newCats.has(catName)) {
+              newCats.delete(catName);
+            } else {
+              newCats.add(catName);
+            }
+            onFilterChange({ ...filters, categories: newCats });
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
         />
@@ -183,8 +193,19 @@ export default function SalesDataTables({ data, bootData, filters, onFilterChang
           ]}
           rowData={productData}
           interactive={true}
+          isRowSelected={(row) => filters.products?.has(row.name)}
           onRowClick={(row) => {
-            onFilterChange({ ...filters, products: new Set([row.name]) });
+            const newProds = new Set(filters.products || []);
+            if (newProds.has(row.name)) {
+              newProds.delete(row.name);
+            } else {
+              newProds.add(row.name);
+            }
+            // Bottom-up: auto-check parent category
+            const parentCat = bootData.catalogue?.find((c: any) => c.product === row.name)?.cat;
+            const newCats = new Set(filters.categories || []);
+            if (newProds.size > 0 && parentCat) newCats.add(parentCat);
+            onFilterChange({ ...filters, products: newProds, categories: newCats });
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
         />
@@ -201,8 +222,23 @@ export default function SalesDataTables({ data, bootData, filters, onFilterChang
           ]}
           rowData={[...processedSkus].sort((a, b) => b.gross - a.gross)}
           interactive={true}
+          isRowSelected={(row) => filters.skus?.has(row.code)}
           onRowClick={(row) => {
-            onFilterChange({ ...filters, skus: new Set([row.code]) });
+            const newSkus = new Set(filters.skus || []);
+            if (newSkus.has(row.code)) {
+              newSkus.delete(row.code);
+            } else {
+              newSkus.add(row.code);
+            }
+            // Bottom-up: auto-check parent product & category
+            const meta = bootData.catalogue?.find((c: any) => c.code === row.code);
+            const newProds = new Set(filters.products || []);
+            const newCats = new Set(filters.categories || []);
+            if (newSkus.size > 0 && meta) {
+              newProds.add(meta.product);
+              newCats.add(meta.cat);
+            }
+            onFilterChange({ ...filters, skus: newSkus, products: newProds, categories: newCats });
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
         />
@@ -218,8 +254,16 @@ export default function SalesDataTables({ data, bootData, filters, onFilterChang
           ]}
           rowData={data.custs || []}
           interactive={true}
+          isRowSelected={(row) => filters.customers?.has(String(row[0]))}
           onRowClick={(row) => {
-            onFilterChange({ ...filters, customers: new Set([String(row[0])]) });
+            const custId = String(row[0]);
+            const newCusts = new Set(filters.customers || []);
+            if (newCusts.has(custId)) {
+              newCusts.delete(custId);
+            } else {
+              newCusts.add(custId);
+            }
+            onFilterChange({ ...filters, customers: newCusts });
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
         />

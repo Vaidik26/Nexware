@@ -376,7 +376,6 @@ export default function LpoOrderDetailsScreen() {
 
    await api.post(`/lpos/${lpo.id}/upload-pdf`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 60000,
    });
 
    Alert.alert('✅ Success', 'LPO Photos Confirmed successfully!');

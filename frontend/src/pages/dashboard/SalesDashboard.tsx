@@ -19,8 +19,9 @@ export default function SalesDashboard() {
     gran: 'month',
     channel: 'all',
     active: 'all',
-    area: 'all',
-    sarea: 'all',
+    areas: new Set<string>(),
+    sareas: new Set<string>(),
+    categories: new Set<string>(),
     products: new Set<string>(),
     skus: new Set<string>(),
     customers: new Set<string>(),
@@ -62,12 +63,26 @@ export default function SalesDashboard() {
   const requestedCustomers = (b: any, currentFilters: any): Set<string> => {
     const sets: number[][] = [];
 
-    if (currentFilters.sarea !== 'all' && b?.salesmanAreas?.[currentFilters.sarea]?.customerIds) {
-      sets.push(b.salesmanAreas[currentFilters.sarea].customerIds);
+    if (currentFilters.sareas && currentFilters.sareas.size > 0) {
+      const sCusts: number[] = [];
+      currentFilters.sareas.forEach((s: string) => {
+        if (b?.salesmanAreas?.[s]?.customerIds) {
+          sCusts.push(...b.salesmanAreas[s].customerIds);
+        }
+      });
+      sets.push(sCusts);
     }
-    if (currentFilters.area !== 'all' && b?.areas?.[currentFilters.area]?.customerIds) {
-      sets.push(b.areas[currentFilters.area].customerIds);
+    
+    if (currentFilters.areas && currentFilters.areas.size > 0) {
+      const aCusts: number[] = [];
+      currentFilters.areas.forEach((a: string) => {
+        if (b?.areas?.[a]?.customerIds) {
+          aCusts.push(...b.areas[a].customerIds);
+        }
+      });
+      sets.push(aCusts);
     }
+    
     if (currentFilters.customers && currentFilters.customers.size > 0) {
       sets.push([...currentFilters.customers].map(Number));
     }
@@ -96,12 +111,21 @@ export default function SalesDashboard() {
         b
       );
 
+      let resolvedProducts = new Set<string>(currentFilters.products as Set<string>);
+      if (currentFilters.categories?.size > 0) {
+        b?.catalogue?.forEach((c: any) => {
+          if (currentFilters.categories.has(c.cat)) {
+            resolvedProducts.add(c.product);
+          }
+        });
+      }
+
       const result = await fetchDashboardView({
         start,
         end,
         channel: currentFilters.channel,
         active: currentFilters.active,
-        products: currentFilters.products,
+        products: resolvedProducts,
         skus: currentFilters.skus,
         customers: requestedCustomers(b, currentFilters),
       });
