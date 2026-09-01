@@ -852,6 +852,13 @@ async def start_picklist(
     if not pl:
         raise HTTPException(status_code=404, detail="Pick list not found")
 
+    # Already started. Almost always the picker's first tap did land and the
+    # response was lost on the way back, so treat the repeat as a no-op rather
+    # than telling them their own successful action failed.
+    if pl.status == "picking":
+        logger.info("Picklist %s is already in progress; treating start as a no-op", picklist_id)
+        return {"message": "Picking already in progress", "status": pl.status}
+
     if pl.status != "assigned":
         raise HTTPException(
             status_code=400, detail=f"Cannot start picklist with status {pl.status}"

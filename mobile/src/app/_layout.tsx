@@ -7,7 +7,16 @@ import { getToken, getPickerInfo } from '../lib/session';
 import { useAuthStore } from '../store/authStore';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+ defaultOptions: {
+  queries: {
+   // The default is 3 retries with backoff. Requests now carry realistic
+   // timeouts of their own, so three further attempts on top of one that
+   // already waited its full budget just leaves the user watching a spinner.
+   retry: 1,
+  },
+ },
+});
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();

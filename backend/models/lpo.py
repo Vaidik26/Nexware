@@ -23,6 +23,16 @@ class Lpo(Base):
     lpo_number = Column(String, unique=True, index=True, nullable=False)
     internal_ref = Column(String, unique=True, index=True, nullable=False)
 
+    #: Client-supplied replay guard, sent as the ``Idempotency-Key`` header.
+    #:
+    #: A phone that times out waiting for the create response cannot tell whether
+    #: the order was saved, so it retries; without this the retry would land as a
+    #: second order (``lpo_number`` is auto-suffixed on collision, so the unique
+    #: constraint does not stop it). Keyed requests return the original row.
+    #:
+    #: Nullable because the admin portal and older mobile builds send no key.
+    idempotency_key = Column(String, unique=True, index=True, nullable=True)
+
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
 
     # nullable: admin manual orders may not have a sales person

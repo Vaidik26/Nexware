@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, TextInput, FlatList, Modal, Alert, Activi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LogOut, Plus, Trash2, QrCode, Share, Search } from 'lucide-react-native';
 import { useAuthStore } from '../../store/authStore';
-import api from '../../lib/api';
+import api, { TIMEOUT, describeApiError } from '../../lib/api';
 import { getCatalogue } from '../../lib/catalogueCache';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -28,6 +28,22 @@ interface CartItem {
  max_order_quantity: number | null;
  unit: string;
 }
+
+/**
+ * Random key identifying one logical order, sent as `Idempotency-Key`.
+ *
+ * It stays the same across every retry of the same order so the server can
+ * recognise a repeat and return the order it already created. A new one is
+ * minted only when the form is reset for a genuinely new order.
+ *
+ * Deliberately not derived from the LPO number: that is only `LPO-YYYYMMDD-`
+ * plus four random digits, so two genuinely different orders collide often
+ * enough that using it as a dedupe key would merge them.
+ */
+const generateIdempotencyKey = () =>
+ `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}-${Math.random()
+  .toString(36)
+  .slice(2, 10)}`;
 
 const generateAutoLpoNumber = () => {
  const d = new Date();
@@ -96,7 +112,12 @@ export default function LpoCreateScreen() {
  const [isGenerating, setIsGenerating] = useState(false);
  const [isUploading, setIsUploading] = useState(false);
  const [isConfirmed, setIsConfirmed] = useState(false);
+ // Set when the order saved but its signed document did not. The order exists
+ // and is listed in History; it is simply not confirmed into the warehouse yet.
+ const [pendingAttachment, setPendingAttachment] = useState(false);
  const [selectedLpoFile, setSelectedLpoFile] = useState<any>(null);
+ // Held across retries so a repeated submit is recognised as the same order.
+ const idempotencyKeyRef = useRef(generateIdempotencyKey());
  const [refreshing, setRefreshing] = useState(false);
  const [isSharing, setIsSharing] = useState(false);
  const [hasDownloadedPDF, setHasDownloadedPDF] = useState(false);
@@ -129,7 +150,7 @@ export default function LpoCreateScreen() {
   try {
    setCustomersLoading(true);
    const endpoint = searchQuery ? `/customers?q=${encodeURIComponent(searchQuery)}` : '/customers';
-   const custRes = await api.get(endpoint);
+   const custRes = await api.get(endpoint, { timeout: TIMEOUT.customers });
    setCustomers(custRes.data || []);
   } catch (err) {
    console.log('Error fetching customers:', err);
@@ -261,10 +282,24 @@ export default function LpoCreateScreen() {
   setSelectedLpoFile(null);
  };
 
+ /**
+  * Save the order, then attach its signed document.
+  *
+  * These are two independent steps on purpose. They used to share one
+  * try/catch, so a document upload that ran out of time was reported as
+  * "Failed to confirm LPO" even though the order had already been saved — and
+  * tapping Confirm again created a second copy of it.
+  *
+  * Now step 1 either succeeds or fails on its own, and a failure in step 2
+  * leaves the saved order alone and says so.
+  */
  const executeOrderCreation = async (fileToUpload?: any) => {
+  const file = fileToUpload || selectedLpoFile;
+
+  // ── Step 1: save the order ───────────────────────────────────────────────
+  let createdLpo: any;
   try {
    setIsGenerating(true);
-   const file = fileToUpload || selectedLpoFile;
    const payload: any = {
     lpo_number: orderNumber.trim(),
     customer_name: customerName.trim(),
@@ -280,26 +315,48 @@ export default function LpoCreateScreen() {
     payload.delivery_date = deliveryDate.toISOString();
    }
 
-   const res = await api.post('/lpos', payload);
-   const createdLpo = res.data;
-   
-   if (file) {
-    const formData = new FormData();
-    formData.append('file', {
-     uri: file.uri,
-     name: file.filename,
-     type: file.mimeType,
-    } as any);
+   const res = await api.post('/lpos', payload, {
+    timeout: TIMEOUT.createOrder,
+    // Repeating this request returns the order it already made rather than
+    // creating another, so retrying after a network problem is safe.
+    headers: { 'Idempotency-Key': idempotencyKeyRef.current },
+   });
+   createdLpo = res.data;
+  } catch (err) {
+   const failure = describeApiError(err, 'Could not save the order. Please try again.');
+   Alert.alert('Order Not Saved', failure.message);
+   setIsGenerating(false);
+   return;
+  }
 
-    await api.post(`/lpos/${createdLpo.id}/upload-pdf`, formData, {
-     headers: { 'Content-Type': 'multipart/form-data' },
-    });
-   }
+  // ── Step 2: attach the signed document ───────────────────────────────────
+  // The order is saved from here on. Nothing below may discard it.
+  if (!file) {
+   setIsConfirmed(true);
+   setIsGenerating(false);
+   return;
+  }
+
+  try {
+   const formData = new FormData();
+   formData.append('file', {
+    uri: file.uri,
+    name: file.filename,
+    type: file.mimeType,
+   } as any);
+
+   await api.post(`/lpos/${createdLpo.id}/upload-pdf`, formData, {
+    timeout: TIMEOUT.uploadLpo,
+   });
 
    setIsConfirmed(true);
-   
-  } catch (err: any) {
-   Alert.alert('Error', err.response?.data?.detail?.message || err.response?.data?.detail || 'Failed to confirm LPO.');
+  } catch (err) {
+   const failure = describeApiError(err, 'The signed LPO could not be uploaded.');
+   setPendingAttachment(true);
+   Alert.alert(
+    'Order Created',
+    `${failure.message}\n\nThe order has been saved and is in your History, but it is not confirmed until the signed LPO is attached. Open it from History to attach it.`
+   );
   } finally {
    setIsGenerating(false);
   }
@@ -312,17 +369,12 @@ export default function LpoCreateScreen() {
  const handleCloseSuccess = () => {
   setSuccessModalVisible(false);
   if (isConfirmed) {
-   setCart([]);
-   setCustomerName('');
-   setDeliveryDate(undefined);
-   setOrderNumber(generateAutoLpoNumber());
-   setSelectedLpoFile(null);
-   setIsConfirmed(false);
-   setHasDownloadedPDF(false);
-  } else {
-   setHasDownloadedPDF(false);
-   setSelectedLpoFile(null);
+   resetFormExplicitly();
   }
+  // Otherwise keep everything exactly as it is. Clearing hasDownloadedPDF and
+  // selectedLpoFile here used to mean that a network failure cost the user the
+  // printed PDF and every photo they had taken — they had to redo all of it
+  // before the Confirm button would even reappear.
  };
 
  const resetFormExplicitly = () => {
@@ -333,6 +385,9 @@ export default function LpoCreateScreen() {
   setOrderNumber(generateAutoLpoNumber());
   setSelectedLpoFile(null);
   setIsConfirmed(false);
+  setPendingAttachment(false);
+  // A genuinely new order, so it needs its own replay key.
+  idempotencyKeyRef.current = generateIdempotencyKey();
   setHasDownloadedPDF(false);
  };
 
@@ -743,8 +798,19 @@ export default function LpoCreateScreen() {
       </View>
 
       <View className="gap-3">
-        <TouchableOpacity 
-         onPress={() => handleDownloadPDF(true)} 
+        {pendingAttachment && !isConfirmed && (
+          <View className="w-full p-3 rounded-xl bg-amber-50 border border-amber-200">
+            <Text className="font-bold text-amber-800 text-sm text-center">
+              Order saved — signed LPO not attached
+            </Text>
+            <Text className="text-amber-700 text-xs text-center mt-1">
+              It is in your History. Tap Confirm Order to try attaching again, or attach it later from History.
+            </Text>
+          </View>
+        )}
+
+        <TouchableOpacity
+         onPress={() => handleDownloadPDF(true)}
          disabled={isSharing}
          className={`w-full p-4 rounded-xl items-center justify-center flex-row gap-2 ${isSharing ? 'bg-slate-200' : 'bg-slate-100'}`}
         >
@@ -753,8 +819,8 @@ export default function LpoCreateScreen() {
 
         {!isConfirmed && hasDownloadedPDF && (
          <>
-          <TouchableOpacity 
-           onPress={handleUploadLpoPdf} 
+          <TouchableOpacity
+           onPress={handleUploadLpoPdf}
            className="w-full p-4 rounded-xl bg-blue-50 border border-blue-200 items-center justify-center flex-row gap-2"
           >
            <Text className="font-bold text-blue-700 text-base">
@@ -762,9 +828,9 @@ export default function LpoCreateScreen() {
            </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-           onPress={() => executeOrderCreation(selectedLpoFile)} 
-           disabled={isGenerating} 
+          <TouchableOpacity
+           onPress={() => executeOrderCreation(selectedLpoFile)}
+           disabled={isGenerating}
            className="w-full p-4 rounded-xl bg-[#003527] items-center justify-center flex-row gap-2"
           >
            {isGenerating ? (
@@ -774,7 +840,7 @@ export default function LpoCreateScreen() {
             </>
            ) : (
              <Text className="font-bold text-white text-base">
-               {selectedLpoFile ? '✅ Confirm Order' : '💾 Save Order'}
+               {pendingAttachment ? '🔄 Retry Attaching LPO' : selectedLpoFile ? '✅ Confirm Order' : '💾 Save Order'}
              </Text>
            )}
           </TouchableOpacity>

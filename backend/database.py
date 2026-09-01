@@ -10,6 +10,15 @@ try:
     engine = create_async_engine(
         db_url,
         echo=False,
+        # The database is remote (Supabase) and sits behind a pooler that drops
+        # idle connections. Without pre_ping the first query on a stale
+        # connection fails or stalls for seconds; without recycle the pool hands
+        # out connections the far end closed long ago.
+        pool_pre_ping=True,
+        pool_recycle=300,
+        pool_size=10,
+        max_overflow=20,
+        pool_timeout=30,
         connect_args={
             "statement_cache_size": 0,
             "prepared_statement_cache_size": 0,

@@ -1,4 +1,4 @@
-import api from './api';
+import api, { TIMEOUT } from './api';
 
 /**
  * Shared product catalogue for the LPO screens.
@@ -19,7 +19,7 @@ let fetchedAt = 0;
 let inFlight: Promise<any[]> | null = null;
 
 async function load(): Promise<any[]> {
-  const res = await api.get('/catalogue');
+  const res = await api.get('/catalogue', { timeout: TIMEOUT.catalogue });
   cache = res.data || [];
   fetchedAt = Date.now();
   return cache!;

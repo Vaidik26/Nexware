@@ -31,6 +31,20 @@ async def verify_picklist_service(picklist_id: int, db: AsyncSession) -> Dict[st
 
     if not pl:
         raise HTTPException(status_code=404, detail="Pick list not found")
+
+    # Already verified. The inventory deduction below is not repeatable, so the
+    # guard has to stay — but a repeat is overwhelmingly a client that lost the
+    # response and tried again, not a genuine error. Report the finished state
+    # instead of failing an action that already succeeded.
+    if pl.status == "verified":
+        logger.info("Picklist %s is already verified; returning the existing state", picklist_id)
+        return {
+            "message": "Pick list already verified",
+            "picklist_id": pl.id,
+            "status": pl.status,
+            "replayed": True,
+        }
+
     if pl.status not in ("waiting_verification", "picking", "assigned"):
         raise HTTPException(
             status_code=400, detail="Pick list is not in an active operational state"

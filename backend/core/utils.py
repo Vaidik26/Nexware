@@ -48,6 +48,20 @@ def generate_prefixed_id(prefix: str) -> str:
     return f"{prefix.strip().upper()}-{period}-{tail}"
 
 
+def violated_constraint(exc: IntegrityError, *names: str) -> bool:
+    """
+    Report whether ``exc`` was caused by one of the named columns or constraints.
+
+    Callers use this to tell "the id I generated collided, regenerate it" apart
+    from "the caller supplied a value that is already taken", which needs a 4xx
+    rather than a retry. Matching on the driver's message text is crude, but
+    asyncpg does not expose the constraint name in a portable way through
+    SQLAlchemy's wrapper.
+    """
+    haystack = str(getattr(exc, "orig", exc))
+    return any(name in haystack for name in names)
+
+
 async def flush_with_prefixed_id(
     db: AsyncSession,
     obj,

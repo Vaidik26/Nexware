@@ -16,12 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.future import select
 
-from backend.config import settings
 from backend.constants import (
     ALLOWED_PDF_MIME_TYPES,
     BUCKET_CUSTOMER_CONFIRMATION,
     FOLDER_CUSTOMER_SIGNED,
     MAX_UPLOAD_SIZE_BYTES,
+    MAX_UPLOAD_SIZE_MB,
 )
 from backend.database import get_db
 from backend.dependencies import get_current_admin
@@ -60,7 +60,7 @@ async def upload_lpo(
     if len(file_bytes) > MAX_UPLOAD_SIZE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File exceeds maximum upload size of {settings.MAX_UPLOAD_SIZE_MB} MB.",
+            detail=f"File exceeds maximum upload size of {MAX_UPLOAD_SIZE_MB} MB.",
         )
 
     tmp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4().hex}_{file.filename}")

@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Lin
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, FileText, Download, UploadCloud, Edit2, Search, Plus, Trash2 } from 'lucide-react-native';
-import api from '../../../lib/api';
+import api, { TIMEOUT, describeApiError } from '../../../lib/api';
 import { getCatalogue } from '../../../lib/catalogueCache';
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
@@ -364,6 +364,13 @@ export default function LpoOrderDetailsScreen() {
   setShowCameraModal(false);
  };
 
+ /**
+  * Attach the signed LPO to an order that already exists.
+  *
+  * This is the recovery path for an order whose document upload did not get
+  * through at creation time. Safe to repeat: the server returns the stored
+  * document rather than uploading a second copy or building a second picklist.
+  */
  const executeUpload = async (uri: string, mimeType: string, filename: string) => {
   try {
    setIsUploading(true);
@@ -375,13 +382,17 @@ export default function LpoOrderDetailsScreen() {
    } as any);
 
    await api.post(`/lpos/${lpo.id}/upload-pdf`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: TIMEOUT.uploadLpo,
    });
 
    Alert.alert('✅ Success', 'LPO Photos Confirmed successfully!');
    fetchLpoDetails(); // refresh to get the url and lock the UI
-  } catch (err: any) {
-   Alert.alert('Confirmation Failed', err.response?.data?.detail || err.message || 'Could not confirm photos.');
+  } catch (err) {
+   const failure = describeApiError(err, 'Could not confirm photos.');
+   Alert.alert(
+    'Confirmation Failed',
+    `${failure.message}\n\nThe order is unchanged. You can try attaching it again.`
+   );
   } finally {
    setIsUploading(false);
   }

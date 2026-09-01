@@ -13,20 +13,36 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Response,
+    UploadFile,
+    status,
+)
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.future import select
 from sqlalchemy.orm import joinedload, selectinload
 
-from backend.config import settings
 from backend.constants import (
     ALLOWED_DOCUMENT_MIME_TYPES,
     BUCKET_CUSTOMER_CONFIRMATION,
     FOLDER_MOBILE_LPOS,
     MAX_UPLOAD_SIZE_BYTES,
+    MAX_UPLOAD_SIZE_MB,
 )
-from backend.core.utils import PREFIX_LPO, PREFIX_PICKLIST, flush_with_prefixed_id
+from backend.core.utils import (
+    PREFIX_LPO,
+    PREFIX_PICKLIST,
+    flush_with_prefixed_id,
+    violated_constraint,
+)
 from backend.database import get_db
 from backend.dependencies import get_current_admin, get_current_user, get_current_user_optional
 from backend.models.lpo import Lpo, LpoItem
@@ -222,13 +238,37 @@ async def get_lpo_by_id(
 @router.post("/", response_model=LpoOut)
 async def create_lpo(
     lpo: LpoCreate,
+    background_tasks: BackgroundTasks,
+    response: Response,
     db: AsyncSession = Depends(get_db),
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     current_user=Depends(get_current_user_optional),  # optional — mobile creates without admin token
 ):
-    """Create a new LPO. Mobile clients may call this without authentication."""
+    """
+    Create a new LPO. Mobile clients may call this without authentication.
+
+    Send an ``Idempotency-Key`` header to make the call safe to repeat. A client
+    that never saw the response — a mobile timeout, a dropped connection — can
+    send the same request again and will get the order it already created rather
+    than a second one. The header is optional; the admin portal omits it.
+    """
+    # ── Replay ────────────────────────────────────────────────────────────────
+    if idempotency_key:
+        existing = await db.execute(
+            select(Lpo.id).filter(Lpo.idempotency_key == idempotency_key)
+        )
+        existing_id = existing.scalars().first()
+        if existing_id is not None:
+            logger.info("Replaying LPO create for idempotency key %s", idempotency_key)
+            response.headers["Idempotency-Replayed"] = "true"
+            return await _reload_lpo(db, existing_id)
+
     # Auto-deduplicate the customer's LPO number to prevent conflicts. This is
     # the customer's own document reference, so it is suffixed rather than
     # regenerated — the internal_ref below is the id we generate ourselves.
+    #
+    # Deliberately after the replay check: a repeat of the same request must
+    # return the original order, not a suffixed copy of it.
     lpo_number = lpo.lpo_number
     exists = await db.execute(select(Lpo.id).filter(Lpo.lpo_number == lpo_number))
     if exists.scalars().first() is not None:
@@ -252,11 +292,42 @@ async def create_lpo(
         status=initial_status,
         source=source,
         created_by_admin_id=current_user.id if is_admin else None,
+        idempotency_key=idempotency_key,
     )
-    await flush_with_prefixed_id(db, db_lpo, "internal_ref", PREFIX_LPO)
+    try:
+        await flush_with_prefixed_id(db, db_lpo, "internal_ref", PREFIX_LPO)
 
-    db.add_all(await _build_lpo_items(db, db_lpo.id, lpo.items))
-    await db.commit()
+        db.add_all(await _build_lpo_items(db, db_lpo.id, lpo.items))
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+
+        # Two copies of the same keyed request raced past the check above and
+        # both tried to insert. The loser returns the winner's order — the same
+        # outcome as the replay path, just decided by the database.
+        if idempotency_key and violated_constraint(exc, "idempotency_key"):
+            replayed = await db.execute(
+                select(Lpo.id).filter(Lpo.idempotency_key == idempotency_key)
+            )
+            replayed_id = replayed.scalars().first()
+            if replayed_id is not None:
+                logger.info(
+                    "Concurrent create for idempotency key %s; returning the winner",
+                    idempotency_key,
+                )
+                response.headers["Idempotency-Replayed"] = "true"
+                return await _reload_lpo(db, replayed_id)
+
+        # A genuine lpo_number collision — two distinct orders that happened to
+        # land inside the same second, so the %H%M%S suffix did not separate
+        # them. That is the caller's conflict to resolve, not a server fault.
+        if violated_constraint(exc, "lpo_number"):
+            logger.warning("LPO number %s is already taken", lpo_number)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"LPO number '{lpo_number}' already exists. Use a different number.",
+            )
+        raise
 
     lpo_obj = await _reload_lpo(db, db_lpo.id)
     logger.info(
@@ -267,15 +338,16 @@ async def create_lpo(
         source,
     )
 
-    from backend.ws_manager import manager
-
-    await manager.broadcast(
-        {
-            "event": "ORDER_CREATED",
-            "lpo_id": lpo_obj.id,
-            "lpo_number": lpo_obj.lpo_number,
-            "message": f"New Order Created: {lpo_obj.lpo_number}",
-        }
+    # Deferred to a background task rather than awaited here. The fan-out is
+    # advisory — it tells dashboards to refetch — and the mobile client is
+    # waiting on this response. Awaiting it inline meant a salesperson's order
+    # was held up by however long the connected dashboards took to accept it.
+    background_tasks.add_task(
+        broadcast_event,
+        "ORDER_CREATED",
+        lpo_id=lpo_obj.id,
+        lpo_number=lpo_obj.lpo_number,
+        message=f"New Order Created: {lpo_obj.lpo_number}",
     )
 
     return lpo_obj
@@ -337,6 +409,46 @@ async def update_lpo_url(
     return lpo_obj
 
 
+def _reject_oversized_body(file: UploadFile) -> None:
+    """
+    Reject an oversized upload before it is copied into memory.
+
+    Starlette records the part's length while spooling it, so the size is known
+    before ``read()``. Checking here avoids materialising a large body as a
+    ``bytes`` object on a single-worker process only to discard it. The
+    post-read check stays as a backstop for the case where ``size`` is absent.
+    """
+    declared = getattr(file, "size", None)
+    if declared is not None and declared > MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds maximum upload size of {MAX_UPLOAD_SIZE_MB} MB.",
+        )
+
+
+async def _discard_orphan_upload(public_url: str, lpo_id: int) -> None:
+    """
+    Remove a just-uploaded object whose transaction did not survive.
+
+    The file goes to Supabase before the picklist conversion runs, so any
+    failure after that point (stock validation, no available picker) rolls the
+    database back and leaves the object stranded in the bucket with nothing
+    referencing it.
+    """
+    from backend.services.storage_service import delete_from_supabase
+
+    try:
+        await run_in_threadpool(
+            delete_from_supabase,
+            bucket=BUCKET_CUSTOMER_CONFIRMATION,
+            file_url=public_url,
+        )
+    except Exception:
+        # Best effort. A stranded object is untidy; failing the request a second
+        # time over cleanup would be worse.
+        logger.warning("Could not remove orphaned upload for LPO %s: %s", lpo_id, public_url)
+
+
 @router.post("/{lpo_id}/upload-pdf")
 async def upload_lpo_pdf(
     lpo_id: int,
@@ -350,8 +462,24 @@ async def upload_lpo_pdf(
     This endpoint is intentionally accessible without an admin token because it is
     called by the mobile app immediately after LPO creation, before the user logs
     in as an admin. All other mutation endpoints are admin-protected.
+
+    Safe to call more than once. A mobile client that timed out waiting for the
+    response has no way to know whether the upload landed, so it will simply try
+    again; the repeat returns the stored document instead of uploading a second
+    copy and building a second picklist.
     """
     lpo = await _reload_lpo(db, lpo_id)
+
+    # ── Repeat call ────────────────────────────────────────────────────────────
+    # Cheap exit before spending a multipart body on work already done.
+    if lpo.signed_lpo_url and lpo.status == "processed":
+        logger.info("LPO %s already has a signed document; returning stored URL", lpo_id)
+        return {
+            "url": lpo.signed_lpo_url,
+            "lpo_id": lpo_id,
+            "status": lpo.status,
+            "replayed": True,
+        }
 
     # ── File validation ────────────────────────────────────────────────────────
     content_type = (file.content_type or "").lower()
@@ -361,11 +489,13 @@ async def upload_lpo_pdf(
             detail=f"Unsupported file type '{content_type}'. Allowed: PDF, JPEG, PNG.",
         )
 
+    _reject_oversized_body(file)
+
     file_bytes = await file.read()
     if len(file_bytes) > MAX_UPLOAD_SIZE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File exceeds maximum upload size of {settings.MAX_UPLOAD_SIZE_MB} MB.",
+            detail=f"File exceeds maximum upload size of {MAX_UPLOAD_SIZE_MB} MB.",
         )
 
     ext = file.filename.rsplit(".", 1)[-1] if (file.filename and "." in file.filename) else "pdf"
@@ -392,38 +522,86 @@ async def upload_lpo_pdf(
         logger.exception("Upload failed for LPO %s: %s", lpo_id, exc)
         raise HTTPException(status_code=500, detail="File upload failed. Please try again.")
 
+    # ── Lock the row before deciding whether to build a picklist ───────────────
+    # Two uploads racing on the same draft LPO would otherwise both read
+    # status='draft' and both convert, producing two picklists for one order.
+    # The lock is taken *after* the Supabase hop on purpose: holding a database
+    # transaction open across a multi-second external upload would serialise
+    # every concurrent upload behind it.
+    #
+    # A plain select, not _reload_lpo: its joinedloads render as LEFT OUTER JOINs
+    # and PostgreSQL rejects FOR UPDATE on the nullable side of an outer join.
+    #
+    # populate_existing is required: this LPO is already in the session's
+    # identity map from the read at the top of the handler, and without it
+    # SQLAlchemy returns that instance with its original attribute values — so
+    # the status check below would run against data read before the lock.
+    locked = await db.execute(
+        select(Lpo)
+        .filter(Lpo.id == lpo_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    lpo = locked.scalars().one_or_none()
+    if not lpo:
+        await _discard_orphan_upload(public_url, lpo_id)
+        raise HTTPException(status_code=404, detail="LPO not found")
+
+    # Re-check now that the row is held: a concurrent call may have won the race
+    # while this one was uploading.
+    if lpo.signed_lpo_url and lpo.status == "processed":
+        # Read before rolling back — rollback expires the instance, so touching
+        # an attribute afterwards would trigger a reload on a closed transaction.
+        stored_url, stored_status = lpo.signed_lpo_url, lpo.status
+        await db.rollback()
+        await _discard_orphan_upload(public_url, lpo_id)
+        logger.info("LPO %s was confirmed concurrently; returning stored URL", lpo_id)
+        return {
+            "url": stored_url,
+            "lpo_id": lpo_id,
+            "status": stored_status,
+            "replayed": True,
+        }
+
     lpo.signed_lpo_url = public_url
 
     # Receiving the signed PDF auto-approves the LPO and generates the picklist.
     if lpo.status in ("draft", "pending"):
-        db_picklist = await _convert_to_picklist(db, lpo)
+        try:
+            db_picklist = await _convert_to_picklist(db, lpo)
 
-        picker = await _pick_least_loaded_picker(db)
-        db.add(PicklistAssignment(picklist_id=db_picklist.id, picker_id=picker.id))
-        db_picklist.status = "assigned"
-        picker.is_available = False
-        _notify_assignment(picker, db_picklist, None, background_tasks)
+            picker = await _pick_least_loaded_picker(db)
+            db.add(PicklistAssignment(picklist_id=db_picklist.id, picker_id=picker.id))
+            db_picklist.status = "assigned"
+            picker.is_available = False
+            _notify_assignment(picker, db_picklist, None, background_tasks)
 
-        lpo.status = "processed"
+            lpo.status = "processed"
 
-        await db.commit()
+            await db.commit()
+        except Exception:
+            # Stock validation or picker assignment failed, so nothing was
+            # persisted and signed_lpo_url points at a file no row references.
+            await db.rollback()
+            await _discard_orphan_upload(public_url, lpo_id)
+            raise
 
-        from backend.ws_manager import manager
-
-        await manager.broadcast(
-            {
-                "event": "PICKLIST_ASSIGNED",
-                "picker_id": picker.id,
-                "picklist_id": db_picklist.id,
-                "message": f"New Picklist Assigned: {lpo.lpo_number}",
-            }
+        # Deferred for the same reason as ORDER_CREATED: the phone is waiting on
+        # this response, and it has already paid for a multipart upload plus a
+        # second hop to Supabase Storage.
+        background_tasks.add_task(
+            broadcast_event,
+            "PICKLIST_ASSIGNED",
+            picker_id=picker.id,
+            picklist_id=db_picklist.id,
+            message=f"New Picklist Assigned: {lpo.lpo_number}",
         )
     else:
         await db.commit()
 
     await db.refresh(lpo)
     logger.info("LPO %s PDF uploaded successfully, status=%s", lpo_id, lpo.status)
-    return {"url": public_url, "lpo_id": lpo_id, "status": lpo.status}
+    return {"url": public_url, "lpo_id": lpo_id, "status": lpo.status, "replayed": False}
 
 
 @router.patch("/{lpo_id}/status", response_model=LpoOut)
