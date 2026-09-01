@@ -20,6 +20,13 @@ _supabase_client = None
 
 _PLACEHOLDER_KEYS = {"PASTE_YOUR_SERVICE_ROLE_KEY_HERE", "your-service-role-key"}
 
+#: How long the server will wait on the Supabase Storage hop.
+#:
+#: Must stay above the mobile upload budget in mobile/src/lib/api.ts (TIMEOUT
+#: .uploadLpo), or a large document fails here while the phone is still waiting.
+#: The SDK's own default is 20s.
+SUPABASE_STORAGE_TIMEOUT_SECONDS = 120
+
 # Kept strictly ASCII: this string is logged, and a cp1252 console (Windows dev)
 # raises UnicodeEncodeError on em-dashes and ellipses, turning a helpful
 # diagnostic into a crash inside the logger.
@@ -93,11 +100,21 @@ def _get_client():
     if _supabase_client is None:
         try:
             from supabase import create_client
+            from supabase.lib.client_options import ClientOptions
 
             # Strip trailing/leading whitespace and quotes to prevent JWS errors
             url = settings.SUPABASE_URL.strip().strip("'").strip('"')
             key = settings.SUPABASE_SERVICE_KEY.strip().strip("'").strip('"')
-            _supabase_client = create_client(url, key)
+            _supabase_client = create_client(
+                url,
+                key,
+                # The SDK defaults to 20s, which is shorter than the phone is
+                # now willing to wait for an upload. Leaving it there would mean
+                # a large LPO fails on this second hop while the client is still
+                # patiently waiting — a timeout the user cannot do anything
+                # about and which reads to them as "the upload failed".
+                options=ClientOptions(storage_client_timeout=SUPABASE_STORAGE_TIMEOUT_SECONDS),
+            )
         except ImportError:
             raise HTTPException(
                 status_code=500,

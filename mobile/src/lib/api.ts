@@ -27,8 +27,14 @@ export const TIMEOUT = {
  customers: 30000,
  /** Product catalogue. */
  catalogue: 20000,
- /** Signed-LPO document upload — a multi-megabyte body over mobile data. */
- uploadLpo: 60000,
+ /**
+  * Signed-LPO document upload — a multi-megabyte body over mobile data.
+  *
+  * Two minutes. Photos go in at full camera resolution, so a several-page LPO
+  * on a weak warehouse connection genuinely needs this long; cutting it short
+  * loses the upload for a request the server was still happily receiving.
+  */
+ uploadLpo: 120000,
  /** Order creation. */
  createOrder: 45000,
 } as const;
