@@ -1092,11 +1092,17 @@ async def complete_picking(
     else:
         pl.status = "waiting_verification"
         assignment_res = await db.execute(
-            select(PicklistAssignment).filter(PicklistAssignment.picklist_id == picklist_id)
+            select(PicklistAssignment)
+            .options(selectinload(PicklistAssignment.picker))
+            .filter(PicklistAssignment.picklist_id == picklist_id)
         )
         assignment = assignment_res.scalars().first()
         if assignment:
             assignment.completed_at = now
+            # Free the picker — they are done picking and can take the next job.
+            # Verification is an admin/audit-station task, not a picker task.
+            if assignment.picker:
+                assignment.picker.is_available = True
         await db.commit()
 
     from backend.ws_manager import manager
