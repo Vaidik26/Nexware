@@ -116,7 +116,11 @@ export default function LpoCreateScreen() {
  // and is listed in History; it is simply not confirmed into the warehouse yet.
  const [pendingAttachment, setPendingAttachment] = useState(false);
  const [selectedLpoFile, setSelectedLpoFile] = useState<any>(null);
+ // Id of the order once step 1 has succeeded. While this is set, the order
+ // exists on the server and must never be created a second time.
+ const [createdLpoId, setCreatedLpoId] = useState<number | null>(null);
  // Held across retries so a repeated submit is recognised as the same order.
+ // Reset whenever the order's contents change — see the effect below.
  const idempotencyKeyRef = useRef(generateIdempotencyKey());
  const [refreshing, setRefreshing] = useState(false);
  const [isSharing, setIsSharing] = useState(false);
@@ -134,6 +138,21 @@ export default function LpoCreateScreen() {
   }, 300);
   return () => clearTimeout(timer);
  }, [customerSearch]);
+
+ /**
+  * Retire the replay key whenever the order's contents change.
+  *
+  * The key exists so a resubmit after a network failure returns the order the
+  * server already made instead of a duplicate. That is only correct while the
+  * request is genuinely the same one. Editing the items and resubmitting under
+  * the old key made the server replay the *original* order and silently throw
+  * away the edit — the user saw a success for items they had just removed.
+  *
+  * A changed order is a different request, so it gets a different key.
+  */
+ useEffect(() => {
+  idempotencyKeyRef.current = generateIdempotencyKey();
+ }, [cart, customerName, deliveryDate, orderNumber]);
 
  const [catalogueError, setCatalogueError] = useState<string | null>(null);
 
@@ -327,6 +346,7 @@ export default function LpoCreateScreen() {
     headers: { 'Idempotency-Key': idempotencyKeyRef.current },
    });
    createdLpo = res.data;
+   setCreatedLpoId(createdLpo.id);
   } catch (err) {
    const failure = describeApiError(err, 'Could not save the order. Please try again.');
    Alert.alert('Order Not Saved', failure.message);
@@ -342,7 +362,20 @@ export default function LpoCreateScreen() {
    return;
   }
 
+  await uploadSignedLpo(createdLpo.id, file);
+ };
+
+ /**
+  * Attach the signed document to an order that already exists.
+  *
+  * Separate from executeOrderCreation so the retry path can never re-run order
+  * creation. Retrying the whole flow was how an edited cart got silently
+  * dropped: the server recognised the replay key and returned the original
+  * order, ignoring the new items.
+  */
+ const uploadSignedLpo = async (lpoId: number, file: any) => {
   try {
+   setIsGenerating(true);
    const formData = new FormData();
    formData.append('file', {
     uri: file.uri,
@@ -350,7 +383,7 @@ export default function LpoCreateScreen() {
     type: file.mimeType,
    } as any);
 
-   await api.post(`/lpos/${createdLpo.id}/upload-pdf`, formData, {
+   await api.post(`/lpos/${lpoId}/upload-pdf`, formData, {
     timeout: TIMEOUT.uploadLpo,
     // Required. Without it the instance default of application/json is sent,
     // the server cannot parse the multipart body, and the request is rejected
@@ -359,37 +392,42 @@ export default function LpoCreateScreen() {
     headers: { 'Content-Type': 'multipart/form-data' },
    });
 
+   setPendingAttachment(false);
    setIsConfirmed(true);
   } catch (err) {
    const failure = describeApiError(err, 'The signed LPO could not be uploaded.');
    setPendingAttachment(true);
    Alert.alert(
     'Order Created',
-    `${failure.message}\n\nThe order has been saved and is in your History, but it is not confirmed until the signed LPO is attached. Open it from History to attach it.`
+    `${failure.message}\n\nOrder ${orderNumber} is saved and in your History, but it is not sent to the warehouse until the signed LPO is attached.\n\nThe items can no longer be changed here — retry the attachment, or start a new order.`
    );
   } finally {
    setIsGenerating(false);
   }
  };
 
+ /** Retry the attachment for an order that is already saved. */
+ const retryAttachment = () => {
+  if (createdLpoId == null || !selectedLpoFile) return;
+  uploadSignedLpo(createdLpoId, selectedLpoFile);
+ };
+
  const handleConfirmOrder = () => {
   executeOrderCreation();
  };
 
- /** "Cancel & Edit" — go back to the form without discarding the user's work. */
+ /**
+  * "Cancel & Edit" — go back to the form without discarding the user's work.
+  *
+  * Only reachable while nothing has been saved. Once the order exists the modal
+  * offers Retry / Start New Order instead, because editing the cart at that
+  * point cannot change an order the server has already recorded.
+  */
  const handleCloseSuccess = () => {
   setSuccessModalVisible(false);
 
   if (isConfirmed) {
    resetFormExplicitly();
-   return;
-  }
-
-  if (pendingAttachment) {
-   // The order is already saved under the current LPO number. Issuing a fresh
-   // number and replay key here would sever the link to it, so the next
-   // Confirm would create a second order — the exact duplicate this is meant
-   // to prevent. Keep the identity; the user retries the attachment.
    return;
   }
 
@@ -416,6 +454,7 @@ export default function LpoCreateScreen() {
   setSelectedLpoFile(null);
   setIsConfirmed(false);
   setPendingAttachment(false);
+  setCreatedLpoId(null);
   // A genuinely new order, so it needs its own replay key.
   idempotencyKeyRef.current = generateIdempotencyKey();
   setHasDownloadedPDF(false);
@@ -468,24 +507,25 @@ export default function LpoCreateScreen() {
    )).join('');
 
    const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>
-    @page { size: A4; margin: 20mm; }
+    @page { size: A4; margin: 10mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; font-size: 14px; width: 100%; color: #000; background: #fff; line-height: 1.5; }
+    body { font-family: Arial, sans-serif; font-size: 11px; width: 100%; color: #000; background: #fff; line-height: 1.2; }
     .center { text-align: center; }
-    .header-table { width: 100%; border: none; margin-bottom: 30px; }
-    .header-table td { border: none; padding: 8px 0; font-size: 14px; }
-    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
-    .items-table th, .items-table td { border: 1px solid #000; padding: 10px; text-align: left; }
+    .header-table { width: 100%; border: none; margin-bottom: 15px; }
+    .header-table td { border: none; padding: 4px 0; font-size: 11px; }
+    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+    .items-table th, .items-table td { border: 1px solid #000; padding: 3px 5px; text-align: left; font-size: 11px; }
+    .items-table tr { page-break-inside: avoid; }
     .items-table th { font-weight: bold; }
-    .footer-table { width: 100%; border: none; margin-top: 50px; }
-    .footer-table td { border: none; padding: 8px 0; font-size: 14px; }
+    .footer-table { width: 100%; border: none; margin-top: 20px; }
+    .footer-table td { border: none; padding: 4px 0; font-size: 11px; }
    </style></head><body>
     
-    <div style="text-align: center; margin-bottom: 40px; font-family: Arial, sans-serif;">
-      <h2 style="margin: 0; font-size: 18px; font-weight: bold; color: #000;">GAZAL AL KHADARA TRADING CO LLC - (VAT NO :OM1100024353)</h2>
-      <p style="margin: 4px 0; font-size: 14px; color: #000;">Al-suwaiq , North Batinah,Sultanate of oman 315,489</p>
-      <p style="margin: 4px 0; font-size: 14px; color: #000; font-weight: bold;"><span style="text-decoration: underline;">E-mail :gazalsales@gmail.com ,sales@gazalfoods.net </span></p>
-      <h3 style="margin: 8px 0 0 0; font-size: 15px; font-weight: bold; text-decoration: underline; color: #000;">NORMAL ORDER FORM</h3>
+    <div style="text-align: center; margin-bottom: 15px; font-family: Arial, sans-serif;">
+      <h2 style="margin: 0; font-size: 16px; font-weight: bold; color: #000;">GAZAL AL KHADARA TRADING CO LLC - (VAT NO :OM1100024353)</h2>
+      <p style="margin: 2px 0; font-size: 11px; color: #000;">Al-suwaiq , North Batinah,Sultanate of oman 315,489</p>
+      <p style="margin: 2px 0; font-size: 11px; color: #000; font-weight: bold;"><span style="text-decoration: underline;">E-mail :gazalsales@gmail.com ,sales@gazalfoods.net </span></p>
+      <h3 style="margin: 5px 0 0 0; font-size: 14px; font-weight: bold; text-decoration: underline; color: #000;">NORMAL ORDER FORM</h3>
     </div>
 
     <table class="header-table">
@@ -848,75 +888,107 @@ export default function LpoCreateScreen() {
       </View>
 
       <View className="gap-3">
-        {pendingAttachment && !isConfirmed && (
+        {pendingAttachment && !isConfirmed ? (
+         /* The order exists on the server. Editing the cart cannot change it,
+            so the only honest choices are to finish attaching or to start over
+            — offering "Cancel & Edit" here let the user edit items that were
+            then silently ignored on resubmit. */
+         <>
           <View className="w-full p-3 rounded-xl bg-amber-50 border border-amber-200">
             <Text className="font-bold text-amber-800 text-sm text-center">
               Order saved — signed LPO not attached
             </Text>
             <Text className="text-amber-700 text-xs text-center mt-1">
-              It is in your History. Tap Confirm Order to try attaching again, or attach it later from History.
+              {orderNumber} is in your History but has not gone to the warehouse yet.
+              Its items can no longer be changed here.
             </Text>
           </View>
-        )}
-
-        <TouchableOpacity
-         onPress={() => handleDownloadPDF(true)}
-         disabled={isSharing}
-         className={`w-full p-4 rounded-xl items-center justify-center flex-row gap-2 ${isSharing ? 'bg-slate-200' : 'bg-slate-100'}`}
-        >
-         {isSharing ? <ActivityIndicator color="#334155" /> : <Text className="font-bold text-slate-700 text-base">🖨️ Print and Save</Text>}
-        </TouchableOpacity>
-
-        {!isConfirmed && hasDownloadedPDF && (
-         <>
-          <TouchableOpacity
-           onPress={handleUploadLpoPdf}
-           className="w-full p-4 rounded-xl bg-blue-50 border border-blue-200 items-center justify-center flex-row gap-2"
-          >
-           <Text className="font-bold text-blue-700 text-base">
-            {selectedLpoFile ? `📎 Photos Attached` : '📷 Take Photos of Signed LPO (Optional)'}
-           </Text>
-          </TouchableOpacity>
 
           <TouchableOpacity
-           onPress={() => executeOrderCreation(selectedLpoFile)}
-           disabled={isGenerating}
-           className="w-full p-4 rounded-xl bg-[#003527] items-center justify-center flex-row gap-2"
+           onPress={retryAttachment}
+           disabled={isGenerating || !selectedLpoFile}
+           className={`w-full p-4 rounded-xl items-center justify-center flex-row gap-2 ${isGenerating || !selectedLpoFile ? 'bg-slate-300' : 'bg-[#003527]'}`}
           >
            {isGenerating ? (
             <>
              <ActivityIndicator color="white" />
-             <Text className="font-bold text-white text-base ml-2">{selectedLpoFile ? 'Confirming...' : 'Saving...'}</Text>
+             <Text className="font-bold text-white text-base ml-2">Attaching...</Text>
             </>
            ) : (
-             <Text className="font-bold text-white text-base">
-               {pendingAttachment ? '🔄 Retry Attaching LPO' : selectedLpoFile ? '✅ Confirm Order' : '💾 Save Order'}
-             </Text>
+            <Text className="font-bold text-white text-base">🔄 Retry Attaching LPO</Text>
            )}
           </TouchableOpacity>
+
+          <TouchableOpacity
+           onPress={resetFormExplicitly}
+           disabled={isGenerating}
+           className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row gap-2 mt-1"
+          >
+           <Text className="font-bold text-slate-700 text-base">➕ Start New Order</Text>
+          </TouchableOpacity>
          </>
-        )}
-
-        {!isConfirmed && !hasDownloadedPDF && (
-          <View className="p-2 items-center">
-            <Text className="text-sm text-slate-400 text-center">Download the LPO to attach photos and confirm</Text>
-          </View>
-        )}
-
-        {isConfirmed ? (
-         <TouchableOpacity 
-          onPress={resetFormExplicitly}
-          className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row gap-2 mt-2"
-         >
-          <Text className="font-bold text-slate-700 text-base">➕ Create New Order</Text>
-         </TouchableOpacity>
         ) : (
-         <TouchableOpacity 
-          onPress={handleCloseSuccess}
-          className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row gap-2 mt-2"
-         >
-          <Text className="font-bold text-slate-500 text-base">Cancel & Edit</Text>
-         </TouchableOpacity>
+         <>
+          <TouchableOpacity
+           onPress={() => handleDownloadPDF(true)}
+           disabled={isSharing}
+           className={`w-full p-4 rounded-xl items-center justify-center flex-row gap-2 ${isSharing ? 'bg-slate-200' : 'bg-slate-100'}`}
+          >
+           {isSharing ? <ActivityIndicator color="#334155" /> : <Text className="font-bold text-slate-700 text-base">🖨️ Print and Save</Text>}
+          </TouchableOpacity>
+
+          {!isConfirmed && hasDownloadedPDF && (
+           <>
+            <TouchableOpacity
+             onPress={handleUploadLpoPdf}
+             className="w-full p-4 rounded-xl bg-blue-50 border border-blue-200 items-center justify-center flex-row gap-2"
+            >
+             <Text className="font-bold text-blue-700 text-base">
+              {selectedLpoFile ? `📎 Photos Attached` : '📷 Take Photos of Signed LPO (Optional)'}
+             </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+             onPress={() => executeOrderCreation(selectedLpoFile)}
+             disabled={isGenerating}
+             className="w-full p-4 rounded-xl bg-[#003527] items-center justify-center flex-row gap-2"
+            >
+             {isGenerating ? (
+              <>
+               <ActivityIndicator color="white" />
+               <Text className="font-bold text-white text-base ml-2">{selectedLpoFile ? 'Confirming...' : 'Saving...'}</Text>
+              </>
+             ) : (
+               <Text className="font-bold text-white text-base">
+                 {selectedLpoFile ? '✅ Confirm Order' : '💾 Save Order'}
+               </Text>
+             )}
+            </TouchableOpacity>
+           </>
+          )}
+
+          {!isConfirmed && !hasDownloadedPDF && (
+            <View className="p-2 items-center">
+              <Text className="text-sm text-slate-400 text-center">Download the LPO to attach photos and confirm</Text>
+            </View>
+          )}
+
+          {isConfirmed ? (
+           <TouchableOpacity
+            onPress={resetFormExplicitly}
+            className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row gap-2 mt-2"
+           >
+            <Text className="font-bold text-slate-700 text-base">➕ Create New Order</Text>
+           </TouchableOpacity>
+          ) : (
+           <TouchableOpacity
+            onPress={handleCloseSuccess}
+            className="w-full p-4 rounded-xl bg-slate-100 items-center justify-center flex-row gap-2 mt-2"
+           >
+            <Text className="font-bold text-slate-500 text-base">Cancel & Edit</Text>
+           </TouchableOpacity>
+          )}
+         </>
         )}
        </View>
       </View>

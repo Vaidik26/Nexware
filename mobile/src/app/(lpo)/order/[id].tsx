@@ -283,24 +283,25 @@ export default function LpoOrderDetailsScreen() {
    )).join('');
 
    const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>
-    @page { size: A4; margin: 20mm; }
+    @page { size: A4; margin: 10mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; font-size: 14px; width: 100%; color: #000; background: #fff; line-height: 1.5; }
+    body { font-family: Arial, sans-serif; font-size: 11px; width: 100%; color: #000; background: #fff; line-height: 1.2; }
     .center { text-align: center; }
-    .header-table { width: 100%; border: none; margin-bottom: 30px; }
-    .header-table td { border: none; padding: 8px 0; font-size: 14px; }
-    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
-    .items-table th, .items-table td { border: 1px solid #000; padding: 10px; text-align: left; }
+    .header-table { width: 100%; border: none; margin-bottom: 15px; }
+    .header-table td { border: none; padding: 4px 0; font-size: 11px; }
+    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+    .items-table th, .items-table td { border: 1px solid #000; padding: 3px 5px; text-align: left; font-size: 11px; }
+    .items-table tr { page-break-inside: avoid; }
     .items-table th { font-weight: bold; }
-    .footer-table { width: 100%; border: none; margin-top: 50px; }
-    .footer-table td { border: none; padding: 8px 0; font-size: 14px; }
+    .footer-table { width: 100%; border: none; margin-top: 20px; }
+    .footer-table td { border: none; padding: 4px 0; font-size: 11px; }
    </style></head><body>
     
-    <div style="text-align: center; margin-bottom: 40px; font-family: Arial, sans-serif;">
-      <h2 style="margin: 0; font-size: 18px; font-weight: bold; color: #000;">GAZAL AL KHADARA TRADING CO LLC - (VAT NO :OM1100024353)</h2>
-      <p style="margin: 4px 0; font-size: 14px; color: #000;">Al-suwaiq , North Batinah,Sultanate of oman 315,489</p>
-      <p style="margin: 4px 0; font-size: 14px; color: #000; font-weight: bold;"><span style="text-decoration: underline;">E-mail :gazalsales@gmail.com ,sales@gazalfoods.net </span></p>
-      <h3 style="margin: 8px 0 0 0; font-size: 15px; font-weight: bold; text-decoration: underline; color: #000;">NORMAL ORDER FORM</h3>
+    <div style="text-align: center; margin-bottom: 15px; font-family: Arial, sans-serif;">
+      <h2 style="margin: 0; font-size: 16px; font-weight: bold; color: #000;">GAZAL AL KHADARA TRADING CO LLC - (VAT NO :OM1100024353)</h2>
+      <p style="margin: 2px 0; font-size: 11px; color: #000;">Al-suwaiq , North Batinah,Sultanate of oman 315,489</p>
+      <p style="margin: 2px 0; font-size: 11px; color: #000; font-weight: bold;"><span style="text-decoration: underline;">E-mail :gazalsales@gmail.com ,sales@gazalfoods.net </span></p>
+      <h3 style="margin: 5px 0 0 0; font-size: 14px; font-weight: bold; text-decoration: underline; color: #000;">NORMAL ORDER FORM</h3>
     </div>
 
     <table class="header-table">
