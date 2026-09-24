@@ -170,14 +170,21 @@ export default function LpoCreateScreen() {
   }
  };
 
+ const [customersError, setCustomersError] = useState<string | null>(null);
+
  const fetchCustomers = async (searchQuery: string = '') => {
   try {
    setCustomersLoading(true);
    const endpoint = searchQuery ? `/customers?q=${encodeURIComponent(searchQuery)}` : '/customers';
    const custRes = await api.get(endpoint, { timeout: TIMEOUT.customers });
    setCustomers(custRes.data || []);
+   setCustomersError(null);
   } catch (err) {
-   console.log('Error fetching customers:', err);
+   // Logging it and nothing else left the picker showing "No customers found",
+   // so a session that had expired and a branch that genuinely has no customers
+   // looked identical — and the one thing that would have fixed it, signing back
+   // in, was the one thing the screen gave no reason to try.
+   setCustomersError(describeApiError(err, 'Could not load customers.').message);
   } finally {
    setCustomersLoading(false);
   }
@@ -854,6 +861,17 @@ export default function LpoCreateScreen() {
        <View className="p-8 items-center justify-center">
         {customersLoading ? (
           <ActivityIndicator size="small" color="#059669" />
+        ) : customersError ? (
+          <>
+           <Text className="text-base font-bold text-red-600 text-center mb-2">Customers could not be loaded</Text>
+           <Text className="text-sm text-slate-500 text-center mb-4">{customersError}</Text>
+           <TouchableOpacity
+            onPress={() => fetchCustomers(debouncedSearch)}
+            className="px-5 py-3 rounded-xl bg-[#003527]"
+           >
+            <Text className="font-bold text-white text-sm">Try Again</Text>
+           </TouchableOpacity>
+          </>
         ) : (
           <Text className="text-gray-400 text-sm font-semibold text-center">No customers found.</Text>
         )}

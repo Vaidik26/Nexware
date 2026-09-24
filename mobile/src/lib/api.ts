@@ -97,11 +97,35 @@ api.interceptors.request.use(async (config) => {
  return config;
 });
 
+/**
+ * Endpoints whose own 401 must not trigger the session teardown below.
+ *
+ * `/auth/login` answers 401 for a wrong password — that is the endpoint working,
+ * not a session expiring, and signing the user out over it is meaningless.
+ *
+ * `/auth/logout` answers 401 when there is no valid token, which is exactly the
+ * situation logout() is called in. Reacting to that by calling logout() again
+ * recurses without end: each attempt 401s and schedules another. Because every
+ * level awaits the next, the original request never settles and the screen sits
+ * on its spinner forever instead of reporting the failure.
+ */
+const NO_AUTO_LOGOUT_PATHS = ['/auth/login', '/auth/logout'];
+
 api.interceptors.response.use(
  (response) => response,
- async (error) => {
-  if (error.response?.status === 401) {
-   await useAuthStore.getState().logout();
+ (error) => {
+  const url = error.config?.url || '';
+  const isAuthEndpoint = NO_AUTO_LOGOUT_PATHS.some((path) => url.includes(path));
+
+  if (error.response?.status === 401 && !isAuthEndpoint) {
+   // Started, not awaited.
+   //
+   // Awaiting it here is what wedged the app. The failed request could not
+   // settle until sign-out had finished, so the `finally` on every screen —
+   // the one that clears the spinner — sat behind a network round trip and two
+   // keystore deletes. The caller needs its rejection now; tearing the session
+   // down is not something it should be made to wait for.
+   void useAuthStore.getState().logout();
   }
   return Promise.reject(error);
  }

@@ -65,8 +65,19 @@ export async function removePickerInfo() {
 }
 
 export async function clearSession() {
+ // Dropped first and synchronously, so the token is unusable for the rest of
+ // this launch whatever the keystore does below.
  _tokenCache = null;
  _pickerInfoCache = null;
- await removeToken();
- await removePickerInfo();
+
+ // Both deletes are attempted even when one fails. They used to be sequential
+ // awaits, so a keystore error on the token abandoned the picker info — and the
+ // session restore in _layout only shows the login screen when BOTH are gone,
+ // which made a half-cleared session look like a signed-in one on next launch.
+ const results = await Promise.allSettled([removeToken(), removePickerInfo()]);
+ for (const result of results) {
+  if (result.status === 'rejected') {
+   console.warn('Could not delete stored session key:', result.reason);
+  }
+ }
 }
