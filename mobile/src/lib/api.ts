@@ -56,6 +56,16 @@ export const TIMEOUT = {
  */
 const DEFAULT_TIMEOUT_MS = 60000;
 
+/**
+ * How long the first keystore read of a launch may take before requests give up
+ * on it.
+ *
+ * Generous on purpose. It is paid at most once per launch, and the only thing
+ * it protects against is a keystore that never answers at all — not one that is
+ * slow, which is the common case and must be waited out rather than guessed at.
+ */
+const TOKEN_READ_TIMEOUT_MS = 8000;
+
 export const api = axios.create({
  baseURL,
  timeout: DEFAULT_TIMEOUT_MS,
@@ -77,22 +87,37 @@ api.interceptors.request.use(async (config) => {
   config.headers['Content-Type'] = 'multipart/form-data';
  }
 
- try {
-  // getToken() serves from an in-memory cache after the first call, so the
-  // Android KeyStore is touched once per app launch rather than once per
-  // request. The 1.2s race that used to guard every call is only needed for
-  // that first cold read.
-  let token = peekToken();
-  if (token === undefined) {
-   const timerPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200));
-   token = await Promise.race([getToken(), timerPromise]);
-  }
+ // getToken() serves from an in-memory cache after the first call, so the
+ // Android KeyStore is touched once per app launch rather than once per request.
+ // Only that first cold read can be slow enough to need guarding.
+ let token = peekToken();
+ if (token === undefined) {
+  // The read is raced, but losing the race now FAILS the request instead of
+  // sending it anyway.
+  //
+  // The previous guard resolved to null after 1.2s and fell through to the
+  // check below, which simply omitted the Authorization header — so a keystore
+  // that was merely slow produced a request indistinguishable from one with no
+  // session at all. The server answers those with 401, and a 401 is read here
+  // as "this session is over". A perfectly valid token was thereby thrown away
+  // because the device was busy, which on a phone full of a day's LPO photos is
+  // exactly when it is busiest.
+  //
+  // A timer winning means "not read yet". It does not mean "not signed in", and
+  // the two must never reach the server looking the same.
+  const timeout = new Promise<never>((_, reject) =>
+   setTimeout(
+    () => reject(new Error('Timed out reading the stored session. Please try again.')),
+    TOKEN_READ_TIMEOUT_MS
+   )
+  );
+  token = await Promise.race([getToken(), timeout]);
+ }
 
-  if (token && typeof token === 'string') {
-   config.headers.Authorization = `Bearer ${token}`;
-  }
- } catch (err) {
-  // Continue without blocking request if storage lock is busy
+ // A null token is a real answer — nobody is signed in — and the request is
+ // allowed through bare so /auth/login still works.
+ if (token && typeof token === 'string') {
+  config.headers.Authorization = `Bearer ${token}`;
  }
  return config;
 });

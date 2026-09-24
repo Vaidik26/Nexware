@@ -5,6 +5,7 @@ import { LogOut, Plus, Trash2, QrCode, Share, Search } from 'lucide-react-native
 import { useAuthStore } from '../../store/authStore';
 import api, { TIMEOUT, describeApiError } from '../../lib/api';
 import { getCatalogue } from '../../lib/catalogueCache';
+import { discardFiles } from '../../lib/lpoFiles';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -401,6 +402,11 @@ export default function LpoCreateScreen() {
 
    setPendingAttachment(false);
    setIsConfirmed(true);
+
+   // The server has it. Deleted only here, on the success path: while an upload
+   // can still be retried this file IS the attachment — retryAttachment re-sends
+   // exactly this uri — so the failure path below must leave it alone.
+   void discardFiles([file.uri]);
   } catch (err) {
    const failure = describeApiError(err, 'The signed LPO could not be uploaded.');
    setPendingAttachment(true);

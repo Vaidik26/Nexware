@@ -25,6 +25,10 @@ interface LPO {
   created_by_name?: string;
 }
 
+/** Rows per request, and the most requests one refresh will ever make. */
+const PAGE_SIZE = 500;
+const MAX_PAGES = 20;
+
 export default function LpoManagement() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
@@ -36,8 +40,22 @@ export default function LpoManagement() {
   const { data: lpos = [], isFetching, refetch } = useQuery<LPO[]>({
     queryKey: ['lpos'],
     queryFn: async () => {
-      const { data } = await api.get('/lpos');
-      return data;
+      // The endpoint is paged now. This board searches and filters the whole
+      // list in the browser, so it still wants all of it — but it no longer
+      // asks the database for every LPO ever raised in a single unbounded
+      // query. A page shorter than the limit is the last one.
+      const all: LPO[] = [];
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const { data } = await api.get(`/lpos?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`);
+        all.push(...data);
+        if (data.length < PAGE_SIZE) return all;
+      }
+      // Only reachable with more LPOs than MAX_PAGES covers. Say so rather than
+      // looping forever or quietly showing a truncated board.
+      console.warn(
+        `Stopped after ${MAX_PAGES * PAGE_SIZE} LPOs; the list may be incomplete.`
+      );
+      return all;
     },
     staleTime: 0,
     refetchInterval: 20000,

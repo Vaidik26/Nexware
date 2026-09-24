@@ -20,7 +20,7 @@ from sqlalchemy.future import select
 
 from backend.config import settings
 from backend.database import get_db
-from backend.dependencies import get_current_user
+from backend.dependencies import get_current_user, get_current_user_optional
 from backend.models.users import (
     USER_TYPE_ADMIN,
     USER_TYPE_DASHBOARD,
@@ -147,10 +147,29 @@ async def login(login_data: LoginRequest, db: AsyncSession = Depends(get_db)):
 @router.post("/logout")
 async def logout(
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(get_current_user_optional),
 ):
+    """
+    End a session. Always succeeds, with or without a usable token.
+
+    This required a valid token until it was found to be answering 401 several
+    times a second, forever, to phones in the field. Requiring one is circular:
+    a client calls this precisely when its token has stopped working, so the
+    answer was always 401 — and the mobile client reacted to any 401 by signing
+    out, which called this again. Each attempt failed the same way and scheduled
+    another, so the loop never terminated and the session was never actually
+    cleared. The client-side guard is in, but every device already installed
+    keeps the old behaviour until it is updated; answering 200 ends the loop for
+    those too, without waiting for a new build.
+
+    Signing out is also simply not an operation that should be refusable. There
+    is nothing to protect: the caller is discarding its own credentials, and a
+    request with no valid token has already achieved everything this endpoint
+    does server-side. Idempotent, and safe to call twice.
+    """
     # Only pickers carry a push token — clearing it stops the device receiving
-    # push notifications after logout. Other personas have nothing to clear.
+    # push notifications after logout. Other personas have nothing to clear, and
+    # an unidentified caller is not a PickerUser, so this correctly does nothing.
     if isinstance(current_user, PickerUser) and current_user.push_token:
         current_user.push_token = None
         await db.commit()

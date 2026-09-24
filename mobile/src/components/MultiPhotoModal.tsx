@@ -8,6 +8,7 @@ import * as ImagePicker from "expo-image-picker";
 import { X, Check, Trash2, Camera, Plus, AlertCircle } from "lucide-react-native";
 import * as Print from "expo-print";
 import * as FileSystem from "expo-file-system";
+import { LPO_PHOTO_DIR, discardFiles } from "../lib/lpoFiles";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const PREVIEW_HEIGHT = SCREEN_WIDTH * 0.75;
@@ -49,11 +50,16 @@ export default function MultiPhotoModal({ visible, onClose, onConfirm }: {
         // Try to copy to stable private cache. Fall back to original URI if it fails.
         let finalUri = src;
         try {
-          const dir = `${FileSystem.cacheDirectory}lpo-photos/`;
-          await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-          const dest = `${dir}photo_${Date.now()}.jpg`;
+          await FileSystem.makeDirectoryAsync(LPO_PHOTO_DIR, { intermediates: true });
+          const dest = `${LPO_PHOTO_DIR}photo_${Date.now()}.jpg`;
           await FileSystem.copyAsync({ from: src, to: dest });
           finalUri = dest;
+          // Two full-resolution copies of the same photo existed from here on:
+          // the one expo-image-picker wrote, and ours. Only ours is tracked and
+          // ever deleted, so the picker's was pure accumulation. Dropped only
+          // once the copy is known to have succeeded — on the failure path below
+          // it is the single remaining copy and must be kept.
+          void discardFiles([src]);
         } catch (copyErr) {
           console.warn("Could not copy to cache, using original URI:", copyErr);
           // finalUri remains = src (original), which is still valid for this session
@@ -88,6 +94,17 @@ export default function MultiPhotoModal({ visible, onClose, onConfirm }: {
         .join("");
       const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>body{margin:0;padding:20px;background:#fff;} img { width: 100%; max-height: 90vh; object-fit: contain; margin-bottom: 20px; border-radius: 8px; display: block; page-break-inside: avoid; break-inside: avoid; }</style></head><body>${imgTags}</body></html>`;
       const { uri: pdfUri } = await Print.printToFileAsync({ html, base64: false });
+
+      // The photos are inside the PDF now, and the PDF is what gets uploaded and
+      // what a failed upload re-sends. Nothing reads the originals again, so this
+      // is where they stop being needed — and where, until now, they stayed
+      // forever. Cleared from state first so a re-render cannot reach a path
+      // that is being deleted, and not awaited: confirming an order should not
+      // wait on housekeeping.
+      const consumed = photos;
+      setPhotos([]);
+      void discardFiles(consumed);
+
       onConfirm({ uri: pdfUri, mimeType: "application/pdf", filename: `lpo-photos-${Date.now()}.pdf` });
       onClose();
     } catch (err) {

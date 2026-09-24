@@ -13,8 +13,23 @@ export const getBaseUrl = () => {
   return 'http://localhost:8000';
 };
 
+/**
+ * Ceiling on how long any dashboard request may take.
+ *
+ * There was none. axios without a `timeout` waits on the browser's own limit,
+ * which is minutes, so a backend that accepted a connection and then stalled —
+ * a cold container, a saturated connection pool, a blocked event loop — left
+ * every page that called it spinning with no error and no way to retry. A
+ * request that has not answered in 45s is not going to; failing says so.
+ *
+ * Generous enough for the Excel and PDF exports, which are the slowest things
+ * here. Anything needing longer should pass its own budget at the call site.
+ */
+const DEFAULT_TIMEOUT_MS = 45000;
+
 const api = axios.create({
   baseURL: getBaseUrl(),
+  timeout: DEFAULT_TIMEOUT_MS,
 });
 
 // In-Memory Global Master Cache & Request Deduplication

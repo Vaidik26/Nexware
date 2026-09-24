@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, FileText, Download, UploadCloud, Edit2, Search, Plus, Trash2 } from 'lucide-react-native';
 import api, { TIMEOUT, describeApiError } from '../../../lib/api';
 import { getCatalogue } from '../../../lib/catalogueCache';
+import { discardFiles } from '../../../lib/lpoFiles';
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -397,6 +398,10 @@ export default function LpoOrderDetailsScreen() {
 
    Alert.alert('✅ Success', 'LPO Photos Confirmed successfully!');
    fetchLpoDetails(); // refresh to get the url and lock the UI
+
+   // Accepted by the server, so the local render is finished with. Success path
+   // only — the catch below invites the user to try again with this same file.
+   void discardFiles([uri]);
   } catch (err) {
    const failure = describeApiError(err, 'Could not confirm photos.');
    Alert.alert(

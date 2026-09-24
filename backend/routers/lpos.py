@@ -20,6 +20,7 @@ from fastapi import (
     File,
     Header,
     HTTPException,
+    Query,
     Response,
     UploadFile,
     status,
@@ -66,6 +67,18 @@ from backend.schemas.lpo import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/lpos", tags=["lpos"])
+
+#: Default and maximum page sizes for the list endpoints below.
+#:
+#: They returned every LPO ever raised, with all four relations eager-loaded, on
+#: every call — and the warehouse board refetches on a 20s timer. That cost grows
+#: with the table forever, so the day it became slow enough to matter would have
+#: been an ordinary Tuesday with no change to blame it on.
+#:
+#: A full page is logged rather than silently truncated: a caller that wants
+#: everything must ask for the next offset, and the logs say when one stopped.
+_DEFAULT_PAGE_SIZE = 200
+_MAX_PAGE_SIZE = 1000
 
 #: Relationship loads needed to serialise an LpoOut without an N+1.
 #:
@@ -179,25 +192,55 @@ async def _convert_to_picklist(db: AsyncSession, lpo: Lpo) -> Picklist:
 @router.get("", response_model=List[LpoOut])
 @router.get("/", response_model=List[LpoOut])
 async def get_lpos(
+    limit: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),  # ← AUTH REQUIRED
 ):
-    """List all LPOs ordered by creation date descending."""
+    """
+    List LPOs, newest first, one page at a time.
+
+    Pass ``offset`` to continue; a page shorter than ``limit`` is the last one.
+    """
     result = await db.execute(
-        select(Lpo).options(*_LPO_LOAD_OPTIONS).order_by(Lpo.created_at.desc())
+        select(Lpo)
+        .options(*_LPO_LOAD_OPTIONS)
+        # id breaks ties so paging is deterministic. On created_at alone, two
+        # orders saved in the same instant can order differently between calls,
+        # which lets one appear on both pages while another appears on neither.
+        .order_by(Lpo.created_at.desc(), Lpo.id.desc())
+        .limit(limit)
+        .offset(offset)
     )
     lpos = result.scalars().unique().all()
-    logger.info("user=%s fetched %d LPOs", current_user.id, len(lpos))
+    if len(lpos) == limit:
+        logger.info(
+            "user=%s fetched LPOs %d-%d; page is full, more may follow",
+            current_user.id,
+            offset,
+            offset + len(lpos),
+        )
+    else:
+        logger.info("user=%s fetched %d LPOs from offset %d", current_user.id, len(lpos), offset)
     return lpos
 
 
 @router.get("/my-history", response_model=List[LpoOut])
 async def get_my_lpo_history(
     date: Optional[str] = None,
+    limit: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """List LPOs raised by the current user, optionally filtered by date (YYYY-MM-DD)."""
+    """
+    List LPOs raised by the current user, newest first, one page at a time.
+
+    Optionally filtered by date (YYYY-MM-DD). Without a date this covers the
+    user's entire history, which is why it is paged: a salesperson who has been
+    on the road for a year should not have to download all of it to open a
+    screen. Pass ``offset`` to continue; a short page is the last one.
+    """
     query = select(Lpo).options(*_LPO_LOAD_OPTIONS)
 
     # "Mine" means a different column per persona now that the creator is split
@@ -221,8 +264,18 @@ async def get_my_lpo_history(
         except ValueError:
             pass  # Ignore invalid date format and return all
 
-    result = await db.execute(query.order_by(Lpo.created_at.desc()))
-    return result.scalars().unique().all()
+    result = await db.execute(
+        query.order_by(Lpo.created_at.desc(), Lpo.id.desc()).limit(limit).offset(offset)
+    )
+    lpos = result.scalars().unique().all()
+    if len(lpos) == limit:
+        logger.info(
+            "user=%s fetched own LPOs %d-%d; page is full, more may follow",
+            current_user.id,
+            offset,
+            offset + len(lpos),
+        )
+    return lpos
 
 
 @router.get("/{lpo_id}", response_model=LpoOut)

@@ -4,6 +4,7 @@ import { Slot, useRouter, useSegments, SplashScreen } from 'expo-router';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { View, ActivityIndicator } from 'react-native';
 import { getToken, getPickerInfo } from '../lib/session';
+import { pruneLpoPhotoDir } from '../lib/lpoFiles';
 import { useAuthStore } from '../store/authStore';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -43,10 +44,17 @@ export default function RootLayout() {
   let isMounted = true;
   const restoreSession = async () => {
    try {
-    // Wrap SecureStore in a race with a 1.2s timer to prevent Android KeyStore hang on restart
+    // Raced so a keystore that never answers cannot pin the splash screen
+    // forever — but with a budget that only a genuinely stuck read can exhaust.
+    //
+    // This was 1.2s, which a busy device beats routinely, and losing the race
+    // lands in the catch below and signs the user out. A stored session was
+    // therefore discarded for being slow to read rather than for being invalid,
+    // sending someone back to the login screen mid-shift with nothing wrong.
+    // Waiting a few seconds more on a bad day is the cheaper of the two.
     const sessionPromise = Promise.all([getToken(), getPickerInfo()]);
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('SecureStore timeout')), 1200));
-    
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('SecureStore timeout')), 5000));
+
     const [token, pickerInfo] = (await Promise.race([sessionPromise, timeoutPromise])) as [string | null, string | null];
     
     if (isMounted) {
@@ -65,6 +73,16 @@ export default function RootLayout() {
   };
   
   restoreSession();
+
+  // Clear photos left behind by previous launches. Started alongside the
+  // session restore rather than awaited — it must never delay the splash — and
+  // safe to run here because nothing has had a chance to stage a new photo yet.
+  //
+  // Without this, only the devices that get a fresh install benefit from the
+  // disposal added elsewhere; the ones already carrying a backlog of a
+  // salesperson's photos would keep it forever.
+  void pruneLpoPhotoDir();
+
   return () => { isMounted = false; };
  }, []);
 

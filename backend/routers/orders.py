@@ -11,7 +11,7 @@ import tempfile
 import uuid
 from typing import List
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.future import select
@@ -36,9 +36,30 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 
 @router.get("", response_model=List[SalesOrderOut])
 @router.get("/", response_model=List[SalesOrderOut])
-async def get_orders(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(SalesOrder))
-    return result.scalars().all()
+async def get_orders(
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List sales orders, newest first, one page at a time.
+
+    Previously returned the whole table on every call, with no ordering at all —
+    so the rows came back in whatever order the database found convenient, which
+    is not stable between calls and cannot be paged. Pass ``offset`` to continue;
+    a page shorter than ``limit`` is the last one.
+    """
+    result = await db.execute(
+        select(SalesOrder).order_by(SalesOrder.id.desc()).limit(limit).offset(offset)
+    )
+    orders = result.scalars().all()
+    if len(orders) == limit:
+        logger.info(
+            "fetched sales orders %d-%d; page is full, more may follow",
+            offset,
+            offset + len(orders),
+        )
+    return orders
 
 
 @router.post("/upload")
